@@ -1,4 +1,3 @@
-import Image from 'next/image';
 import type { SuccessResponse } from '@/lib/types';
 
 interface ProcessingStepsProps {
