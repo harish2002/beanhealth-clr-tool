@@ -13,8 +13,9 @@ Responsibility:
 
 Outlier rejection rules (frame is rejected if ANY of):
     1. status != "SUCCESS"          → blink / no flash / no face
-    2. pupil confidence == "LOW"    → Hough and landmark disagreed badly
+    2. deviation is None / non-finite / negative / > 60°
     3. deviation is a statistical outlier  → > 1.5× IQR from median of batch
+    (LOW pupil confidence frames are now accepted — IQR handles noise)
 
 Confidence tier from standard deviation:
     std < 1.0°   → HIGH
@@ -53,6 +54,15 @@ def _is_frame_usable(frame_report: Dict[str, Any]) -> Tuple[bool, str]:
     """
     Decide whether a single-frame pipeline result is usable for averaging.
 
+    Accepts SUCCESS frames at any confidence level — LOW confidence frames
+    (Hough/landmark disagreement) still contain usable deviation readings and
+    are far better than nothing.  Statistical outlier rejection in Step 2 will
+    remove any wildly off readings regardless of confidence.
+
+    Only hard-rejects:
+        • Non-SUCCESS frames (blink / no flash / no face detected)
+        • Frames with a mathematically invalid deviation value
+
     Returns:
         (True, "ok") if the frame passes all checks.
         (False, reason_code) if the frame should be rejected.
@@ -60,15 +70,13 @@ def _is_frame_usable(frame_report: Dict[str, Any]) -> Tuple[bool, str]:
     if frame_report.get("status") != "SUCCESS":
         return False, frame_report.get("reason", "pipeline_failed")
 
-    technical = frame_report.get("technical", {})
-
-    # Reject LOW confidence frames — pupil disagreement too large
-    if technical.get("confidence") == "LOW":
-        return False, "low_pupil_confidence"
-
     deviation = frame_report.get("result", {}).get("deviation_degrees")
-    if deviation is None or not math.isfinite(deviation):
+    if deviation is None or not math.isfinite(deviation) or deviation < 0:
         return False, "invalid_deviation"
+
+    # Sanity bound — anything above 60° is almost certainly a detection error
+    if deviation > 60.0:
+        return False, "deviation_out_of_range"
 
     return True, "ok"
 
@@ -91,7 +99,7 @@ def _reject_statistical_outliers(
     Returns:
         (clean_deviations, clean_indices, rejected_indices)
     """
-    if len(deviations) < 4:
+    if len(deviations) < 3:
         # Too few frames to apply IQR — keep all
         return deviations, indices, []
 

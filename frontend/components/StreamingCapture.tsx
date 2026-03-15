@@ -22,7 +22,7 @@ import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/ty
 const LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472];
 const RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477];
 
-const TOTAL_FRAMES  = 10;   // frames to capture
+const TOTAL_FRAMES  = 15;   // frames to capture
 const FRAME_INTERVAL_MS = 1000; // 1 frame per second
 
 type CaptureStatus =
@@ -174,9 +174,13 @@ export default function StreamingCapture({
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    canvas.width  = video.videoWidth  || canvas.offsetWidth;
-    canvas.height = video.videoHeight || canvas.offsetHeight;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    // Use the canvas's CSS display size as internal resolution so coordinates
+    // match exactly what the user sees (accounts for object-cover cropping).
+    const dispW = canvas.offsetWidth  || video.videoWidth  || 640;
+    const dispH = canvas.offsetHeight || video.videoHeight || 480;
+    canvas.width  = dispW;
+    canvas.height = dispH;
+    ctx.clearRect(0, 0, dispW, dispH);
 
     const lms = results.multiFaceLandmarks?.[0];
     if (!lms) {
@@ -186,11 +190,38 @@ export default function StreamingCapture({
 
     setEyesDetected(true);
 
-    const W = canvas.width;
-    const H = canvas.height;
+    // Compute the visible region of the video that object-cover shows.
+    // MediaPipe landmarks are normalised to the FULL native video frame,
+    // so we need to map them through the crop offset to canvas pixels.
+    const videoW = video.videoWidth  || dispW;
+    const videoH = video.videoHeight || dispH;
+    const videoAspect = videoW / videoH;
+    const dispAspect  = dispW  / dispH;
 
+    let srcX = 0, srcY = 0, srcW = videoW, srcH = videoH;
+    if (videoAspect > dispAspect) {
+      // Video is wider → sides are cropped
+      srcH = videoH;
+      srcW = videoH * dispAspect;
+      srcX = (videoW - srcW) / 2;
+    } else {
+      // Video is taller → top/bottom are cropped
+      srcW = videoW;
+      srcH = videoW / dispAspect;
+      srcY = (videoH - srcH) / 2;
+    }
+
+    const W = dispW;
+    const H = dispH;
+
+    // Map a normalised landmark to canvas pixel coordinates
     function px(lm: { x: number; y: number }) {
-      return { x: lm.x * W, y: lm.y * H };
+      const vx = lm.x * videoW;
+      const vy = lm.y * videoH;
+      return {
+        x: (vx - srcX) / srcW * W,
+        y: (vy - srcY) / srcH * H,
+      };
     }
 
     // Draw iris for one eye
@@ -416,7 +447,7 @@ export default function StreamingCapture({
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
-              Start 10-Frame Analysis
+              Start 15-Frame Analysis
             </button>
           </div>
         )}
@@ -453,7 +484,7 @@ export default function StreamingCapture({
             <li>• Hold the phone <strong>30 cm</strong> from the patient&apos;s face</li>
             <li>• Ensure <strong>torch is on</strong> — you should see reflections in both eyes</li>
             <li>• Keep <strong>eyes open and looking straight</strong> at the camera</li>
-            <li>• The app captures <strong>10 frames over 10 seconds</strong> and averages them</li>
+            <li>• The app captures <strong>15 frames over 15 seconds</strong> and averages them</li>
           </ul>
         </div>
       )}

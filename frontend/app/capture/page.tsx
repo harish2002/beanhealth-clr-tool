@@ -79,7 +79,7 @@ export default function CapturePage() {
 
         <div className="text-center">
           <p className="text-slate-800 text-sm font-semibold">{patientName}</p>
-          <p className="text-slate-400 text-xs">Age {patientAge} · 10-Frame Analysis</p>
+          <p className="text-slate-400 text-xs">Age {patientAge} · 15-Frame Analysis</p>
         </div>
 
         <div className="w-6" />
