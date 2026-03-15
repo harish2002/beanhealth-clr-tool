@@ -149,23 +149,34 @@ def aggregate_frame_results(
 
     # ── Step 1: Filter usable frames ─────────────────────────
 
-    accepted_deviations: List[float]      = []
-    accepted_asymmetries: List[float]     = []
-    accepted_indices: List[int]           = []
-    rejected_frames: List[Dict[str, Any]] = []
+    accepted_deviations: List[float]       = []
+    accepted_asymmetries: List[float]      = []   # normalised score
+    accepted_asym_degrees: List[float]     = []   # asymmetry in clinical degrees
+    accepted_indices: List[int]            = []
+    rejected_frames: List[Dict[str, Any]]  = []
 
     per_frame_readings: List[Optional[float]] = []
 
     for i, report in enumerate(frame_reports):
         usable, reason = _is_frame_usable(report)
         if usable:
-            dev = report["result"]["deviation_degrees"]
+            dev  = report["result"]["deviation_degrees"]
             asym = report["result"]["asymmetry_score"]
+            # asymmetry_degrees was added in module5 — fall back to computing
+            # it from asymmetry_score if absent (backward compat)
+            asym_deg = report["result"].get(
+                "asymmetry_degrees",
+                round(asym * 5.75 * 7.0, 2)   # IRIS_RADIUS_MM × HIRSCHBERG_CONSTANT
+            )
             accepted_deviations.append(dev)
             accepted_asymmetries.append(asym)
+            accepted_asym_degrees.append(asym_deg)
             accepted_indices.append(i)
             per_frame_readings.append(round(dev, 2))
-            logger.debug(f"[Aggregate] Frame {i}: ACCEPTED deviation={dev:.2f}°")
+            logger.debug(
+                f"[Aggregate] Frame {i}: ACCEPTED deviation={dev:.2f}°, "
+                f"asymmetry_deg={asym_deg:.2f}°"
+            )
         else:
             rejected_frames.append({"frame": i, "reason": reason})
             per_frame_readings.append(None)
@@ -183,10 +194,12 @@ def aggregate_frame_results(
             per_frame_readings[idx] = None   # mark as rejected in strip
             rejected_frames.append({"frame": idx, "reason": "statistical_outlier"})
 
-        accepted_deviations = clean_devs
-        accepted_asymmetries = [accepted_asymmetries[accepted_indices.index(i)]
-                                 for i in clean_idx]
-        accepted_indices     = clean_idx
+        accepted_deviations   = clean_devs
+        accepted_asymmetries  = [accepted_asymmetries[accepted_indices.index(i)]
+                                  for i in clean_idx]
+        accepted_asym_degrees = [accepted_asym_degrees[accepted_indices.index(i)]
+                                  for i in clean_idx]
+        accepted_indices      = clean_idx
     else:
         outlier_idx = []
 
@@ -218,14 +231,16 @@ def aggregate_frame_results(
 
     # ── Step 4: Compute statistics ───────────────────────────
 
-    dev_array  = np.array(accepted_deviations)
-    asym_array = np.array(accepted_asymmetries)
+    dev_array       = np.array(accepted_deviations)
+    asym_array      = np.array(accepted_asymmetries)
+    asym_deg_array  = np.array(accepted_asym_degrees)
 
-    dev_mean  = float(np.mean(dev_array))
-    dev_std   = float(np.std(dev_array, ddof=1)) if frames_accepted > 1 else 0.0
-    dev_min   = float(np.min(dev_array))
-    dev_max   = float(np.max(dev_array))
-    asym_mean = float(np.mean(asym_array))
+    dev_mean      = float(np.mean(dev_array))
+    dev_std       = float(np.std(dev_array, ddof=1)) if frames_accepted > 1 else 0.0
+    dev_min       = float(np.min(dev_array))
+    dev_max       = float(np.max(dev_array))
+    asym_mean     = float(np.mean(asym_array))
+    asym_deg_mean = float(np.mean(asym_deg_array))
 
     # ── Step 5: Confidence tier from std dev ─────────────────
 
@@ -257,12 +272,15 @@ def aggregate_frame_results(
         SEVERITY_MILD_DEG, SEVERITY_MODERATE_DEG, SEVERITY_SEVERE_DEG,
     )
 
-    # Derive severity tier from averaged deviation angle
-    if dev_mean < SEVERITY_MILD_DEG:
+    # Derive severity from averaged ASYMMETRY degrees (not absolute deviation).
+    # This matches the kappa-angle-corrected logic in Module 5:
+    # symmetric eyes (normal kappa) score near 0° asymmetry → NORMAL,
+    # while a truly deviated eye produces a large inter-ocular difference.
+    if asym_deg_mean < SEVERITY_MILD_DEG:
         avg_severity = SEVERITY_NORMAL
-    elif dev_mean < SEVERITY_MODERATE_DEG:
+    elif asym_deg_mean < SEVERITY_MODERATE_DEG:
         avg_severity = SEVERITY_MILD
-    elif dev_mean < SEVERITY_SEVERE_DEG:
+    elif asym_deg_mean < SEVERITY_SEVERE_DEG:
         avg_severity = SEVERITY_MODERATE
     else:
         avg_severity = SEVERITY_SEVERE
@@ -305,9 +323,10 @@ def aggregate_frame_results(
             "urgency_tier":            avg_urgency,
             "condition_name":          avg_condition,
             "icd10_code":              avg_icd10,
-            "deviation_degrees":       round(dev_mean, 2),
-            "deviation_std_deg":       round(dev_std,  2),
-            "asymmetry_score":         round(asym_mean, 4),
+            "deviation_degrees":       round(dev_mean,      2),
+            "deviation_std_deg":       round(dev_std,       2),
+            "asymmetry_score":         round(asym_mean,     4),
+            "asymmetry_degrees":       round(asym_deg_mean, 2),
             "severity":                avg_severity,
             "referral_recommendation": avg_referral,
             "timeframe":               avg_timeframe,

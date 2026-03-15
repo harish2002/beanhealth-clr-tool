@@ -76,7 +76,7 @@ export default function TriageReport({ result, onRetry }: TriageReportProps) {
           <span><span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Urgency</span><span className={`font-bold ${urgencyPrintCol}`}>{r.urgency_tier}</span></span>
           <span><span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Condition</span><span className="font-semibold text-slate-800">{r.condition_name}</span></span>
           <span><span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">ICD-10</span><span className="font-semibold text-slate-800">{r.icd10_code}</span></span>
-          <span><span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Deviation</span><span className="font-semibold text-slate-800">{r.deviation_degrees}°</span></span>
+          <span><span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Asymmetry</span><span className="font-semibold text-slate-800">{r.asymmetry_degrees !== undefined ? `${r.asymmetry_degrees}°` : `${r.deviation_degrees}°`}</span></span>
         </div>
       </div>
 
@@ -197,7 +197,15 @@ export default function TriageReport({ result, onRetry }: TriageReportProps) {
               <h2 className="text-slate-900 font-semibold mb-1">Clinical Measurements</h2>
               <div className="mt-3">
                 <MetricRow
-                  label="Deviation angle"
+                  label="Inter-ocular asymmetry"
+                  value={
+                    r.asymmetry_degrees !== undefined
+                      ? `${r.asymmetry_degrees.toFixed(1)}° (classification signal)`
+                      : `${r.asymmetry_score.toFixed(3)} normalised`
+                  }
+                />
+                <MetricRow
+                  label="Absolute deviation (ref)"
                   value={
                     result.deviation_avg_deg !== undefined
                       ? `${result.deviation_avg_deg.toFixed(1)}° ± ${result.deviation_std_deg?.toFixed(2)}°`
@@ -205,7 +213,6 @@ export default function TriageReport({ result, onRetry }: TriageReportProps) {
                   }
                 />
                 <MetricRow label="Displacement (mm)"    value={`${technical.deviation_mm.toFixed(2)} mm`} />
-                <MetricRow label="Asymmetry score"      value={r.asymmetry_score.toFixed(3)} />
                 <MetricRow label="Severity"             value={r.severity} />
                 <MetricRow label="Dominant eye"         value={technical.dominant_eye} />
                 <MetricRow label="Detection confidence" value={result.aggregate_confidence ?? technical.confidence} />

@@ -51,13 +51,19 @@ class ClinicalResult(BaseModel):
         description="ICD-10 code, e.g. 'H50.01'."
     )
     deviation_degrees: float = Field(
-        description="Hirschberg deviation angle in degrees."
+        description="Hirschberg angle of the dominant eye in degrees (absolute displacement, for reference)."
     )
     asymmetry_score: float = Field(
         description="Normalised asymmetry score (0 = symmetric, higher = more asymmetric)."
     )
+    asymmetry_degrees: float = Field(
+        default=0.0,
+        description="Inter-ocular asymmetry converted to clinical degrees. "
+                    "This is the primary classification signal — it cancels out kappa angle "
+                    "so normal symmetric eyes score near 0° regardless of absolute CLR displacement."
+    )
     severity: Literal["NORMAL", "MILD", "MODERATE", "SEVERE"] = Field(
-        description="Severity tier derived from deviation angle."
+        description="Severity tier derived from asymmetry_degrees (not absolute deviation)."
     )
     referral_recommendation: str = Field(
         description="Plain-text referral instruction."

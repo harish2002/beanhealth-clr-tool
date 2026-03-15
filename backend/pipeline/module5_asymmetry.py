@@ -73,15 +73,21 @@ class AsymmetryResult:
     Asymmetry score and Hirschberg angle for the current image.
 
     asymmetry_score:      The primary clinical red flag (0 = perfect symmetry).
+    asymmetry_degrees:    Asymmetry between eyes converted to clinical degrees.
+                          THIS drives severity — it cancels out kappa angle so
+                          normal symmetric eyes score near 0° regardless of their
+                          absolute CLR displacement.
     dominant_eye:         Which eye has the larger displacement (the squinting eye).
     deviation_degrees:    Hirschberg angle of the dominant eye in clinical degrees.
-    deviation_mm:         Displacement in mm using average iris radius.
-    severity:             NORMAL / MILD / MODERATE / SEVERE
+                          Kept for reference; NOT used for severity classification.
+    deviation_mm:         Physical displacement of dominant eye in mm.
+    severity:             NORMAL / MILD / MODERATE / SEVERE  (from asymmetry_degrees)
     flags:                Propagated flags from upstream modules.
     """
     asymmetry_score:    float   # |left_norm - right_norm|
+    asymmetry_degrees:  float   # asymmetry_score × IRIS_RADIUS_MM × HIRSCHBERG_CONSTANT
     dominant_eye:       str     # "left" | "right" | "equal"
-    deviation_degrees:  float   # Hirschberg angle in degrees
+    deviation_degrees:  float   # Hirschberg angle of dominant eye (reference only)
     deviation_mm:       float   # physical displacement in mm
     severity:           str     # NORMAL / MILD / MODERATE / SEVERE
     flags:              List[str] = field(default_factory=list)
@@ -212,18 +218,36 @@ def compute_asymmetry_and_angle(
     # Step 1: Asymmetry and dominant eye
     asym = compute_asymmetry(left_displacement_norm, right_displacement_norm)
 
-    # Step 2: Hirschberg angle from dominant eye's displacement
+    # Step 2: Hirschberg angle from dominant eye's displacement (kept for display only)
     angle = compute_angle(asym["dominant_norm"])
 
-    # Step 3: Severity tier
-    sev = compute_angle_severity(angle["deviation_degrees"])
+    # Step 3: Hirschberg angle of the ASYMMETRY between eyes.
+    #
+    # Clinical rationale:
+    #   The absolute CLR displacement of each eye includes the kappa angle — a normal
+    #   anatomical offset (≈ 3–7°) between the visual axis and optical axis present in
+    #   ALL humans.  Using the dominant eye's absolute angle therefore over-reports
+    #   deviation in normal patients.
+    #
+    #   By computing the Hirschberg angle of |left_norm - right_norm|, the kappa angle
+    #   cancels out (it is symmetric in both eyes for a fixating patient), leaving only
+    #   the genuine inter-ocular asymmetry that is the true clinical red flag.
+    #
+    #   Normal person with kappa ~5°:  asymmetry ≈ 0–2° → NORMAL  ✓
+    #   True mild esotropia 10°:       asymmetry ≈ 8–12° → MILD   ✓
+    asym_angle = compute_angle(asym["asymmetry_score"])
+    asymmetry_degrees = asym_angle["deviation_degrees"]
 
-    # Additional flag: both eyes have very low displacement → likely NORMAL but low confidence
+    # Step 4: Severity tier — driven by asymmetry_degrees, NOT absolute deviation
+    sev = compute_angle_severity(asymmetry_degrees)
+
+    # Additional flag: both eyes have very low displacement → likely NORMAL
     if left_displacement_norm < 0.05 and right_displacement_norm < 0.05:
         flags.append("very_low_displacement_both")
 
     result = AsymmetryResult(
         asymmetry_score=asym["asymmetry_score"],
+        asymmetry_degrees=round(asymmetry_degrees, 2),
         dominant_eye=asym["dominant_eye"],
         deviation_degrees=angle["deviation_degrees"],
         deviation_mm=angle["deviation_mm"],
@@ -232,9 +256,9 @@ def compute_asymmetry_and_angle(
     )
 
     logger.info(
-        f"[M5] asymmetry={result.asymmetry_score:.4f}, "
+        f"[M5] asymmetry={result.asymmetry_score:.4f} ({result.asymmetry_degrees:.2f}°), "
         f"dominant={result.dominant_eye}, "
-        f"angle={result.deviation_degrees:.2f}°, "
+        f"abs_angle={result.deviation_degrees:.2f}°, "
         f"severity={result.severity}"
     )
 

@@ -24,8 +24,11 @@ export interface ClinicalResult {
   urgency_tier:            UrgencyTier;
   condition_name:          string;
   icd10_code:              string;
+  /** Dominant eye absolute displacement — includes kappa angle, for reference only */
   deviation_degrees:       number;
   asymmetry_score:         number;
+  /** Inter-ocular asymmetry in clinical degrees — the primary classification signal */
+  asymmetry_degrees:       number;
   severity:                SeverityTier;
   referral_recommendation: string;
   timeframe:               string;

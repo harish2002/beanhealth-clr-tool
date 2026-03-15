@@ -509,6 +509,7 @@ def build_success_report(
             "icd10_code":              classification.icd10_code,
             "deviation_degrees":       round(asymmetry.deviation_degrees, 2),
             "asymmetry_score":         round(asymmetry.asymmetry_score,   4),
+            "asymmetry_degrees":       round(asymmetry.asymmetry_degrees, 2),
             "severity":                asymmetry.severity,
             "referral_recommendation": classification.referral_recommendation,
             "timeframe":               classification.timeframe,
