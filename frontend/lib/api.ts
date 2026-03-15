@@ -10,7 +10,7 @@
  */
 
 import axios, { AxiosError } from "axios";
-import type { AnalyseResponse } from "./types";
+import type { AnalyseResponse, StreamAnalyseResponse } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
@@ -103,6 +103,41 @@ export async function analyseImage(
       throw new Error("TIMEOUT");
     }
 
+    throw new Error("NETWORK_ERROR");
+  }
+}
+
+// ─── Multi-frame streaming analysis ─────────────────────────────────────────
+
+export async function analyseStream(
+  frames:      File[],
+  patientName: string,
+  patientAge:  number,
+): Promise<StreamAnalyseResponse> {
+  const form = new FormData();
+  frames.forEach((f) => form.append("images", f));
+  form.append("patient_name", patientName);
+  form.append("patient_age",  String(patientAge));
+
+  try {
+    const response = await axios.post<StreamAnalyseResponse>(
+      `${API_URL}/analyse-stream`,
+      form,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 120_000,  // 2 min — processing 10 frames takes longer
+      },
+    );
+    return response.data;
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    if (axiosErr.response) {
+      const data = axiosErr.response.data as StreamAnalyseResponse;
+      if (data?.status) return data;
+    }
+    if (axiosErr.code === "ECONNABORTED" || axiosErr.message.toLowerCase().includes("timeout")) {
+      throw new Error("TIMEOUT");
+    }
     throw new Error("NETWORK_ERROR");
   }
 }

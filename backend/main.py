@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import io
 import logging
+from typing import List
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -28,12 +29,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from PIL import Image
 
+from datetime import datetime, timezone
+
 from models.response import (
     AnalyseResponse,
     ErrorResponse,
     InconclusiveResponse,
     SuccessResponse,
 )
+from models.stream_response import StreamAnalyseResponse
+from pipeline.module_aggregate import aggregate_frame_results
 from pipeline.module1_detection    import detect_and_crop_eyes
 from pipeline.module2_pupil        import localise_pupils
 from pipeline.module3_clr          import detect_clr
@@ -266,3 +271,177 @@ async def analyse(
         )
         logger.exception(f"[API] Unexpected pipeline crash: {e}")
         return JSONResponse(content=report, status_code=500)
+
+
+# ─────────────────────────────────────────────────────────────
+# POST /analyse-stream  — multi-frame averaged analysis
+# ─────────────────────────────────────────────────────────────
+
+async def _run_single_frame_pipeline(
+    img_rgb:      np.ndarray,
+    patient_name: str,
+    patient_age:  int,
+) -> dict:
+    """Run the full 7-module pipeline on one frame. Always returns a report dict."""
+    try:
+        detection    = detect_and_crop_eyes(img_rgb)
+        pupil_result = localise_pupils(
+            left_crop=detection.left_crop,
+            right_crop=detection.right_crop,
+            left_iris_landmarks_orig=detection.left_iris_landmarks,
+            right_iris_landmarks_orig=detection.right_iris_landmarks,
+            left_crop_box=detection.left_crop_box,
+            right_crop_box=detection.right_crop_box,
+        )
+        clr_result   = detect_clr(
+            left_crop=detection.left_crop,
+            right_crop=detection.right_crop,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
+            left_pupil=pupil_result.left_pupil,
+            right_pupil=pupil_result.right_pupil,
+        )
+        upstream_flags = pupil_result.flags + clr_result.flags
+        displacement = compute_displacement(
+            left_pupil=pupil_result.left_pupil,
+            right_pupil=pupil_result.right_pupil,
+            left_clr=clr_result.left_clr,
+            right_clr=clr_result.right_clr,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
+            upstream_flags=upstream_flags,
+        )
+        asymmetry    = compute_asymmetry_and_angle(
+            left_displacement_norm=displacement.left_displacement_norm,
+            right_displacement_norm=displacement.right_displacement_norm,
+            upstream_flags=displacement.flags,
+        )
+        dominant_dir = (
+            displacement.left_direction if asymmetry.dominant_eye != "right"
+            else displacement.right_direction
+        )
+        classification = classify_strabismus(
+            dominant_direction=dominant_dir,
+            severity=asymmetry.severity,
+            asymmetry_score=asymmetry.asymmetry_score,
+            upstream_flags=asymmetry.flags,
+        )
+        return generate_report(
+            patient_name=patient_name,
+            patient_age=patient_age,
+            original_img=img_rgb,
+            detection=detection,
+            pupil_result=pupil_result,
+            clr_result=clr_result,
+            displacement=displacement,
+            asymmetry=asymmetry,
+            classification=classification,
+        )
+    except Exception as e:
+        return generate_report(
+            patient_name=patient_name,
+            patient_age=patient_age,
+            original_img=None,
+            error=e,
+        )
+
+
+@app.post(
+    "/analyse-stream",
+    tags=["Analysis"],
+    summary="Multi-frame averaged CLR analysis (10-frame streaming mode)",
+    response_description="Aggregated SUCCESS / INCONCLUSIVE / ERROR report",
+)
+async def analyse_stream(
+    images:       List[UploadFile] = File(..., description="List of JPEG frames captured over ~10 seconds"),
+    patient_name: str              = Form(..., min_length=1, max_length=100),
+    patient_age:  int              = Form(..., ge=1, le=120),
+) -> JSONResponse:
+    """
+    Accept N frames captured during a streaming session, run the full 7-module
+    pipeline on each frame, reject bad frames (blinks, outliers, low confidence),
+    and return a statistically averaged result.
+
+    **Request:** `multipart/form-data` with:
+    - `images[]`     — list of JPEG frames (typically 10, captured ~1 per second)
+    - `patient_name` — patient's name
+    - `patient_age`  — patient's age in years
+
+    **Response 200 — SUCCESS:**
+    Aggregated report with mean deviation ± std dev, per-frame readings,
+    and intermediate images from the best-quality frame.
+
+    **Response 200 — INCONCLUSIVE:**
+    Fewer than 3 usable frames — user needs to retry with better positioning.
+    """
+    from typing import List as TList
+    patient_name = patient_name.strip()
+    timestamp    = datetime.now(timezone.utc).isoformat()
+
+    logger.info(
+        f"[API] /analyse-stream — patient='{patient_name}' age={patient_age} "
+        f"frames={len(images)}"
+    )
+
+    if not images:
+        return JSONResponse(
+            content={
+                "status": "INCONCLUSIVE",
+                "reason": "no_frames",
+                "reason_human": "No frames were received. Please try again.",
+                "frames_total": 0, "frames_accepted": 0, "frames_rejected": 0,
+                "per_frame_readings": [],
+                "flags": ["no_frames"],
+                "timestamp": timestamp,
+            },
+            status_code=200,
+        )
+
+    # ── Process each frame through the full pipeline ──────────
+    frame_reports: TList[dict] = []
+    for i, upload in enumerate(images):
+        try:
+            img_rgb = await _load_image(upload)
+        except HTTPException:
+            # Unreadable frame — treat as failed pipeline frame
+            frame_reports.append({
+                "status": "INCONCLUSIVE",
+                "reason": "invalid_image",
+                "reason_human": f"Frame {i} could not be decoded.",
+            })
+            continue
+
+        report = await _run_single_frame_pipeline(img_rgb, patient_name, patient_age)
+        frame_reports.append(report)
+        logger.debug(
+            f"[API] Frame {i}: status={report.get('status')} "
+            f"deviation={report.get('result', {}).get('deviation_degrees', 'N/A')}"
+        )
+
+    # ── Aggregate across frames ───────────────────────────────
+    try:
+        aggregated = aggregate_frame_results(frame_reports)
+    except Exception as e:
+        logger.exception(f"[API] Aggregation crash: {e}")
+        return JSONResponse(
+            content={
+                "status": "ERROR",
+                "message": "An unexpected error occurred during aggregation. Please retry.",
+                "patient": {"name": patient_name, "age": patient_age},
+                "timestamp": timestamp,
+            },
+            status_code=500,
+        )
+
+    aggregated["patient"]   = {"name": patient_name, "age": patient_age}
+    aggregated["timestamp"] = timestamp
+
+    logger.info(
+        f"[API] /analyse-stream DONE — status={aggregated['status']} "
+        f"accepted={aggregated.get('frames_accepted', 0)}/{len(images)} "
+        f"avg_deg={aggregated.get('deviation_avg_deg', 'N/A')} "
+        f"std={aggregated.get('deviation_std_deg', 'N/A')} "
+        f"confidence={aggregated.get('aggregate_confidence', 'N/A')}"
+    )
+
+    return JSONResponse(content=aggregated, status_code=200)

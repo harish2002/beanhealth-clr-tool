@@ -3,14 +3,13 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
-import { analyseImage } from "@/lib/api";
-import CameraCapture from "@/components/CameraCapture";
+import StreamingCapture from "@/components/StreamingCapture";
+import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
 
 export default function CapturePage() {
   const router = useRouter();
-  const patientName = useAppStore((s) => s.patientName);
-  const patientAge  = useAppStore((s) => s.patientAge);
-  const setCapturedImage  = useAppStore((s) => s.setCapturedImage);
+  const patientName       = useAppStore((s) => s.patientName);
+  const patientAge        = useAppStore((s) => s.patientAge);
   const setAnalysisResult = useAppStore((s) => s.setAnalysisResult);
   const setLoading        = useAppStore((s) => s.setLoading);
   const setError          = useAppStore((s) => s.setError);
@@ -22,38 +21,55 @@ export default function CapturePage() {
     }
   }, [patientName, patientAge, router]);
 
-  async function handleCapture(dataUrl: string, file: File) {
-    if (!patientName || patientAge === null) return;
-
-    setCapturedImage(dataUrl, file);
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await analyseImage(file, patientName, patientAge);
-      setAnalysisResult(result);
-      setLoading(false);
-      router.push("/result");
-    } catch (err) {
-      setLoading(false);
-      if (err instanceof Error) {
-        if (err.message === "TIMEOUT") {
-          setError("The analysis timed out. Please check your connection and try again.");
-        } else {
-          setError("Could not reach the server. Please check your connection and try again.");
-        }
-      }
-      router.push("/result");
-    }
+  function handleSuccess(result: StreamSuccessResponse) {
+    // Spread stream result first, then override the AnalyseResponse required fields
+    // so there are no duplicate key conflicts
+    setAnalysisResult({
+      ...result,
+      status:              "SUCCESS",
+      patient:             result.patient,
+      result:              result.result,
+      technical:           result.technical,
+      intermediate_images: result.intermediate_images,
+      annotated_image_b64: result.annotated_image_b64 ?? "",
+      timestamp:           result.timestamp,
+    });
+    setLoading(false);
+    router.push("/result");
   }
 
+  function handleInconclusive(result: StreamInconclusiveResponse) {
+    setAnalysisResult({
+      status:       "INCONCLUSIVE",
+      reason:       result.reason,
+      reason_human: result.reason_human,
+      flags:        result.flags,
+      patient:      result.patient,
+      timestamp:    result.timestamp,
+    });
+    setLoading(false);
+    router.push("/result");
+  }
+
+  function handleError(message: string) {
+    setLoading(false);
+    if (message === "TIMEOUT") {
+      setError("The analysis timed out. Please check your connection and try again.");
+    } else {
+      setError(message || "Could not reach the server. Please check your connection and try again.");
+    }
+    router.push("/result");
+  }
+
+  if (!patientName || patientAge === null) return null;
+
   return (
-    <div className="h-screen flex flex-col bg-black">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-4 bg-black/80 backdrop-blur-sm z-10">
+      <div className="flex items-center justify-between px-5 py-4 bg-white border-b border-slate-100">
         <button
           onClick={() => router.push("/")}
-          className="text-slate-400 hover:text-white transition-colors"
+          className="text-slate-400 hover:text-slate-700 transition-colors"
           aria-label="Go back"
         >
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -62,23 +78,22 @@ export default function CapturePage() {
         </button>
 
         <div className="text-center">
-          <p className="text-white text-sm font-medium">{patientName}</p>
-          <p className="text-slate-400 text-xs">Age {patientAge}</p>
+          <p className="text-slate-800 text-sm font-semibold">{patientName}</p>
+          <p className="text-slate-400 text-xs">Age {patientAge} · 10-Frame Analysis</p>
         </div>
 
-        <div className="w-6" />  {/* spacer */}
+        <div className="w-6" />
       </div>
 
-      {/* Camera — fills remaining height */}
-      <div className="flex-1 overflow-hidden">
-        <CameraCapture onCapture={handleCapture} />
-      </div>
-
-      {/* Instructions strip */}
-      <div className="bg-black px-5 py-3 text-center">
-        <p className="text-slate-400 text-xs">
-          Align both eyes inside the oval guide. Tap the shutter button to capture.
-        </p>
+      {/* Body */}
+      <div className="flex-1 px-4 py-6">
+        <StreamingCapture
+          patientName={patientName}
+          patientAge={patientAge}
+          onSuccess={handleSuccess}
+          onInconclusive={handleInconclusive}
+          onError={handleError}
+        />
       </div>
     </div>
   );

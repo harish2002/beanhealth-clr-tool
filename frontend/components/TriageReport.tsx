@@ -1,15 +1,29 @@
 "use client";
 
-import type { SuccessResponse } from "@/lib/types";
+import type { SuccessResponse, StreamSuccessResponse } from "@/lib/types";
 import { URGENCY_CONFIG } from "@/lib/types";
 import UrgencyBadge from "./UrgencyBadge";
 import AnnotatedEye from "./AnnotatedEye";
 import ProcessingSteps from "./ProcessingSteps";
 
+// TriageReport accepts either a single-frame or multi-frame result
+type AnySuccessResult = SuccessResponse & Partial<Pick<StreamSuccessResponse,
+  | "frames_total" | "frames_accepted" | "frames_rejected"
+  | "per_frame_readings" | "deviation_avg_deg" | "deviation_std_deg"
+  | "deviation_min_deg" | "deviation_max_deg" | "aggregate_confidence"
+>>;
+
 interface TriageReportProps {
-  result:  SuccessResponse;
+  result:  AnySuccessResult;
   onRetry: () => void;
 }
+
+// Confidence colour for the streaming badge
+const CONF_COLOUR: Record<string, string> = {
+  HIGH:   "bg-emerald-100 text-emerald-700 border-emerald-200",
+  MEDIUM: "bg-amber-100   text-amber-700   border-amber-200",
+  LOW:    "bg-red-100     text-red-700     border-red-200",
+};
 
 // Urgency → print-safe text colour (readable on white paper)
 const URGENCY_PRINT_COLOUR: Record<string, string> = {
@@ -170,18 +184,86 @@ export default function TriageReport({ result, onRetry }: TriageReportProps) {
           </div>
         )}
 
+        {/* ── Streaming stats card (only shown for multi-frame results) ── */}
+        {result.frames_total !== undefined && result.frames_total > 1 && (
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 print:hidden">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-slate-900 font-semibold">10-Frame Analysis</h2>
+              {result.aggregate_confidence && (
+                <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${CONF_COLOUR[result.aggregate_confidence] ?? ""}`}>
+                  {result.aggregate_confidence} confidence
+                </span>
+              )}
+            </div>
+
+            {/* Deviation average ± std */}
+            <div className="flex items-baseline gap-1 mb-1">
+              <span className="text-3xl font-bold text-slate-900">
+                {result.deviation_avg_deg?.toFixed(1)}°
+              </span>
+              {result.deviation_std_deg !== undefined && (
+                <span className="text-slate-400 text-sm font-medium">
+                  ± {result.deviation_std_deg.toFixed(2)}° std dev
+                </span>
+              )}
+            </div>
+            {result.deviation_min_deg !== undefined && result.deviation_max_deg !== undefined && (
+              <p className="text-slate-400 text-xs mb-4">
+                Range: {result.deviation_min_deg.toFixed(1)}° – {result.deviation_max_deg.toFixed(1)}°
+              </p>
+            )}
+
+            {/* Frame strip */}
+            {result.per_frame_readings && (
+              <div>
+                <p className="text-slate-500 text-xs mb-2 font-medium">
+                  Per-frame readings ({result.frames_accepted} accepted, {result.frames_rejected} rejected)
+                </p>
+                <div className="flex gap-1.5 flex-wrap">
+                  {result.per_frame_readings.map((v, i) => (
+                    <div
+                      key={i}
+                      className={`flex flex-col items-center justify-center w-9 h-10 rounded-lg border text-xs font-semibold ${
+                        v !== null
+                          ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                          : "bg-slate-100 border-slate-200 text-slate-400"
+                      }`}
+                    >
+                      <span className="text-[9px] text-slate-400 font-normal">f{i + 1}</span>
+                      <span>{v !== null ? `${v}°` : "✕"}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Clinical measurements */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
           <h2 className="text-slate-900 font-semibold mb-1 print:text-slate-900">
             Clinical Measurements
           </h2>
           <div className="mt-3">
-            <MetricRow label="Deviation angle"      value={`${r.deviation_degrees}°`} />
+            <MetricRow
+              label="Deviation angle"
+              value={
+                result.deviation_avg_deg !== undefined
+                  ? `${result.deviation_avg_deg.toFixed(1)}° ± ${result.deviation_std_deg?.toFixed(2)}°`
+                  : `${r.deviation_degrees}°`
+              }
+            />
             <MetricRow label="Displacement (mm)"    value={`${technical.deviation_mm.toFixed(2)} mm`} />
             <MetricRow label="Asymmetry score"      value={r.asymmetry_score.toFixed(3)} />
             <MetricRow label="Severity"             value={r.severity} />
             <MetricRow label="Dominant eye"         value={technical.dominant_eye} />
-            <MetricRow label="Detection confidence" value={technical.confidence} />
+            <MetricRow label="Detection confidence" value={result.aggregate_confidence ?? technical.confidence} />
+            {result.frames_total !== undefined && (
+              <MetricRow
+                label="Frames used"
+                value={`${result.frames_accepted} / ${result.frames_total}`}
+              />
+            )}
           </div>
         </div>
 

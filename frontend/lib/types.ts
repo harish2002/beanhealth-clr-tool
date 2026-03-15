@@ -86,6 +86,47 @@ export interface ErrorResponse {
 
 export type AnalyseResponse = SuccessResponse | InconclusiveResponse | ErrorResponse;
 
+// ─── Stream (multi-frame) response shapes ────────────────────────────────────
+
+export interface StreamClinicalResult extends ClinicalResult {
+  deviation_std_deg: number;
+}
+
+export interface StreamSuccessResponse {
+  status:               "SUCCESS";
+  patient:              PatientInfo;
+  frames_total:         number;
+  frames_accepted:      number;
+  frames_rejected:      number;
+  per_frame_readings:   (number | null)[];
+  deviation_avg_deg:    number;
+  deviation_std_deg:    number;
+  deviation_min_deg:    number;
+  deviation_max_deg:    number;
+  asymmetry_avg:        number;
+  aggregate_confidence: Confidence;
+  result:               StreamClinicalResult;
+  technical:            TechnicalDetail;
+  intermediate_images?: IntermediateImages;
+  annotated_image_b64?: string;
+  timestamp:            string;
+}
+
+export interface StreamInconclusiveResponse {
+  status:             "INCONCLUSIVE";
+  reason:             string;
+  reason_human:       string;
+  patient?:           PatientInfo;
+  frames_total:       number;
+  frames_accepted:    number;
+  frames_rejected:    number;
+  per_frame_readings: (number | null)[];
+  flags:              string[];
+  timestamp:          string;
+}
+
+export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;
+
 // ─── UI state ────────────────────────────────────────────────────────────────
 
 export interface AppState {
