@@ -50,10 +50,12 @@ export interface TechnicalDetail {
 // ─── Top-level response shapes ───────────────────────────────────────────────
 
 export interface IntermediateImages {
-  module1_crops:  string;
-  module2_pupil:  string;
-  module3_clr:    string;
-  module4_vector: string;
+  module1_crops:  string;  // Raw eye crops
+  module2_clahe:  string;  // Grayscale + CLAHE enhancement
+  module3_pupil:  string;  // Pupil centre (blue dot + iris ring)
+  module4_clr:    string;  // CLR bright spot (amber dot)
+  module5_vector: string;  // Displacement vector + measurement
+  module6_result: string;  // Final annotated image with clinical overlay
 }
 
 export interface SuccessResponse {

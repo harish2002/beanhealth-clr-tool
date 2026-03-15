@@ -93,12 +93,14 @@ class TechnicalDetail(BaseModel):
 
 
 class IntermediateImages(BaseModel):
-    """Zoomed-in eye crops showing the processing steps."""
-    
-    module1_crops: str = Field(description="Base64 image array showing detected eye crops.")
-    module2_pupil: str = Field(description="Base64 image array showing pupil centre localisation.")
-    module3_clr:   str = Field(description="Base64 image array showing corneal light reflex.")
-    module4_vector: str = Field(description="Base64 image array showing displacement vector.")
+    """Six-step pipeline visualisation — one image per processing stage."""
+
+    module1_crops:  str = Field(description="Step 1: Raw eye crops extracted by MediaPipe face mesh.")
+    module2_clahe:  str = Field(description="Step 2: Grayscale + CLAHE contrast enhancement — makes CLR visible.")
+    module3_pupil:  str = Field(description="Step 3: Pupil centre localised (blue dot + iris ring).")
+    module4_clr:    str = Field(description="Step 4: Corneal light reflex detected (amber dot).")
+    module5_vector: str = Field(description="Step 5: Displacement vector drawn from pupil to CLR, with measurement.")
+    module6_result: str = Field(description="Step 6: Final annotated image with deviation angle and clinical summary.")
 
 
 # ─────────────────────────────────────────────────────────────

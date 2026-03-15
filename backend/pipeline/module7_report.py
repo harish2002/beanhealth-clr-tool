@@ -164,27 +164,104 @@ def _draw_zoomed_annotations(
     pupil: Optional[Tuple[float, float]] = None,
     clr: Optional[Tuple[float, float]] = None,
     iris_r: Optional[float] = None,
-    draw_vector: bool = False
+    draw_vector: bool = False,
+    side_label: Optional[str] = None,
+    measurement_label: Optional[str] = None,
 ) -> np.ndarray:
     """Helper to draw annotations directly onto an eye crop for the UI."""
     out = crop.copy()
-    
+
     if iris_r and pupil:
         cv2.circle(out, (int(pupil[0]), int(pupil[1])), int(iris_r), _COLOUR_IRIS_RING, 1, cv2.LINE_AA)
-        
+
     if draw_vector and pupil and clr:
         if pupil != clr:
-            cv2.line(out, (int(pupil[0]), int(pupil[1])), (int(clr[0]), int(clr[1])), _COLOUR_VECTOR, 1, cv2.LINE_AA)
+            cv2.line(out, (int(pupil[0]), int(pupil[1])), (int(clr[0]), int(clr[1])), _COLOUR_VECTOR, 2, cv2.LINE_AA)
 
     if clr:
         cv2.circle(out, (int(clr[0]), int(clr[1])), 4, _COLOUR_CLR, -1, cv2.LINE_AA)
-        cv2.circle(out, (int(clr[0]), int(clr[1])), 5, (255,255,255), 1, cv2.LINE_AA)
+        cv2.circle(out, (int(clr[0]), int(clr[1])), 5, (255, 255, 255), 1, cv2.LINE_AA)
 
     if pupil:
         cv2.circle(out, (int(pupil[0]), int(pupil[1])), 4, _COLOUR_PUPIL, -1, cv2.LINE_AA)
-        cv2.circle(out, (int(pupil[0]), int(pupil[1])), 5, (255,255,255), 1, cv2.LINE_AA)
-        
+        cv2.circle(out, (int(pupil[0]), int(pupil[1])), 5, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Side label (L / R) — top-left corner
+    if side_label:
+        _draw_label(out, side_label, (5, 14), colour=(220, 220, 220), scale=0.45, thickness=1)
+
+    # Measurement label — bottom-left corner
+    if measurement_label:
+        h = out.shape[0]
+        _draw_label(out, measurement_label, (4, h - 5), colour=(255, 235, 80), scale=0.40, thickness=1)
+
     return out
+
+
+def _generate_grayscale_clahe_crops(
+    left_crop: np.ndarray,
+    right_crop: np.ndarray,
+) -> str:
+    """
+    Convert both eye crops to grayscale and apply CLAHE contrast enhancement.
+    Returns side-by-side crops as base64 JPEG.
+
+    This preprocessing step boosts the bright CLR spot against the iris so the
+    percentile threshold in Module 3 can isolate it reliably.
+    """
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+
+    left_gray      = cv2.cvtColor(left_crop,  cv2.COLOR_RGB2GRAY)
+    right_gray     = cv2.cvtColor(right_crop, cv2.COLOR_RGB2GRAY)
+    left_enhanced  = clahe.apply(left_gray)
+    right_enhanced = clahe.apply(right_gray)
+
+    left_rgb  = cv2.cvtColor(left_enhanced,  cv2.COLOR_GRAY2RGB)
+    right_rgb = cv2.cvtColor(right_enhanced, cv2.COLOR_GRAY2RGB)
+
+    # Add L / R labels
+    _draw_label(left_rgb,  "L", (5, 14), colour=(220, 220, 220), scale=0.45)
+    _draw_label(right_rgb, "R", (5, 14), colour=(220, 220, 220), scale=0.45)
+
+    return combine_crops_to_base64(left_rgb, right_rgb)
+
+
+def _generate_result_overlay(
+    annotated_img:  np.ndarray,
+    asymmetry:      AsymmetryResult,
+    classification: ClassificationResult,
+    displacement:   DisplacementResult,
+) -> str:
+    """
+    Final step image: full annotated image with a semi-transparent banner
+    showing deviation angle, asymmetry score, condition, ICD-10, and
+    per-eye displacement — everything a judge needs at a glance.
+    """
+    result = annotated_img.copy()
+    h, w   = result.shape[:2]
+
+    # Semi-transparent dark bar at the bottom
+    bar_h   = 58
+    overlay = result.copy()
+    cv2.rectangle(overlay, (0, h - bar_h), (w, h), (10, 10, 10), -1)
+    cv2.addWeighted(overlay, 0.72, result, 0.28, 0, result)
+
+    # Line 1 — deviation angle + asymmetry score (large, yellow)
+    line1 = f"{asymmetry.deviation_degrees:.1f} deg  |  asymmetry {asymmetry.asymmetry_score:.3f}"
+    _draw_label(result, line1, (12, h - bar_h + 17), colour=(255, 235, 80), scale=0.50, thickness=1)
+
+    # Line 2 — condition + ICD-10 + urgency tier
+    line2 = f"{classification.condition_name}  |  {classification.icd10_code}  |  {classification.urgency_tier}"
+    _draw_label(result, line2, (12, h - bar_h + 34), colour=(200, 200, 200), scale=0.42, thickness=1)
+
+    # Line 3 — per-eye displacement in iris radii
+    line3 = (
+        f"L: {displacement.left_displacement_norm:.3f} iris-r  "
+        f"R: {displacement.right_displacement_norm:.3f} iris-r"
+    )
+    _draw_label(result, line3, (12, h - bar_h + 50), colour=(160, 160, 160), scale=0.38, thickness=1)
+
+    return _image_to_base64_jpeg(result)
 
 
 def _draw_urgency_border(img: np.ndarray, urgency_tier: str) -> np.ndarray:
@@ -373,22 +450,52 @@ def build_success_report(
     )
     img_b64 = _image_to_base64_jpeg(annotated_img)
 
-    # Generate Intermediate Zoomed Images
-    m1_left = detection.left_crop
+    # ── Intermediate pipeline images (6 steps) ───────────────────
+
+    m1_left  = detection.left_crop
     m1_right = detection.right_crop
-    m1_b64 = combine_crops_to_base64(m1_left, m1_right)
-    
-    m2_left = _draw_zoomed_annotations(m1_left, pupil=pupil_result.left_pupil, iris_r=pupil_result.left_iris_radius)
-    m2_right = _draw_zoomed_annotations(m1_right, pupil=pupil_result.right_pupil, iris_r=pupil_result.right_iris_radius)
-    m2_b64 = combine_crops_to_base64(m2_left, m2_right)
-    
-    m3_left = _draw_zoomed_annotations(m1_left, clr=clr_result.left_clr)
-    m3_right = _draw_zoomed_annotations(m1_right, clr=clr_result.right_clr)
-    m3_b64 = combine_crops_to_base64(m3_left, m3_right)
-    
-    m4_left = _draw_zoomed_annotations(m1_left, pupil=pupil_result.left_pupil, clr=clr_result.left_clr, draw_vector=True)
-    m4_right = _draw_zoomed_annotations(m1_right, pupil=pupil_result.right_pupil, clr=clr_result.right_clr, draw_vector=True)
-    m4_b64 = combine_crops_to_base64(m4_left, m4_right)
+
+    # Step 1 — raw eye crops with L/R labels
+    m1_left_labelled  = _draw_zoomed_annotations(m1_left,  side_label="L")
+    m1_right_labelled = _draw_zoomed_annotations(m1_right, side_label="R")
+    m1_b64 = combine_crops_to_base64(m1_left_labelled, m1_right_labelled)
+
+    # Step 2 — grayscale + CLAHE contrast enhancement
+    m2_b64 = _generate_grayscale_clahe_crops(m1_left, m1_right)
+
+    # Step 3 — pupil centre localisation (blue dot + iris ring)
+    m3_left  = _draw_zoomed_annotations(m1_left,  pupil=pupil_result.left_pupil,  iris_r=pupil_result.left_iris_radius,  side_label="L")
+    m3_right = _draw_zoomed_annotations(m1_right, pupil=pupil_result.right_pupil, iris_r=pupil_result.right_iris_radius, side_label="R")
+    m3_b64   = combine_crops_to_base64(m3_left, m3_right)
+
+    # Step 4 — CLR bright spot detection (amber dot)
+    m4_left  = _draw_zoomed_annotations(m1_left,  clr=clr_result.left_clr,  side_label="L")
+    m4_right = _draw_zoomed_annotations(m1_right, clr=clr_result.right_clr, side_label="R")
+    m4_b64   = combine_crops_to_base64(m4_left, m4_right)
+
+    # Step 5 — displacement vector with per-eye measurements
+    l_disp_norm = round(displacement.left_displacement_norm,  3)
+    r_disp_norm = round(displacement.right_displacement_norm, 3)
+    m5_left  = _draw_zoomed_annotations(
+        m1_left,
+        pupil=pupil_result.left_pupil,  clr=clr_result.left_clr,
+        iris_r=pupil_result.left_iris_radius,
+        draw_vector=True,
+        side_label="L",
+        measurement_label=f"{l_disp_norm}r",
+    )
+    m5_right = _draw_zoomed_annotations(
+        m1_right,
+        pupil=pupil_result.right_pupil, clr=clr_result.right_clr,
+        iris_r=pupil_result.right_iris_radius,
+        draw_vector=True,
+        side_label="R",
+        measurement_label=f"{r_disp_norm}r",
+    )
+    m5_b64 = combine_crops_to_base64(m5_left, m5_right)
+
+    # Step 6 — final annotated full image with clinical measurements overlay
+    m6_b64 = _generate_result_overlay(annotated_img, asymmetry, classification, displacement)
 
     report = {
         "status": "SUCCESS",
@@ -422,10 +529,12 @@ def build_success_report(
             "flags":                    all_flags,
         },
         "intermediate_images": {
-            "module1_crops": m1_b64,
-            "module2_pupil": m2_b64,
-            "module3_clr":   m3_b64,
-            "module4_vector": m4_b64
+            "module1_crops":  m1_b64,
+            "module2_clahe":  m2_b64,
+            "module3_pupil":  m3_b64,
+            "module4_clr":    m4_b64,
+            "module5_vector": m5_b64,
+            "module6_result": m6_b64,
         },
         "annotated_image_b64": img_b64,
         "timestamp":           _timestamp(),
