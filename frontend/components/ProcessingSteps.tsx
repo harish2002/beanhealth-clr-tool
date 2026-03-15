@@ -84,6 +84,7 @@ export default function ProcessingSteps({ intermediateImages }: ProcessingStepsP
             >
               {/* Image */}
               <div className={`w-full bg-black overflow-hidden flex items-center justify-center${isWide ? ' aspect-[3/1]' : ' aspect-[2/1]'}`}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={`data:image/jpeg;base64,${imageB64}`}
                   alt={step.title}

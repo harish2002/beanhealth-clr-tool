@@ -254,39 +254,6 @@ export default function StreamingCapture({
     });
   }
 
-  // ── Start the 10-frame capture sequence ───────────────────
-
-  const startCapture = useCallback(async () => {
-    if (!eyesDetected) return;
-
-    framesRef.current = [];
-    capturingRef.current = true;
-    setStatus("capturing");
-    setCountdown(TOTAL_FRAMES);
-    setCapturedCount(0);
-
-    let remaining = TOTAL_FRAMES;
-
-    intervalRef.current = setInterval(async () => {
-      if (!capturingRef.current) return;
-
-      const blob = await captureFrame();
-      if (blob) {
-        framesRef.current.push(blob);
-        setCapturedCount((c) => c + 1);
-      }
-
-      remaining -= 1;
-      setCountdown(remaining);
-
-      if (remaining <= 0) {
-        clearInterval(intervalRef.current!);
-        capturingRef.current = false;
-        submitFrames();
-      }
-    }, FRAME_INTERVAL_MS);
-  }, [eyesDetected]);
-
   // ── Send frames to /analyse-stream ───────────────────────
 
   const submitFrames = useCallback(async () => {
@@ -318,6 +285,39 @@ export default function StreamingCapture({
       onError(msg);
     }
   }, [patientName, patientAge, onSuccess, onInconclusive, onError, stopCamera]);
+
+  // ── Start the 10-frame capture sequence ───────────────────
+
+  const startCapture = useCallback(async () => {
+    if (!eyesDetected) return;
+
+    framesRef.current = [];
+    capturingRef.current = true;
+    setStatus("capturing");
+    setCountdown(TOTAL_FRAMES);
+    setCapturedCount(0);
+
+    let remaining = TOTAL_FRAMES;
+
+    intervalRef.current = setInterval(async () => {
+      if (!capturingRef.current) return;
+
+      const blob = await captureFrame();
+      if (blob) {
+        framesRef.current.push(blob);
+        setCapturedCount((c) => c + 1);
+      }
+
+      remaining -= 1;
+      setCountdown(remaining);
+
+      if (remaining <= 0) {
+        clearInterval(intervalRef.current!);
+        capturingRef.current = false;
+        submitFrames();
+      }
+    }, FRAME_INTERVAL_MS);
+  }, [eyesDetected, submitFrames]);
 
   // ── Cleanup on unmount ────────────────────────────────────
 
@@ -450,7 +450,7 @@ export default function StreamingCapture({
         <div className="w-full bg-slate-50 rounded-xl border border-slate-100 p-4">
           <p className="text-slate-700 text-xs font-medium mb-2">How to get the best result</p>
           <ul className="space-y-1 text-slate-500 text-xs">
-            <li>• Hold the phone <strong>30 cm</strong> from the patient's face</li>
+            <li>• Hold the phone <strong>30 cm</strong> from the patient&apos;s face</li>
             <li>• Ensure <strong>torch is on</strong> — you should see reflections in both eyes</li>
             <li>• Keep <strong>eyes open and looking straight</strong> at the camera</li>
             <li>• The app captures <strong>10 frames over 10 seconds</strong> and averages them</li>
