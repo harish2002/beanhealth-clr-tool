@@ -10,7 +10,7 @@ import type { SuccessResponse, InconclusiveResponse } from "@/lib/types";
 function LoadingScreen() {
   const steps = ["Detecting eyes", "Locating pupils", "Finding CLR", "Measuring"];
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-6 px-6">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 gap-6 px-6 text-center">
       {/* Spinner */}
       <div className="relative w-20 h-20">
         <div className="absolute inset-0 rounded-full border-4 border-blue-100" />
@@ -70,35 +70,32 @@ function InconclusiveScreen({
   const icon = REASON_ICON[result.reason] ?? "⚠";
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 gap-6">
-      {/* Icon */}
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 gap-6 text-center">
       <div className="w-20 h-20 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center">
         <span className="text-3xl">{icon}</span>
       </div>
 
-      {/* Message */}
-      <div className="text-center max-w-xs">
+      <div className="max-w-sm">
         <h2 className="text-slate-900 text-xl font-bold mb-2">Screening Incomplete</h2>
         <p className="text-slate-600 text-sm leading-relaxed">{result.reason_human}</p>
       </div>
 
-      {/* Flags */}
       {result.flags.length > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-500 font-mono shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-500 font-mono shadow-sm max-w-sm w-full">
           {result.flags.join(" · ")}
         </div>
       )}
 
       <button
         onClick={onRetry}
-        className="w-full max-w-xs rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold
+        className="w-full max-w-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold
                    py-3.5 transition-colors shadow-md shadow-blue-600/25 focus:outline-none
                    focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
       >
         Try Again
       </button>
 
-      <p className="text-slate-400 text-xs text-center max-w-xs leading-relaxed">
+      <p className="text-slate-400 text-xs max-w-sm leading-relaxed">
         Common fixes: enable your torch, ensure both eyes are open, face the camera
         directly, and hold the camera 30–40 cm away.
       </p>
@@ -115,7 +112,7 @@ function ErrorScreen({
   onRetry: () => void;
 }) {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 gap-6">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 gap-6 text-center">
       <div className="w-16 h-16 rounded-full bg-red-100 border-2 border-red-300 flex items-center justify-center">
         <svg
           className="w-8 h-8 text-red-500"
@@ -132,14 +129,14 @@ function ErrorScreen({
         </svg>
       </div>
 
-      <div className="text-center max-w-xs">
+      <div className="max-w-sm">
         <h2 className="text-slate-900 text-xl font-bold mb-2">Something went wrong</h2>
         <p className="text-slate-600 text-sm leading-relaxed">{message}</p>
       </div>
 
       <button
         onClick={onRetry}
-        className="w-full max-w-xs rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold
+        className="w-full max-w-sm rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold
                    py-3.5 transition-colors shadow-md shadow-blue-600/25 focus:outline-none
                    focus:ring-2 focus:ring-blue-400 focus:ring-offset-2"
       >
