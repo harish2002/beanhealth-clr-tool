@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CLR Torch Test — BeanHealth</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, sans-serif; padding: 16px; background: #0a0a0a; color: white; max-width: 480px; margin: 0 auto; }
+        h2 { font-size: 18px; margin-bottom: 4px; color: #eee; }
+        .sub { font-size: 12px; color: #666; margin-bottom: 16px; }
+        video { width: 100%; border-radius: 10px; background: #1a1a1a; display: block; min-height: 200px; }
+        .btn-row { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+        button {
+            flex: 1; padding: 14px 10px; font-size: 14px; font-weight: 700;
+            border-radius: 10px; border: none; cursor: pointer; min-width: 80px;
+            transition: opacity 0.2s, transform 0.1s;
+        }
+        button:active { transform: scale(0.97); }
+        button:disabled { opacity: 0.35; cursor: not-allowed; }
+        #startBtn  { background: #007aff; color: white; }
+        #torchBtn  { background: #1c1c1e; color: #f5a623; border: 2px solid #f5a623; }
+        #torchBtn.on { background: #f5a623; color: #000; }
+        #captureBtn { background: #ff3b30; color: white; }
+        #saveBtn    { background: #30d158; color: white; display: none; width: 100%; flex: unset; margin-bottom: 8px; }
+        #photo      { width: 100%; border-radius: 10px; margin-top: 12px; display: none; border: 2px solid #30d158; }
+        canvas      { display: none; }
+        #log {
+            margin-top: 12px; padding: 10px 12px;
+            background: #111; border-radius: 8px;
+            font-family: monospace; font-size: 11px;
+            max-height: 180px; overflow-y: auto;
+            border: 1px solid #222;
+        }
+        .log-ok   { color: #30d158; }
+        .log-err  { color: #ff453a; }
+        .log-info { color: #636366; }
+        .badge {
+            display: inline-block; padding: 2px 8px; border-radius: 4px;
+            font-size: 11px; font-weight: 700; margin-left: 6px;
+        }
+        .badge-https { background: #30d15820; color: #30d158; border: 1px solid #30d15840; }
+        .badge-http  { background: #ff3b3020; color: #ff453a; border: 1px solid #ff3b3040; }
+        #protocol-warn {
+            font-size: 12px; padding: 10px 12px; border-radius: 8px;
+            background: #ff3b3015; border: 1px solid #ff3b3040;
+            color: #ff8080; margin-bottom: 12px; display: none;
+        }
+    </style>
+</head>
+<body>
+
+<h2>CLR Torch Test
+    <span id="proto-badge" class="badge"></span>
+</h2>
+<div class="sub">BeanHealth · Phase 1 · Module 3 test capture</div>
+
+<div id="protocol-warn">
+    ⚠️ Running over HTTP — camera may be blocked.<br>
+    Use <strong>ngrok</strong> to get HTTPS, or open via AirDrop on iPhone.
+</div>
+
+<video id="video" autoplay playsinline muted></video>
+
+<div class="btn-row">
+    <button id="startBtn">📷 Start Camera</button>
+    <button id="torchBtn" disabled>🔦 Torch OFF</button>
+    <button id="captureBtn" disabled>⚡ Capture</button>
+</div>
+
+<button id="saveBtn">💾 Save Photo to Device</button>
+<img id="photo" alt="Captured">
+<canvas id="canvas"></canvas>
+
+<div id="log"><span class="log-info">> Ready. Press Start Camera.</span></div>
+
+<script>
+    const video     = document.getElementById('video');
+    const canvas    = document.getElementById('canvas');
+    const photo     = document.getElementById('photo');
+    const startBtn  = document.getElementById('startBtn');
+    const torchBtn  = document.getElementById('torchBtn');
+    const captureBtn = document.getElementById('captureBtn');
+    const saveBtn   = document.getElementById('saveBtn');
+    const logDiv    = document.getElementById('log');
+
+    let stream = null;
+    let track  = null;
+    let torchOn = false;
+
+    // --- Protocol check ---
+    const isHttps = location.protocol === 'https:' || location.hostname === 'localhost';
+    const badge = document.getElementById('proto-badge');
+    badge.textContent = isHttps ? 'HTTPS ✓' : 'HTTP ✗';
+    badge.className = 'badge ' + (isHttps ? 'badge-https' : 'badge-http');
+    if (!isHttps) document.getElementById('protocol-warn').style.display = 'block';
+
+    function log(msg, type = 'info') {
+        const div = document.createElement('div');
+        div.className = 'log-' + type;
+        div.textContent = '> ' + msg;
+        logDiv.prepend(div);
+    }
+
+    // --- Start Camera: tries 3 fallback strategies ---
+    startBtn.addEventListener('click', async () => {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            log('navigator.mediaDevices unavailable — need HTTPS!', 'err');
+            log('Run: ngrok http 5500 — then open the ngrok URL on your phone', 'err');
+            return;
+        }
+
+        const strategies = [
+            { facingMode: { exact: 'environment' }, label: 'back camera (exact)' },
+            { facingMode: { ideal: 'environment' }, label: 'back camera (ideal)' },
+            { facingMode: 'user',                   label: 'front camera (fallback)' },
+        ];
+
+        for (const s of strategies) {
+            try {
+                log(`Trying ${s.label}...`, 'info');
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { ...s, width: { ideal: 1920 }, height: { ideal: 1080 } },
+                    audio: false
+                });
+                track = stream.getVideoTracks()[0];
+                video.srcObject = stream;
+                await new Promise(r => video.onloadedmetadata = r);
+                video.play();
+
+                log(`✓ Camera started: ${s.label}`, 'ok');
+                log(`Track: ${track.label}`, 'info');
+
+                const caps = track.getCapabilities ? track.getCapabilities() : {};
+                log(`Capabilities: ${JSON.stringify(caps)}`, 'info');
+
+                if (caps.torch) {
+                    log('✓ Torch SUPPORTED on this device', 'ok');
+                    torchBtn.disabled = false;
+                } else {
+                    log('✗ Torch not supported — turn on flashlight manually before capture', 'err');
+                    torchBtn.disabled = true;
+                }
+
+                captureBtn.disabled = false;
+                startBtn.disabled = true;
+                break;
+
+            } catch (err) {
+                log(`✗ ${s.label} failed: ${err.message}`, 'err');
+            }
+        }
+
+        if (!stream) {
+            log('All camera strategies failed. Need HTTPS — run ngrok.', 'err');
+        }
+    });
+
+    // --- Torch toggle ---
+    torchBtn.addEventListener('click', async () => {
+        if (!track) return;
+        torchOn = !torchOn;
+        try {
+            await track.applyConstraints({ advanced: [{ torch: torchOn }] });
+            torchBtn.textContent = torchOn ? '🔦 Torch ON' : '🔦 Torch OFF';
+            torchBtn.classList.toggle('on', torchOn);
+            log(`Torch → ${torchOn ? 'ON' : 'OFF'}`, torchOn ? 'ok' : 'info');
+        } catch (err) {
+            log(`Torch error: ${err.message}`, 'err');
+            torchOn = !torchOn;
+        }
+    });
+
+    // --- Capture ---
+    captureBtn.addEventListener('click', () => {
+        if (!stream) return;
+        canvas.width  = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0);
+        const dataURI = canvas.toDataURL('image/jpeg', 0.95);
+        photo.src = dataURI;
+        photo.style.display = 'block';
+        saveBtn.style.display = 'block';
+        log(`✓ Photo captured: ${canvas.width}×${canvas.height}px`, 'ok');
+        log('Press Save Photo to download to your device', 'info');
+    });
+
+    // --- Save to device ---
+    saveBtn.addEventListener('click', () => {
+        const a = document.createElement('a');
+        a.href = canvas.toDataURL('image/jpeg', 0.95);
+        a.download = `clr-test-${Date.now()}.jpg`;
+        a.click();
+        log('✓ Photo download triggered — check your Downloads folder', 'ok');
+    });
+</script>
+</body>
+</html>

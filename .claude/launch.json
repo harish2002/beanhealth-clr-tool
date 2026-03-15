@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "FastAPI Backend",
+      "runtimeExecutable": "backend/venv/bin/uvicorn",
+      "runtimeArgs": ["main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+      "port": 8000
+    },
+    {
+      "name": "CLR Visualiser",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-l", "5500", "."],
+      "port": 5500
+    },
+    {
+      "name": "BeanHealth Frontend",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd frontend && npm run dev -- -H 0.0.0.0 -p 3000 --experimental-https"],
+      "port": 3000
+    }
+  ]
+}

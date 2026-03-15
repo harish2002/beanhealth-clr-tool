@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLR Pipeline — BeanHealth Visual Explainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,300&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c14;
+    --surface: #0d1520;
+    --surface2: #111c2e;
+    --border: #1e3050;
+    --border-active: #2a9fd6;
+    --cyan: #2a9fd6;
+    --cyan-dim: #1a5f82;
+    --amber: #f5a623;
+    --amber-dim: #7a5310;
+    --green: #30d158;
+    --green-dim: #1a6b30;
+    --red: #ff453a;
+    --text: #c8d8ec;
+    --text-dim: #4a6280;
+    --text-bright: #eaf4ff;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+    --step-pupil: #2a9fd6;
+    --step-clr: #f5a623;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Subtle scanline + grid overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(42,159,214,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(42,159,214,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Header */
+  header {
+    position: relative;
+    z-index: 1;
+    padding: 48px 48px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+  }
+
+  .header-left { display: flex; flex-direction: column; gap: 8px; }
+
+  .brand {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--cyan);
+    text-transform: uppercase;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: clamp(22px, 3vw, 38px);
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  h1 span { color: var(--cyan); }
+
+  .header-meta {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 24px;
+    align-items: center;
+  }
+
+  .dot-sep { color: var(--border); }
+
+  /* Main layout */
+  main {
+    position: relative;
+    z-index: 1;
+    padding: 48px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 48px;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; padding: 24px; }
+    header { padding: 24px; }
+  }
+
+  /* Pipeline columns */
+  .pipeline {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .pipeline-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+
+  .step-badge {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    padding: 4px 10px;
+    border-radius: 3px;
+    text-transform: uppercase;
+  }
+
+  .badge-pupil {
+    background: rgba(42,159,214,0.15);
+    color: var(--cyan);
+    border: 1px solid var(--cyan-dim);
+  }
+
+  .badge-clr {
+    background: rgba(245,166,35,0.12);
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+  }
+
+  .pipeline-title {
+    font-family: var(--sans);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.01em;
+  }
+
+  /* Step cards */
+  .step-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    position: relative;
+  }
+
+  .step-card:hover {
+    border-color: var(--border-active);
+    transform: translateY(-1px);
+    box-shadow: 0 8px 32px rgba(42,159,214,0.08);
+  }
+
+  .step-card.active-pupil {
+    border-color: var(--step-pupil);
+    box-shadow: 0 0 0 1px var(--step-pupil), 0 8px 40px rgba(42,159,214,0.15);
+  }
+
+  .step-card.active-clr {
+    border-color: var(--step-clr);
+    box-shadow: 0 0 0 1px var(--step-clr), 0 8px 40px rgba(245,166,35,0.15);
+  }
+
+  .step-inner {
+    display: grid;
+    grid-template-columns: 80px 1fr;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* Eye canvas area */
+  .eye-visual {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #060a10;
+    border-right: 1px solid var(--border);
+    flex-shrink: 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .eye-visual canvas {
+    display: block;
+  }
+
+  .step-info {
+    padding: 14px 18px;
+  }
+
+  .step-num {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+  }
+
+  .step-name {
+    font-family: var(--sans);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-bright);
+    margin-bottom: 4px;
+    letter-spacing: -0.01em;
+  }
+
+  .step-desc {
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text-dim);
+    line-height: 1.5;
+  }
+
+  /* Connector arrow */
+  .connector {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+  }
+
+  .connector svg {
+    color: var(--border);
+  }
+
+  /* Detail panel */
+  .detail-panel {
+    margin-top: 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    display: none;
+    animation: fadeSlide 0.2s ease;
+  }
+
+  .detail-panel.visible { display: block; }
+
+  @keyframes fadeSlide {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .detail-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    color: var(--cyan);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .detail-clr .detail-title { color: var(--amber); }
+
+  .detail-body {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.7;
+  }
+
+  .code-inline {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: rgba(42,159,214,0.1);
+    color: var(--cyan);
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid rgba(42,159,214,0.2);
+  }
+
+  .code-inline-amber {
+    background: rgba(245,166,35,0.08);
+    color: var(--amber);
+    border-color: rgba(245,166,35,0.2);
+  }
+
+  .detail-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    padding: 3px 8px;
+    border-radius: 3px;
+    letter-spacing: 0.05em;
+  }
+
+  .tag-ok {
+    background: rgba(48,209,88,0.1);
+    color: var(--green);
+    border: 1px solid var(--green-dim);
+  }
+
+  .tag-warn {
+    background: rgba(245,166,35,0.1);
+    color: var(--amber);
+    border: 1px solid var(--amber-dim);
+  }
+
+  .tag-fail {
+    background: rgba(255,69,58,0.1);
+    color: var(--red);
+    border: 1px solid rgba(255,69,58,0.3);
+  }
+
+  /* Large eye visualisation at bottom */
+  .big-vis {
+    grid-column: 1 / -1;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 32px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .big-vis-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .big-vis-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .big-eye-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+  }
+
+  .big-eye-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-align: center;
+  }
+
+  .big-eye-wrap.active-p .big-eye-label { color: var(--cyan); }
+  .big-eye-wrap.active-c .big-eye-label { color: var(--amber); }
+
+  .big-arr {
+    color: var(--border);
+    font-size: 18px;
+    line-height: 1;
+    padding-bottom: 20px;
+  }
+
+  /* Pulse animations */
+  @keyframes pulse-cyan {
+    0%,100% { box-shadow: 0 0 0 0 rgba(42,159,214,0.4); }
+    50%      { box-shadow: 0 0 0 8px rgba(42,159,214,0); }
+  }
+
+  @keyframes pulse-amber {
+    0%,100% { box-shadow: 0 0 0 0 rgba(245,166,35,0.4); }
+    50%      { box-shadow: 0 0 0 8px rgba(245,166,35,0); }
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+  }
+
+  @keyframes shimmer {
+    0%   { opacity: 0.6; }
+    50%  { opacity: 1; }
+    100% { opacity: 0.6; }
+  }
+
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 16px 0 0;
+    border-top: 1px solid var(--border);
+    width: 100%;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .legend-circle {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+    background: transparent;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="brand">BeanHealth · EyeQ Innovate · CLR Pipeline</div>
+    <h1>Visual <span>Explainer</span><br>Steps 2 &amp; 3</h1>
+  </div>
+  <div class="header-meta">
+    <span>PUPIL LOCALISATION</span>
+    <span class="dot-sep">◆</span>
+    <span>CLR DETECTION</span>
+    <span class="dot-sep">◆</span>
+    <span>CLICK ANY STEP</span>
+  </div>
+</header>
+
+<main>
+
+  <!-- COLUMN 1: Pupil Centre -->
+  <div class="pipeline">
+    <div class="pipeline-header">
+      <span class="step-badge badge-pupil">Step 2</span>
+      <span class="pipeline-title">Pupil Centre Localisation</span>
+    </div>
+
+    <!-- Step 2.1 -->
+    <div class="step-card" onclick="toggleDetail('p1', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p1" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.1</div>
+          <div class="step-name">Raw Eye Crop</div>
+          <div class="step-desc">Full-colour eye region extracted by Step 1</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p1">
+      <div class="detail-title">Raw Input</div>
+      <div class="detail-body">
+        The eye crop arrives in RGB colour from Step 1 — already tightly bounded around the iris with 20% horizontal and 40% vertical padding. The pupil appears as the dark central circle inside the coloured iris.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">RGB colour</span>
+        <span class="tag tag-ok">Full resolution</span>
+        <span class="tag tag-warn">Iris landmarks already known</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.2 -->
+    <div class="step-card" onclick="toggleDetail('p2', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p2" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.2</div>
+          <div class="step-name">Grayscale Conversion</div>
+          <div class="step-desc">Colour stripped — only luminance matters for circle detection</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p2">
+      <div class="detail-title">cv2.cvtColor(crop, COLOR_RGB2GRAY)</div>
+      <div class="detail-body">
+        Colour information is discarded. The pupil becomes the darkest region; the sclera the brightest. This is the input to all further processing steps.
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.3 -->
+    <div class="step-card" onclick="toggleDetail('p3', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p3" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.3</div>
+          <div class="step-name">CLAHE Enhancement</div>
+          <div class="step-desc">Contrast boosted — dark irises become detectable</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p3">
+      <div class="detail-title">CLAHE — Contrast Limited Adaptive Histogram Equalisation</div>
+      <div class="detail-body">
+        Applied with <span class="code-inline">clipLimit=2.0, tileGridSize=(4,4)</span>. Brightens the iris texture while keeping the pupil dark — critical for brown or dark irises where the pupil/iris boundary would otherwise be invisible to Hough.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Fixes dark irises</span>
+        <span class="tag tag-warn">Applied BEFORE Hough only</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.4 -->
+    <div class="step-card" onclick="toggleDetail('p4', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p4" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.4</div>
+          <div class="step-name">Gaussian Blur</div>
+          <div class="step-desc">Eyelash noise smoothed before circle detection</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p4">
+      <div class="detail-title">GaussianBlur — kernel (7,7)</div>
+      <div class="detail-body">
+        Eyelashes and fine iris texture create false edges that confuse Hough. A 7×7 Gaussian kernel blurs these away, leaving only the large circular boundary of the pupil/iris.
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.5 -->
+    <div class="step-card" onclick="toggleDetail('p5', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p5" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.5</div>
+          <div class="step-name">MediaPipe Iris Landmark</div>
+          <div class="step-desc">Mean of 5 iris points → first pupil estimate (blue)</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p5">
+      <div class="detail-title">Primary Estimate — Free from Step 1</div>
+      <div class="detail-body">
+        Landmarks 468–472 (left eye) give five points around the iris boundary plus the centre. Their mean position gives the iris centre for free — no extra computation needed. Plotted here as the <span class="code-inline">blue dot</span>.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Sub-pixel precision</span>
+        <span class="tag tag-ok">Always available</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.6 -->
+    <div class="step-card" onclick="toggleDetail('p6', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p6" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.6</div>
+          <div class="step-name">Hough Circle Transform</div>
+          <div class="step-desc">Edge-based circle fit → second pupil estimate (green)</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p6">
+      <div class="detail-title">Validation Method</div>
+      <div class="detail-body">
+        <span class="code-inline">HoughCircles(dp=1, minDist=50, param1=50, param2=30)</span> with radius constrained to 20–55% of crop width. Finds the best circular edge in the blurred grayscale image. Plotted as the <span class="code-inline">green circle</span>.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Independent from landmarks</span>
+        <span class="tag tag-warn">Can fail on very dark irises</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 2.7 -->
+    <div class="step-card" onclick="toggleDetail('p7', 'pupil', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-p7" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">2.7</div>
+          <div class="step-name">Agreement Check → Final Centre</div>
+          <div class="step-desc">If estimates within 5px → HIGH confidence. Output: white cross</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel" id="d-p7">
+      <div class="detail-title">Confidence Decision</div>
+      <div class="detail-body">
+        If Euclidean distance between blue dot and green circle centre is <span class="code-inline">&lt; 5px</span> → <span class="tag tag-ok" style="display:inline">HIGH confidence</span>, use averaged position.<br><br>
+        If distance 5–15px → <span class="tag tag-warn" style="display:inline">MEDIUM</span>, average both.<br><br>
+        If Hough failed entirely → <span class="tag tag-fail" style="display:inline">LOW</span>, landmark only, flag <span class="code-inline">pupil_disagreement</span>.
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUMN 2: CLR Detection -->
+  <div class="pipeline">
+    <div class="pipeline-header">
+      <span class="step-badge badge-clr">Step 3</span>
+      <span class="pipeline-title">CLR Bright-Spot Detection</span>
+    </div>
+
+    <!-- Step 3.1 -->
+    <div class="step-card" onclick="toggleDetail('c1', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c1" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.1</div>
+          <div class="step-name">Eye Crop with CLR</div>
+          <div class="step-desc">Raw image — bright corneal reflex spot visible on iris</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c1">
+      <div class="detail-title">What You're Looking For</div>
+      <div class="detail-body">
+        The phone torch (held co-axially with the camera) creates a tiny specular reflection on the cornea surface. It appears as the single brightest spot in the entire eye crop — distinctly brighter than any other feature.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Always the brightest region</span>
+        <span class="tag tag-warn">Requires flash/torch enabled</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 3.2 -->
+    <div class="step-card" onclick="toggleDetail('c2', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c2" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.2</div>
+          <div class="step-name">97th Percentile Threshold</div>
+          <div class="step-desc">Adaptive cutoff — top 3% brightest pixels selected</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c2">
+      <div class="detail-title">np.percentile(gray, 97)</div>
+      <div class="detail-body">
+        Rather than a fixed value like 240/255, the threshold adapts to the actual image brightness. In dim environments the threshold might be 180; in bright ones 240. This is what makes the detection robust across different lighting conditions.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Self-adapting</span>
+        <span class="tag tag-fail">Fails if no flash: max pixel &lt; 240</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 3.3 -->
+    <div class="step-card" onclick="toggleDetail('c3', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c3" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.3</div>
+          <div class="step-name">Binary Threshold Mask</div>
+          <div class="step-desc">Everything below threshold → black. CLR → white blob</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c3">
+      <div class="detail-title">cv2.threshold — Binary Mask</div>
+      <div class="detail-body">
+        All pixels at or above the 97th percentile become pure white (255); everything else becomes pure black (0). The result is a binary mask where white blobs represent candidate CLR regions and any other specular highlights.
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 3.4 -->
+    <div class="step-card" onclick="toggleDetail('c4', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c4" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.4</div>
+          <div class="step-name">Connected Component Analysis</div>
+          <div class="step-desc">White blobs labelled — each gets area, centroid, bounding box</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c4">
+      <div class="detail-title">cv2.connectedComponentsWithStats</div>
+      <div class="detail-body">
+        Each contiguous group of white pixels becomes a labelled blob with its own area, centroid (x,y), and bounding box stats. Multiple blobs can exist — eyelid edges, glasses reflections, and the true CLR all produce candidates here.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-warn">Multiple blobs expected</span>
+        <span class="tag tag-ok">Centroid per blob</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 3.5 -->
+    <div class="step-card" onclick="toggleDetail('c5', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c5" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.5</div>
+          <div class="step-name">3-Way Filter</div>
+          <div class="step-desc">Location ✕ Area ✕ Circularity — rejects eyelash/glasses noise</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c5">
+      <div class="detail-title">Three Simultaneous Constraints</div>
+      <div class="detail-body">
+        <strong>① Location:</strong> Blob centroid must be within central 80% of crop width and height — rules out eyelid-edge highlights.<br><br>
+        <strong>② Area:</strong> Must be 0.5%–15% of iris area — too small = noise, too large = flash artifact.<br><br>
+        <strong>③ Circularity:</strong> <span class="code-inline code-inline-amber">4π·area / perimeter² &gt; 0.5</span> — the corneal reflex is nearly circular; eyelash reflections are not.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Location check</span>
+        <span class="tag tag-ok">Area check</span>
+        <span class="tag tag-ok">Circularity check</span>
+      </div>
+    </div>
+
+    <div class="connector">
+      <svg width="12" height="16" viewBox="0 0 12 16" fill="none">
+        <line x1="6" y1="0" x2="6" y2="10" stroke="currentColor" stroke-width="1.5"/>
+        <polyline points="2,8 6,14 10,8" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+      </svg>
+    </div>
+
+    <!-- Step 3.6 -->
+    <div class="step-card" onclick="toggleDetail('c6', 'clr', this)">
+      <div class="step-inner">
+        <div class="eye-visual"><canvas id="eye-c6" width="80" height="80"></canvas></div>
+        <div class="step-info">
+          <div class="step-num">3.6</div>
+          <div class="step-name">CLR Centroid Located</div>
+          <div class="step-desc">Largest valid blob → sub-pixel centroid marked in amber</div>
+        </div>
+      </div>
+    </div>
+    <div class="detail-panel detail-clr" id="d-c6">
+      <div class="detail-title">Output: (clr_x, clr_y)</div>
+      <div class="detail-body">
+        The largest blob that passes all three filters is selected. Its centroid becomes the CLR position — plotted here as the <span class="code-inline code-inline-amber">amber dot</span>. This coordinate feeds directly into Step 4 where its displacement from the pupil centre is measured.<br><br>
+        If no blob passes: flag <span class="code-inline code-inline-amber">no_reflex_left/right</span> → INCONCLUSIVE.
+      </div>
+      <div class="detail-tags">
+        <span class="tag tag-ok">Sub-pixel centroid</span>
+        <span class="tag tag-fail">No valid blob → INCONCLUSIVE</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM: Big side-by-side eye strip -->
+  <div class="big-vis">
+    <div class="big-vis-title">Full Pipeline — Click a stage to jump to it</div>
+
+    <div style="display:flex; flex-direction:column; gap:20px; width:100%;">
+      <!-- Pupil row -->
+      <div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--cyan);letter-spacing:0.15em;margin-bottom:12px;text-transform:uppercase;">Step 2 — Pupil Centre</div>
+        <div class="big-vis-row">
+          <div class="big-eye-wrap" onclick="triggerStep('p1')">
+            <canvas id="big-p1" width="90" height="90"></canvas>
+            <div class="big-eye-label">Raw</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p2')">
+            <canvas id="big-p2" width="90" height="90"></canvas>
+            <div class="big-eye-label">Grayscale</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p3')">
+            <canvas id="big-p3" width="90" height="90"></canvas>
+            <div class="big-eye-label">CLAHE</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p4')">
+            <canvas id="big-p4" width="90" height="90"></canvas>
+            <div class="big-eye-label">Blur</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p5')">
+            <canvas id="big-p5" width="90" height="90"></canvas>
+            <div class="big-eye-label">Landmark</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p6')">
+            <canvas id="big-p6" width="90" height="90"></canvas>
+            <div class="big-eye-label">Hough</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('p7')">
+            <canvas id="big-p7" width="90" height="90"></canvas>
+            <div class="big-eye-label">Final ✓</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CLR row -->
+      <div style="border-top:1px solid var(--border);padding-top:20px;">
+        <div style="font-family:var(--mono);font-size:10px;color:var(--amber);letter-spacing:0.15em;margin-bottom:12px;text-transform:uppercase;">Step 3 — CLR Detection</div>
+        <div class="big-vis-row">
+          <div class="big-eye-wrap" onclick="triggerStep('c1')">
+            <canvas id="big-c1" width="90" height="90"></canvas>
+            <div class="big-eye-label">Raw+CLR</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('c2')">
+            <canvas id="big-c2" width="90" height="90"></canvas>
+            <div class="big-eye-label">97th %ile</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('c3')">
+            <canvas id="big-c3" width="90" height="90"></canvas>
+            <div class="big-eye-label">Mask</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('c4')">
+            <canvas id="big-c4" width="90" height="90"></canvas>
+            <div class="big-eye-label">Components</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('c5')">
+            <canvas id="big-c5" width="90" height="90"></canvas>
+            <div class="big-eye-label">Filter</div>
+          </div>
+          <div class="big-arr">→</div>
+          <div class="big-eye-wrap" onclick="triggerStep('c6')">
+            <canvas id="big-c6" width="90" height="90"></canvas>
+            <div class="big-eye-label">CLR Found ✓</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#2a9fd6;"></div>
+        MediaPipe landmark centre
+      </div>
+      <div class="legend-item">
+        <div class="legend-circle" style="border-color:#30d158;"></div>
+        Hough circle result
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#fff;"></div>
+        Final pupil centre
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f5a623;"></div>
+        CLR centroid (amber)
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#ff453a;"></div>
+        Rejected blob
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ============================================================
+// EYE DRAWING ENGINE
+// ============================================================
+
+function drawEye(ctx, w, h, opts = {}) {
+  const {
+    grayscale = false,
+    clahe = false,
+    blurred = false,
+    showLandmark = false,
+    showHough = false,
+    showFinalPupil = false,
+    showCLR = false,
+    clrOffset = { x: 0, y: 0 },
+    thresholdViz = false,
+    maskViz = false,
+    componentViz = false,
+    filterViz = false,
+    finalCLR = false,
+    size = 'small'
+  } = opts;
+
+  const cx = w / 2;
+  const cy = h / 2;
+  const irisR = w * 0.28;
+  const pupilR = w * 0.13;
+  const clrR = w * 0.045;
+
+  // CLR position (slightly off-center toward upper-left of pupil — simulating mild squint)
+  const clrX = cx + clrOffset.x * w;
+  const clrY = cy + clrOffset.y * h;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // ------ MASK MODE ------
+  if (maskViz) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    // White blob where CLR would be
+    const grad = ctx.createRadialGradient(clrX, clrY, 0, clrX, clrY, clrR * 1.5);
+    grad.addColorStop(0, '#fff');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 1.5, 0, Math.PI * 2);
+    ctx.fill();
+    // Additional small blob (eyelid noise)
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.beginPath();
+    ctx.arc(cx - irisR * 0.7, cy - irisR * 0.4, clrR * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+
+  // ------ COMPONENT MODE ------
+  if (componentViz) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    // Blob 1 — the CLR (will pass filters) — cyan/green
+    ctx.fillStyle = 'rgba(48,209,88,0.8)';
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    // Blob 2 — eyelid noise — red (will be rejected)
+    ctx.fillStyle = 'rgba(255,69,58,0.6)';
+    ctx.beginPath();
+    ctx.arc(cx - irisR * 0.7, cy - irisR * 0.55, clrR * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    // Blob 3 — tiny noise
+    ctx.fillStyle = 'rgba(255,69,58,0.4)';
+    ctx.beginPath();
+    ctx.arc(cx + irisR * 0.5, cy - irisR * 0.5, clrR * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+    // Labels
+    ctx.fillStyle = '#30d158';
+    ctx.font = `bold ${w * 0.1}px monospace`;
+    ctx.fillText('1', clrX + clrR * 1.6, clrY + clrR * 0.4);
+    ctx.fillStyle = '#ff453a';
+    ctx.fillText('2', cx - irisR * 0.7 + clrR, cy - irisR * 0.6);
+    return;
+  }
+
+  // ------ FILTER MODE ------
+  if (filterViz) {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, w, h);
+    // Central 80% boundary
+    const margin = w * 0.10;
+    ctx.strokeStyle = 'rgba(42,159,214,0.4)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(margin, margin, w - margin * 2, h - margin * 2);
+    ctx.setLineDash([]);
+    // Blob 1 PASSES — inside boundary, right size, circular
+    ctx.fillStyle = 'rgba(48,209,88,0.7)';
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#30d158';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 1.4, 0, Math.PI * 2);
+    ctx.stroke();
+    // Check mark
+    ctx.fillStyle = '#30d158';
+    ctx.font = `bold ${w * 0.14}px monospace`;
+    ctx.fillText('✓', clrX - w * 0.06, clrY + w * 0.05);
+    // Blob 2 REJECTED — outside safe zone (near edge)
+    ctx.fillStyle = 'rgba(255,69,58,0.4)';
+    ctx.beginPath();
+    ctx.arc(cx - irisR * 0.75, cy - irisR * 0.55, clrR * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#ff453a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx - irisR * 0.75, cy - irisR * 0.55, clrR * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#ff453a';
+    ctx.font = `bold ${w * 0.12}px monospace`;
+    ctx.fillText('✕', cx - irisR * 0.75 - w * 0.04, cy - irisR * 0.55 + w * 0.04);
+    return;
+  }
+
+  // ------ THRESHOLD VIZ MODE ------
+  if (thresholdViz) {
+    // Show grayscale eye with heat overlay indicating brightness zones
+    drawBaseEye(ctx, w, h, cx, cy, irisR, pupilR, { grayscale: true });
+    // Bright spot overlay showing CLR
+    const grad = ctx.createRadialGradient(clrX, clrY, 0, clrX, clrY, clrR * 2);
+    grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+    grad.addColorStop(0.3, 'rgba(255,220,100,0.6)');
+    grad.addColorStop(1, 'rgba(255,150,0,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Threshold line indicator
+    ctx.fillStyle = 'rgba(245,166,35,0.8)';
+    ctx.font = `${w * 0.085}px monospace`;
+    ctx.fillText('97%', 2, h - 4);
+    return;
+  }
+
+  // ------ NORMAL EYE MODES ------
+  drawBaseEye(ctx, w, h, cx, cy, irisR, pupilR, { grayscale, clahe, blurred, showCLR, clrX, clrY, clrR });
+
+  // Overlays
+  if (showLandmark) {
+    // Blue dot — MediaPipe estimate (slightly offset to show disagreement scenario)
+    ctx.fillStyle = '#2a9fd6';
+    ctx.shadowColor = '#2a9fd6';
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(cx + 1, cy - 1, w * 0.055, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  if (showHough) {
+    // Green circle — Hough result
+    ctx.strokeStyle = '#30d158';
+    ctx.lineWidth = size === 'small' ? 1.5 : 2;
+    ctx.shadowColor = '#30d158';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.arc(cx, cy, pupilR * 1.1, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    if (!showLandmark) {
+      ctx.fillStyle = '#30d158';
+      ctx.beginPath();
+      ctx.arc(cx, cy, w * 0.04, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (showFinalPupil) {
+    // White crosshair — final agreed centre
+    const cr = w * 0.07;
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = size === 'small' ? 1.5 : 2;
+    ctx.shadowColor = '#fff';
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.moveTo(cx - cr, cy); ctx.lineTo(cx + cr, cy);
+    ctx.moveTo(cx, cy - cr); ctx.lineTo(cx, cy + cr);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#2a9fd6';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cx, cy, cr * 0.6, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  if (finalCLR) {
+    // Amber dot at CLR position
+    ctx.fillStyle = '#f5a623';
+    ctx.shadowColor = '#f5a623';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, w * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    // Crosshair
+    const cr = w * 0.09;
+    ctx.strokeStyle = '#f5a623';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(clrX - cr, clrY); ctx.lineTo(clrX + cr, clrY);
+    ctx.moveTo(clrX, clrY - cr); ctx.lineTo(clrX, clrY + cr);
+    ctx.stroke();
+    // Final pupil centre too
+    const pc = w * 0.045;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - pc, cy); ctx.lineTo(cx + pc, cy);
+    ctx.moveTo(cx, cy - pc); ctx.lineTo(cx, cy + pc);
+    ctx.stroke();
+  }
+}
+
+function drawBaseEye(ctx, w, h, cx, cy, irisR, pupilR, opts = {}) {
+  const { grayscale = false, clahe = false, blurred = false, showCLR = false, clrX, clrY, clrR } = opts;
+
+  const irisColor  = grayscale ? '#888' : '#6b4c2a';
+  const irisColor2 = grayscale ? '#aaa' : '#8a6240';
+  const sclera1    = grayscale ? '#d0d0d0' : '#f0ece4';
+  const sclera2    = grayscale ? '#e8e8e8' : '#fafaf8';
+  const pupilColor = grayscale ? '#1a1a1a' : '#111';
+  const lidColor   = grayscale ? '#555' : '#d4a882';
+  const lidColor2  = grayscale ? '#444' : '#c4987a';
+
+  // CLAHE effect — brighter, more contrast
+  const sclBright  = clahe ? 1.15 : 1.0;
+  const irisContr  = clahe ? 1.2  : 1.0;
+
+  // Blur effect — canvas filter
+  if (blurred) {
+    ctx.filter = 'blur(2.5px)';
+  }
+
+  // Sclera (white of eye)
+  const sGrad = ctx.createRadialGradient(cx - w*0.05, cy - h*0.05, irisR*0.2, cx, cy, w*0.55);
+  sGrad.addColorStop(0, sclera2);
+  sGrad.addColorStop(1, sclera1);
+  ctx.fillStyle = sGrad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, w*0.48, h*0.28, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  // Iris
+  const iGrad = ctx.createRadialGradient(cx, cy, pupilR*0.9, cx, cy, irisR);
+  iGrad.addColorStop(0, irisColor);
+  iGrad.addColorStop(1, irisColor2);
+  ctx.fillStyle = iGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, irisR, 0, Math.PI*2);
+  ctx.fill();
+
+  // Iris texture (radial lines)
+  if (!blurred) {
+    ctx.globalAlpha = clahe ? 0.3 : 0.15;
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      ctx.strokeStyle = grayscale ? '#ccc' : '#a07848';
+      ctx.lineWidth = 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(angle) * pupilR * 1.1, cy + Math.sin(angle) * pupilR * 1.1);
+      ctx.lineTo(cx + Math.cos(angle) * irisR * 0.95, cy + Math.sin(angle) * irisR * 0.95);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Pupil
+  const pGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, pupilR);
+  pGrad.addColorStop(0, '#000');
+  pGrad.addColorStop(1, pupilColor);
+  ctx.fillStyle = pGrad;
+  ctx.beginPath();
+  ctx.arc(cx, cy, pupilR, 0, Math.PI*2);
+  ctx.fill();
+
+  // Pupil shine (small highlight top-left)
+  if (!blurred) {
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath();
+    ctx.arc(cx - pupilR*0.3, cy - pupilR*0.35, pupilR*0.18, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // CLR bright spot
+  if (showCLR && clrX !== undefined) {
+    const cGrad = ctx.createRadialGradient(clrX, clrY, 0, clrX, clrY, clrR);
+    cGrad.addColorStop(0, '#ffffff');
+    cGrad.addColorStop(0.5, 'rgba(255,255,220,0.9)');
+    cGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = cGrad;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * 1.2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Eyelids (top and bottom) - drawn AFTER eye contents to clip
+  // Top lid
+  const lidGrad = ctx.createLinearGradient(0, cy - h*0.3, 0, cy - h*0.15);
+  lidGrad.addColorStop(0, lidColor);
+  lidGrad.addColorStop(1, lidColor2);
+  ctx.fillStyle = lidGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - w*0.48, cy);
+  ctx.quadraticCurveTo(cx, cy - h*0.40, cx + w*0.48, cy);
+  ctx.quadraticCurveTo(cx, cy - h*0.26, cx - w*0.48, cy);
+  ctx.fill();
+
+  // Bottom lid
+  const bGrad = ctx.createLinearGradient(0, cy + h*0.15, 0, cy + h*0.3);
+  bGrad.addColorStop(0, lidColor2);
+  bGrad.addColorStop(1, lidColor);
+  ctx.fillStyle = bGrad;
+  ctx.beginPath();
+  ctx.moveTo(cx - w*0.48, cy);
+  ctx.quadraticCurveTo(cx, cy + h*0.30, cx + w*0.48, cy);
+  ctx.quadraticCurveTo(cx, cy + h*0.18, cx - w*0.48, cy);
+  ctx.fill();
+
+  if (blurred) {
+    ctx.filter = 'none';
+  }
+
+  // Eyelid shadow line
+  if (!blurred) {
+    ctx.strokeStyle = grayscale ? 'rgba(80,80,80,0.5)' : 'rgba(120,80,50,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - w*0.45, cy);
+    ctx.quadraticCurveTo(cx, cy - h*0.26, cx + w*0.45, cy);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(cx - w*0.45, cy);
+    ctx.quadraticCurveTo(cx, cy + h*0.18, cx + w*0.45, cy);
+    ctx.stroke();
+  }
+}
+
+// ============================================================
+// RENDER ALL CANVASES
+// ============================================================
+
+const CLR_OFF = { x: 0.06, y: -0.04 }; // CLR slightly displaced from pupil centre
+
+function renderAll() {
+  const configs = [
+    // Pupil steps
+    { id: 'eye-p1',  w:80, h:80, opts: {} },
+    { id: 'eye-p2',  w:80, h:80, opts: { grayscale:true } },
+    { id: 'eye-p3',  w:80, h:80, opts: { grayscale:true, clahe:true } },
+    { id: 'eye-p4',  w:80, h:80, opts: { grayscale:true, clahe:true, blurred:true } },
+    { id: 'eye-p5',  w:80, h:80, opts: { showLandmark:true } },
+    { id: 'eye-p6',  w:80, h:80, opts: { showHough:true } },
+    { id: 'eye-p7',  w:80, h:80, opts: { showLandmark:true, showHough:true, showFinalPupil:true } },
+
+    // CLR steps
+    { id: 'eye-c1',  w:80, h:80, opts: { showCLR:true, clrOffset:CLR_OFF } },
+    { id: 'eye-c2',  w:80, h:80, opts: { grayscale:true, showCLR:true, clrOffset:CLR_OFF, thresholdViz:true } },
+    { id: 'eye-c3',  w:80, h:80, opts: { maskViz:true, clrOffset:CLR_OFF } },
+    { id: 'eye-c4',  w:80, h:80, opts: { componentViz:true, clrOffset:CLR_OFF } },
+    { id: 'eye-c5',  w:80, h:80, opts: { filterViz:true, clrOffset:CLR_OFF } },
+    { id: 'eye-c6',  w:80, h:80, opts: { showCLR:true, clrOffset:CLR_OFF, finalCLR:true } },
+
+    // Big pupil
+    { id: 'big-p1',  w:90, h:90, opts: {} },
+    { id: 'big-p2',  w:90, h:90, opts: { grayscale:true } },
+    { id: 'big-p3',  w:90, h:90, opts: { grayscale:true, clahe:true } },
+    { id: 'big-p4',  w:90, h:90, opts: { grayscale:true, clahe:true, blurred:true } },
+    { id: 'big-p5',  w:90, h:90, opts: { showLandmark:true } },
+    { id: 'big-p6',  w:90, h:90, opts: { showHough:true } },
+    { id: 'big-p7',  w:90, h:90, opts: { showLandmark:true, showHough:true, showFinalPupil:true } },
+
+    // Big CLR
+    { id: 'big-c1',  w:90, h:90, opts: { showCLR:true, clrOffset:CLR_OFF } },
+    { id: 'big-c2',  w:90, h:90, opts: { grayscale:true, showCLR:true, clrOffset:CLR_OFF, thresholdViz:true } },
+    { id: 'big-c3',  w:90, h:90, opts: { maskViz:true, clrOffset:CLR_OFF } },
+    { id: 'big-c4',  w:90, h:90, opts: { componentViz:true, clrOffset:CLR_OFF } },
+    { id: 'big-c5',  w:90, h:90, opts: { filterViz:true, clrOffset:CLR_OFF } },
+    { id: 'big-c6',  w:90, h:90, opts: { showCLR:true, clrOffset:CLR_OFF, finalCLR:true } },
+  ];
+
+  configs.forEach(({ id, w, h, opts }) => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    drawEye(ctx, w, h, opts);
+  });
+}
+
+// ============================================================
+// INTERACTION
+// ============================================================
+
+let openDetail = null;
+let activeCard = null;
+
+function toggleDetail(id, type, card) {
+  const panel = document.getElementById('d-' + id);
+
+  // Close current open detail
+  if (openDetail && openDetail !== panel) {
+    openDetail.classList.remove('visible');
+  }
+  if (activeCard) {
+    activeCard.classList.remove('active-pupil', 'active-clr');
+  }
+
+  if (openDetail === panel) {
+    panel.classList.remove('visible');
+    openDetail = null;
+    activeCard = null;
+  } else {
+    panel.classList.add('visible');
+    openDetail = panel;
+    activeCard = card;
+    card.classList.add(type === 'pupil' ? 'active-pupil' : 'active-clr');
+  }
+}
+
+function triggerStep(id) {
+  const card = document.querySelector(`[onclick="toggleDetail('${id}', '${id[0] === 'p' ? 'pupil' : 'clr'}', this)"]`);
+  if (card) {
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => card.click(), 300);
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+
+document.addEventListener('DOMContentLoaded', renderAll);
+
+// Animate the CLR spot subtly
+let frame = 0;
+function animateCLR() {
+  frame++;
+  const pulse = 0.5 + 0.5 * Math.sin(frame * 0.05);
+  const canvases = ['eye-c6', 'big-c6'];
+  canvases.forEach(id => {
+    const c = document.getElementById(id);
+    if (!c) return;
+    const w = c.width, h = c.height;
+    const ctx = c.getContext('2d');
+    const cx = w/2, cy = h/2;
+    const irisR = w * 0.28;
+    const pupilR = w * 0.13;
+    const clrX = cx + CLR_OFF.x * w;
+    const clrY = cy + CLR_OFF.y * h;
+    const clrR = w * 0.045;
+
+    drawEye(ctx, w, h, { showCLR: true, clrOffset: CLR_OFF, finalCLR: true });
+
+    // Pulse ring around CLR
+    ctx.strokeStyle = `rgba(245,166,35,${0.3 + 0.4 * pulse})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(clrX, clrY, clrR * (1.8 + pulse * 0.8), 0, Math.PI * 2);
+    ctx.stroke();
+  });
+
+  requestAnimationFrame(animateCLR);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderAll();
+  animateCLR();
+});
+</script>
+</body>
+</html>
