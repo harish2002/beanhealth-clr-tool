@@ -1,0 +1,10 @@
+{
+  "name": "BeanHealth CLR Tool",
+  "short_name": "BeanHealth",
+  "description": "Corneal Light Reflex strabismus triage screening tool",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0f1a",
+  "theme_color": "#0a0f1a",
+  "icons": []
+}

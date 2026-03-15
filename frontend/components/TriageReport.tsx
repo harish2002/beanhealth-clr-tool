@@ -1,0 +1,289 @@
+"use client";
+
+import type { SuccessResponse } from "@/lib/types";
+import { URGENCY_CONFIG } from "@/lib/types";
+import UrgencyBadge from "./UrgencyBadge";
+import AnnotatedEye from "./AnnotatedEye";
+import ProcessingSteps from "./ProcessingSteps";
+
+interface TriageReportProps {
+  result:  SuccessResponse;
+  onRetry: () => void;
+}
+
+// Urgency → print-safe text colour (readable on white paper)
+const URGENCY_PRINT_COLOUR: Record<string, string> = {
+  URGENT:  "text-red-700",
+  ROUTINE: "text-orange-700",
+  MONITOR: "text-yellow-700",
+  NORMAL:  "text-green-700",
+};
+
+function MetricRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between items-center py-2.5 border-b border-slate-100 last:border-0">
+      <span className="text-slate-500 text-sm">{label}</span>
+      <span className="text-slate-900 text-sm font-semibold text-right max-w-[55%]">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export default function TriageReport({ result, onRetry }: TriageReportProps) {
+  const { patient, result: r, technical, annotated_image_b64 } = result;
+  const config          = URGENCY_CONFIG[r.urgency_tier];
+  const urgencyPrintCol = URGENCY_PRINT_COLOUR[r.urgency_tier] ?? "text-slate-900";
+  const printDate       = new Date().toLocaleDateString("en-GB", {
+    day: "2-digit", month: "long", year: "numeric",
+  });
+  const printTime = new Date().toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit",
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-50 pb-12 print:bg-white print:pb-2">
+
+      {/* ── Print-only report header ─────────────────────────────────────────
+          Hidden on screen. Contains: BeanHealth branding, patient info, triage summary.
+      ──────────────────────────────────────────────────────────────────────── */}
+      <div className="hidden print:block px-5 pt-4 pb-4 border-b-2 border-slate-900 mb-6">
+        {/* Top row: logo + date/time */}
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[8pt] font-black tracking-[0.25em] text-slate-400 uppercase mb-0.5">
+              BeanHealth
+            </p>
+            <h1 className="text-[18pt] font-bold text-slate-900 leading-tight">
+              CLR Triage Report
+            </h1>
+            <p className="text-[8.5pt] text-slate-500 mt-0.5">
+              Corneal Light Reflex Asymmetry Analysis · Hirschberg Method
+            </p>
+          </div>
+          <div className="text-right text-[8.5pt] text-slate-500 leading-relaxed">
+            <p className="font-semibold text-slate-700">{printDate}</p>
+            <p>{printTime}</p>
+            <p className="mt-1 text-slate-400">EyeQ Innovate Hackathon 2.0</p>
+          </div>
+        </div>
+
+        {/* Patient + clinical summary row */}
+        <div className="mt-3 pt-2 border-t border-slate-200 flex flex-wrap gap-x-8 gap-y-0.5 text-[9pt]">
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Patient</span>
+            <span className="font-semibold text-slate-800">{patient.name}</span>
+          </span>
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Age</span>
+            <span className="font-semibold text-slate-800">{patient.age}</span>
+          </span>
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Urgency</span>
+            <span className={`font-bold ${urgencyPrintCol}`}>{r.urgency_tier}</span>
+          </span>
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Condition</span>
+            <span className="font-semibold text-slate-800">{r.condition_name}</span>
+          </span>
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">ICD-10</span>
+            <span className="font-semibold text-slate-800">{r.icd10_code}</span>
+          </span>
+          <span>
+            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Deviation</span>
+            <span className="font-semibold text-slate-800">{r.deviation_degrees}°</span>
+          </span>
+        </div>
+      </div>
+
+      {/* ── Screen: top header bar ───────────────────────────────────────────── */}
+      <header className="bg-white border-b border-slate-200 px-5 py-3 flex items-center gap-3 print:hidden">
+        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
+            <path strokeLinecap="round" strokeLinejoin="round"
+              d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-slate-900 leading-none">BeanHealth</p>
+          <p className="text-xs text-slate-400 mt-0.5">CLR Screening Tool</p>
+        </div>
+      </header>
+
+      {/* ── Urgency banner (screen) ───────────────────────────────────────────── */}
+      <div className={`${config.bgColour} border-b ${config.borderColour} px-5 py-5 print:hidden`}>
+        <div className="max-w-lg mx-auto flex items-center justify-between">
+          <div>
+            <p className="text-slate-500 text-xs mb-1">
+              {patient.name} · Age {patient.age}
+            </p>
+            <h1 className={`text-2xl font-bold ${config.colour}`}>
+              {r.condition_name}
+            </h1>
+            <p className="text-slate-500 text-sm mt-0.5">{r.icd10_code}</p>
+          </div>
+          <UrgencyBadge urgency={r.urgency_tier} large />
+        </div>
+      </div>
+
+      {/* ── Content ───────────────────────────────────────────────────────────── */}
+      <div className="max-w-lg mx-auto px-5 pt-5 space-y-4 print:max-w-none print:pt-0 print:px-0">
+
+        {/* Referral card */}
+        <div className={`rounded-2xl border ${config.borderColour} ${config.bgColour} p-5 print:bg-slate-50 print:border-slate-300`}>
+          <h2 className={`font-semibold mb-1 ${config.colour} print:${urgencyPrintCol}`}>
+            Referral Recommendation
+          </h2>
+          <p className={`text-lg font-bold ${config.colour} print:${urgencyPrintCol}`}>
+            {r.referral_recommendation}
+          </p>
+          <p className="text-slate-500 text-sm mt-1 print:text-slate-600">
+            Timeframe: {r.timeframe}
+          </p>
+        </div>
+
+        {/* Narrative */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h2 className="text-slate-900 font-semibold mb-2 print:text-slate-900">
+            What This Means
+          </h2>
+          <p className="text-slate-600 text-sm leading-relaxed print:text-slate-700">
+            {r.narrative}
+          </p>
+        </div>
+
+        {/* Annotated scan */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h2 className="text-slate-900 font-semibold mb-3 print:text-slate-900">
+            Annotated Scan
+          </h2>
+          <AnnotatedEye base64Jpeg={annotated_image_b64} patientName={patient.name} />
+        </div>
+
+        {/* Processing steps — screen only */}
+        {result.intermediate_images && (
+          <div className="print:hidden">
+            <ProcessingSteps intermediateImages={result.intermediate_images} />
+          </div>
+        )}
+
+        {/* Clinical measurements */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h2 className="text-slate-900 font-semibold mb-1 print:text-slate-900">
+            Clinical Measurements
+          </h2>
+          <div className="mt-3">
+            <MetricRow label="Deviation angle"      value={`${r.deviation_degrees}°`} />
+            <MetricRow label="Displacement (mm)"    value={`${technical.deviation_mm.toFixed(2)} mm`} />
+            <MetricRow label="Asymmetry score"      value={r.asymmetry_score.toFixed(3)} />
+            <MetricRow label="Severity"             value={r.severity} />
+            <MetricRow label="Dominant eye"         value={technical.dominant_eye} />
+            <MetricRow label="Detection confidence" value={technical.confidence} />
+          </div>
+        </div>
+
+        {/* Displacement detail */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <h2 className="text-slate-900 font-semibold mb-3 print:text-slate-900">
+            Displacement Detail
+          </h2>
+          <div className="grid grid-cols-2 gap-4">
+            {(["left", "right"] as const).map((eye) => {
+              const norm = eye === "left"
+                ? technical.left_displacement_norm
+                : technical.right_displacement_norm;
+              const dir = eye === "left"
+                ? technical.left_direction
+                : technical.right_direction;
+              const pct = Math.min(norm * 100, 100);
+              return (
+                <div
+                  key={eye}
+                  className="bg-slate-50 rounded-xl p-4 border border-slate-100 print:bg-slate-100 print:border-slate-200"
+                >
+                  <p className="text-slate-500 text-xs uppercase tracking-wider mb-1 print:text-slate-500">
+                    {eye === "left" ? "Left Eye" : "Right Eye"}
+                  </p>
+                  <p className="text-slate-900 font-bold text-lg print:text-slate-900">
+                    {(norm * 100).toFixed(1)}%
+                  </p>
+                  <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden print:bg-slate-200">
+                    <div
+                      className={`h-full rounded-full transition-all ${
+                        norm > 0.5 ? "bg-red-500" : norm > 0.2 ? "bg-yellow-500" : "bg-green-500"
+                      }`}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <p className="text-slate-500 text-xs mt-1.5 capitalize print:text-slate-600">
+                    {dir}
+                  </p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Quality flags */}
+        {technical.flags.length > 0 && (
+          <div className="bg-amber-50 rounded-2xl border border-amber-200 p-5">
+            <h2 className="text-amber-800 font-semibold mb-2 print:text-yellow-800">
+              ⚠ Quality Flags
+            </h2>
+            <ul className="space-y-1">
+              {technical.flags.map((flag) => (
+                <li key={flag} className="text-amber-700 text-sm font-mono print:text-yellow-900">
+                  · {flag.replace(/_/g, " ")}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Screen-only disclaimer */}
+        <p className="text-slate-400 text-xs text-center leading-relaxed px-2 print:hidden">
+          This tool is a screening aid only. It does not replace a full clinical
+          examination by a qualified ophthalmologist. Always follow professional
+          medical advice.
+        </p>
+
+        {/* Action buttons — screen only */}
+        <div className="flex gap-3 print:hidden">
+          <button
+            onClick={onRetry}
+            className="flex-1 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800
+                       font-medium py-3.5 text-sm transition-colors"
+          >
+            New Screening
+          </button>
+          <button
+            onClick={() => window.print()}
+            className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white
+                       font-medium py-3.5 text-sm transition-colors shadow-sm shadow-blue-600/25"
+          >
+            Print / Save PDF
+          </button>
+        </div>
+
+        {/* ── Print-only footer / disclaimer ───────────────────────────────── */}
+        <div className="hidden print:block pt-3 mt-4 border-t border-slate-300 text-[8pt] text-slate-500 leading-relaxed">
+          <p>
+            <strong className="text-slate-700">Screening Tool Disclaimer:</strong>{" "}
+            This report is generated by BeanHealth CLR Tool v1.0.0, an AI-assisted
+            strabismus screening aid. It does not constitute a medical diagnosis and must
+            not replace examination by a qualified ophthalmologist. Results are based on
+            the Hirschberg corneal light reflex test (7°/mm, iris radius 5.75 mm).
+          </p>
+          <p className="mt-1 text-slate-400">
+            Generated: {new Date().toISOString()} · Status: {result.status} ·
+            Confidence: {technical.confidence} · BeanHealth · EyeQ Innovate Hackathon 2.0
+          </p>
+        </div>
+
+      </div>
+    </div>
+  );
+}
