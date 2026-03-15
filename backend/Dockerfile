@@ -17,7 +17,10 @@ WORKDIR /app
 
 # Copy and install Python dependencies first (layer cache)
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# mediapipe pulls opencv-contrib-python; forcibly remove any conflicting
+# opencv-python-headless afterwards to guarantee a single cv2 installation.
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip uninstall -y opencv-python-headless 2>/dev/null || true
 
 # Copy application code
 COPY . .

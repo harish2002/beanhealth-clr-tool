@@ -7,8 +7,9 @@ uvicorn[standard]==0.29.0
 python-multipart==0.0.9
 
 # Computer Vision
-# opencv-python-headless: no GUI display libs needed on server/container
-opencv-python-headless==4.9.0.80
+# NOTE: mediapipe 0.10.x pulls opencv-contrib-python as a dependency.
+# Do NOT also pin opencv-python-headless — both installing cv2 causes a
+# conflict that crashes the server on startup. Let mediapipe own cv2.
 mediapipe==0.10.14
 numpy==1.26.4
 
