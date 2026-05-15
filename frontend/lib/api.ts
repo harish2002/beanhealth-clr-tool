@@ -25,6 +25,7 @@ const MOCK_SUCCESS: AnalyseResponse = {
     condition_name:          "Esotropia",
     icd10_code:              "H50.01",
     deviation_degrees:       14.2,
+    asymmetry_degrees:       12.1,
     asymmetry_score:         0.35,
     severity:                "MODERATE",
     referral_recommendation: "Refer to ophthalmology within 4 weeks",
