@@ -1,4 +1,5 @@
 steps:
+  # Step 1: Build the Docker image
   - name: "gcr.io/cloud-builders/docker"
     args:
       - build
@@ -8,8 +9,24 @@ steps:
       - backend/Dockerfile
       - backend
 
+  # Step 2: Deploy to Cloud Run
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - beanhealth-backend
+      - --image=$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/beanhealth-backend:$COMMIT_SHA
+      - --region=$_DEPLOY_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      - --port=8000
+
 images:
   - "$_AR_HOSTNAME/$_AR_PROJECT_ID/$_AR_REPOSITORY/beanhealth-backend:$COMMIT_SHA"
+
+substitutions:
+  _DEPLOY_REGION: asia-south1
 
 options:
   logging: CLOUD_LOGGING_ONLY
