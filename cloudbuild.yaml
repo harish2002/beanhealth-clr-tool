@@ -1,0 +1,13 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - build
+      - -t
+      - $_IMAGE_NAME
+      - -f
+      - backend/Dockerfile
+      - backend
+substitutions:
+  _IMAGE_NAME: gcr.io/$PROJECT_ID/beanhealth-backend:$COMMIT_SHA
+images:
+  - $_IMAGE_NAME
