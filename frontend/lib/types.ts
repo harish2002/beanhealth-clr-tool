@@ -46,6 +46,8 @@ export interface TechnicalDetail {
   right_direction:          EyeDirection;
   deviation_mm:             number;
   dominant_eye:             string;
+  bav_nasal:                number;
+  bav_vertical:             number;
   confidence:               Confidence;
   flags:                    string[];
 }

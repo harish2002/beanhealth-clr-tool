@@ -526,6 +526,8 @@ def build_success_report(
             "right_direction":          displacement.right_direction,
             "deviation_mm":             round(asymmetry.deviation_mm, 3),
             "dominant_eye":             asymmetry.dominant_eye,
+            "bav_nasal":                round(asymmetry.bav_nasal,    4),
+            "bav_vertical":             round(asymmetry.bav_vertical,  4),
             "confidence":               _confidence_label(pupil_result),
             "flags":                    all_flags,
         },

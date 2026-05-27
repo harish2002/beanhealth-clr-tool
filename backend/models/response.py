@@ -89,6 +89,16 @@ class TechnicalDetail(BaseModel):
     right_direction:          str         = Field(description="Anatomical direction of right CLR displacement.")
     deviation_mm:             float       = Field(description="Dominant-eye displacement in mm.")
     dominant_eye:             str         = Field(description="Which eye has the larger displacement.")
+    bav_nasal:                float       = Field(
+        default=0.0,
+        description="Bilateral asymmetry vector — nasal axis component (normalised). "
+                    "Positive = left eye more nasal than right. Near 0 in true alignment."
+    )
+    bav_vertical:             float       = Field(
+        default=0.0,
+        description="Bilateral asymmetry vector — vertical axis component (normalised). "
+                    "Positive = left eye more superior than right."
+    )
     confidence:               Literal["HIGH", "MEDIUM", "LOW"] = Field(
         description="Overall pupil-localisation confidence (worst-case of both eyes)."
     )

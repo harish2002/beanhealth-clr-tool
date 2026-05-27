@@ -46,6 +46,8 @@ const MOCK_SUCCESS: AnalyseResponse = {
     right_direction:         "nasal",
     deviation_mm:            2.875,
     dominant_eye:            "left",
+    bav_nasal:               0.35,
+    bav_vertical:            0.02,
     confidence:              "HIGH",
     flags:                   [],
   },
