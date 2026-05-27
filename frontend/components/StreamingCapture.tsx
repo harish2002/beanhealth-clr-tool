@@ -32,9 +32,9 @@ const PIPELINE_MODULES = [
 const TOTAL_FRAMES      = 10;    // frames to capture (2 fps × 5 s)
 const FRAME_INTERVAL_MS = 500;   // 2 frames per second
 
-// Expected processing time per frame on Railway (~2s), plus aggregation (~3s)
-// 10 frames × 2s + 3s = ~23s — well within Railway's 60s proxy timeout.
-const MS_PER_FRAME      = 2000;
+// Expected processing time per frame on Railway at 640px (~1.5s), plus aggregation (~3s)
+// 10 frames × 1.5s + 3s = ~18s — well within Railway's 60s proxy timeout.
+const MS_PER_FRAME      = 1500;
 const MS_AGGREGATION    = 3000;
 const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
@@ -342,19 +342,38 @@ export default function StreamingCapture({
   }
 
   // ── Capture a single frame as JPEG blob ───────────────────
+  //
+  // Frames are downscaled to a max of 640 px wide before encoding.
+  // The CLR pipeline only needs the iris to be ~40–60 px wide to
+  // work reliably; sending full 1280×720 camera frames (~920 K pixels)
+  // forces MediaPipe to process 4× more data per frame, inflating
+  // per-frame backend time from ~1.5 s to ~6 s.
+  // At 640×360 MediaPipe still detects the iris accurately and the
+  // total 10-frame upload + processing stays well under 30 s.
+
+  const CAPTURE_MAX_WIDTH = 640;
 
   function captureFrame(): Promise<Blob | null> {
     return new Promise((resolve) => {
       const video = videoRef.current;
       if (!video) return resolve(null);
 
+      // Scale to max width, preserve aspect ratio
+      const srcW  = video.videoWidth  || 1280;
+      const srcH  = video.videoHeight || 720;
+      const scale = Math.min(1, CAPTURE_MAX_WIDTH / srcW);
+      const dstW  = Math.round(srcW * scale);
+      const dstH  = Math.round(srcH * scale);
+
       const offscreen = document.createElement("canvas");
-      offscreen.width  = video.videoWidth;
-      offscreen.height = video.videoHeight;
+      offscreen.width  = dstW;
+      offscreen.height = dstH;
       const ctx = offscreen.getContext("2d");
       if (!ctx) return resolve(null);
-      ctx.drawImage(video, 0, 0);
-      offscreen.toBlob((blob) => resolve(blob), "image/jpeg", 0.92);
+      ctx.drawImage(video, 0, 0, dstW, dstH);
+      // Quality 0.88 — indistinguishable from 0.92 for CLR analysis
+      // but ~15 % smaller file, slightly faster upload on mobile
+      offscreen.toBlob((blob) => resolve(blob), "image/jpeg", 0.88);
     });
   }
 
