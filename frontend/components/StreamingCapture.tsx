@@ -56,6 +56,8 @@ interface QualityScore {
   pose:         "ok" | "off_axis" | "unknown";
   openness:     "ok" | "closing" | "unknown";
   lighting:     "dark" | "ok" | "bright" | "unknown";
+  /** Corneal light reflex (torch reflection) visibility — both eyes combined */
+  clr:          "ok" | "weak" | "missing" | "unknown";
 }
 
 const QUALITY_DEFAULT: QualityScore = {
@@ -64,11 +66,84 @@ const QUALITY_DEFAULT: QualityScore = {
   pose:         "unknown",
   openness:     "unknown",
   lighting:     "unknown",
+  clr:          "unknown",
 };
 
-/** All 4 core checks must pass before capture is allowed. */
+/**
+ * Pre-capture gate.  All five core checks must pass before capture is allowed:
+ * eyes detected, correct distance, frontal pose, eyes open, AND corneal reflex
+ * visible in both eyes (otherwise the backend will INCONCLUSIVE on no_reflex).
+ */
 function isReadyToCapture(q: QualityScore): boolean {
-  return q.eyesDetected && q.distance === "ok" && q.pose === "ok" && q.openness === "ok";
+  return (
+    q.eyesDetected &&
+    q.distance === "ok" &&
+    q.pose     === "ok" &&
+    q.openness === "ok" &&
+    q.clr      !== "missing"   // allow "weak" so users with marginal torches can try
+  );
+}
+
+// CLR detection thresholds (perceived luminance 0–255)
+const CLR_BRIGHTNESS_OK    = 220;   // strong specular reflection
+const CLR_BRIGHTNESS_WEAK  = 180;   // dim reflection — capture allowed but flagged
+
+/**
+ * Sample the maximum Rec.709 luminance inside a small box centred on an iris.
+ * Used as a real-time CLR-presence check: a torch reflection saturates pixels
+ * near 255, while ambient-only lighting tops out around 180–210.
+ *
+ * Pulls pixels from the video element via a shared offscreen canvas so we
+ * don't allocate per frame.  Coordinates are in canvas-display space (the
+ * same space drawIris uses); they are converted back to video pixel coords
+ * via the srcX/srcY/srcW/srcH crop rect computed by drawOverlay.
+ */
+const _clrSampleCanvas: HTMLCanvasElement | null =
+  typeof document !== "undefined" ? document.createElement("canvas") : null;
+
+function sampleMaxLuminance(
+  video: HTMLVideoElement,
+  centre: { x: number; y: number },
+  irisRadiusPx: number,
+  srcX: number, srcY: number, srcW: number, srcH: number,
+  dispW: number, dispH: number,
+): number {
+  if (!_clrSampleCanvas) return 0;
+
+  // Sample box: 1.4× iris radius (covers the whole iris incl. CLR)
+  const halfBoxDisp = Math.max(8, irisRadiusPx * 1.4);
+
+  // Convert from display coords back to video-pixel coords
+  const vCX = (centre.x / dispW) * srcW + srcX;
+  const vCY = (centre.y / dispH) * srcH + srcY;
+  const vHalf = (halfBoxDisp / dispW) * srcW;
+
+  const vx = Math.max(0, Math.round(vCX - vHalf));
+  const vy = Math.max(0, Math.round(vCY - vHalf));
+  const vw = Math.min(video.videoWidth  - vx, Math.round(vHalf * 2));
+  const vh = Math.min(video.videoHeight - vy, Math.round(vHalf * 2));
+  if (vw < 4 || vh < 4) return 0;
+
+  // Use a fixed-size 32×32 sample (cheap, plenty for peak detection)
+  const SAMP = 32;
+  _clrSampleCanvas.width  = SAMP;
+  _clrSampleCanvas.height = SAMP;
+  const sctx = _clrSampleCanvas.getContext("2d", { willReadFrequently: true });
+  if (!sctx) return 0;
+
+  try {
+    sctx.drawImage(video, vx, vy, vw, vh, 0, 0, SAMP, SAMP);
+    const data = sctx.getImageData(0, 0, SAMP, SAMP).data;
+    let maxLum = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      // Rec.709 luma
+      const lum = 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+      if (lum > maxLum) maxLum = lum;
+    }
+    return maxLum;
+  } catch {
+    return 0;   // CORS or video not ready
+  }
 }
 
 // Eyelid landmark indices for eye openness (MediaPipe FaceMesh)
@@ -337,6 +412,7 @@ export default function StreamingCapture({
         distance: "unknown",
         pose:     "unknown",
         openness: "unknown",
+        clr:      "unknown",
       }));
       return;
     }
@@ -452,7 +528,17 @@ export default function StreamingCapture({
       const openness: QualityScore["openness"] =
         Math.min(lEAR, rEAR) > 0.25 ? "ok" : "closing";
 
-      setQuality((q) => ({ ...q, eyesDetected: true, distance, pose, openness }));
+      // ④ Corneal reflex — sample max brightness in a small region centred on each iris.
+      //    A real torch reflex saturates pixels near 255 inside the iris area.
+      //    No reflex → max brightness ≤ ~200 even in bright ambient light.
+      const leftMaxLum  = sampleMaxLuminance(video, lc, lr, srcX, srcY, srcW, srcH, W, H);
+      const rightMaxLum = sampleMaxLuminance(video, rc, rr, srcX, srcY, srcW, srcH, W, H);
+      const minLum      = Math.min(leftMaxLum, rightMaxLum);  // both eyes must reflect
+      const clr: QualityScore["clr"] =
+        minLum >= CLR_BRIGHTNESS_OK    ? "ok"      :
+        minLum >= CLR_BRIGHTNESS_WEAK  ? "weak"    : "missing";
+
+      setQuality((q) => ({ ...q, eyesDetected: true, distance, pose, openness, clr }));
     }
 
     // "Eyes detected" badge
@@ -756,6 +842,17 @@ export default function StreamingCapture({
                                  ? "Room too dark"
                                  : quality.lighting === "bright"
                                  ? "Too bright / outdoors"
+                                 : "Checking…",
+                    },
+                    {
+                      label:   "Torch reflex",
+                      ok:      quality.clr === "ok",
+                      unknown: quality.clr === "unknown",
+                      okTip:   "Bright reflex on both eyes ✓",
+                      warnTip: quality.clr === "missing"
+                                 ? "No torch reflection — turn on torch"
+                                 : quality.clr === "weak"
+                                 ? "Weak reflex — aim torch closer to camera axis"
                                  : "Checking…",
                     },
                   ] as const

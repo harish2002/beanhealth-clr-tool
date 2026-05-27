@@ -124,6 +124,15 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
   const leftPD  = toPD(technical.left_displacement_norm  * 5.75 * 7.0);
   const rightPD = toPD(technical.right_displacement_norm * 5.75 * 7.0);
 
+  // ── Signal-to-noise ratio (the honest measurement quality indicator) ──
+  //  SNR < 2 means the measurement noise is comparable to the signal — the
+  //  reading is dominated by capture conditions rather than clinical findings.
+  const snr =
+    result.asymmetry_avg_deg !== undefined && result.asymmetry_std_deg !== undefined
+      ? result.asymmetry_avg_deg / Math.max(result.asymmetry_std_deg, 0.5)
+      : null;
+  const lowSNR = technical.flags.includes("low_snr_noise_dominated");
+
   return (
     <div className="min-h-screen bg-slate-50 pb-16 print:bg-white print:pb-0">
 
@@ -320,6 +329,25 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
           <p className="text-slate-600 text-sm leading-relaxed mt-4 pt-4 border-t border-black/5">
             {r.narrative}
           </p>
+
+          {/* Honest low-SNR disclosure — when measurement noise dominated the signal */}
+          {lowSNR && (
+            <div className="mt-3 bg-white/70 border border-amber-300 rounded-xl px-4 py-3">
+              <p className="text-amber-800 font-bold text-xs uppercase tracking-wider mb-1">
+                ⚠ Measurement noise was high
+              </p>
+              <p className="text-amber-700 text-xs leading-relaxed">
+                Capture conditions (torch wobble, ambient reflections, or
+                fixation drift) produced inter-frame variation comparable to
+                the asymmetry signal itself. The result is reported as
+                <strong> NORMAL </strong> because no clinically significant
+                deviation was reliably detected — but the screening was not
+                ideal. If you have any concern about the patient&apos;s eye
+                alignment, recommend a clinical cover test by an eye
+                specialist rather than relying on this scan alone.
+              </p>
+            </div>
+          )}
         </section>
 
         {/* ══════════════════════════════════════════════════════════════
@@ -442,6 +470,17 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
             <MetricRow
               label="Asymmetry std dev"
               value={`±${result.asymmetry_std_deg.toFixed(2)}°`}
+            />
+          )}
+          {snr !== null && (
+            <MetricRow
+              label="Signal-to-noise ratio"
+              value={
+                snr >= 3.0 ? `${snr.toFixed(1)} (strong)` :
+                snr >= 2.0 ? `${snr.toFixed(1)} (adequate)` :
+                snr >= 1.0 ? `${snr.toFixed(1)} (weak — noise-dominated)` :
+                             `${snr.toFixed(1)} (below noise floor)`
+              }
             />
           )}
           {result.deviation_avg_deg !== undefined && result.deviation_std_deg !== undefined && (

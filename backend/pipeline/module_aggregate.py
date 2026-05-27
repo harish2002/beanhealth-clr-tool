@@ -238,12 +238,61 @@ def aggregate_frame_results(
     else:
         outlier_idx = []
 
+    # ── Step 2b: CLR position consistency filter ──────────────
+    #
+    # IQR caught frames whose *combined* deviation was far from the median, but
+    # frames where one eye's CLR drifted while the other stayed put can produce
+    # a "normal-looking" deviation that still corrupts the asymmetry signal.
+    #
+    # This step rejects frames where either eye's CLR position (in iris-radius
+    # units, kappa-corrected) is >0.25 from the batch median.
+    #   0.25 iris-radii ≈ 10° asymmetry contribution — anything bigger than
+    #   that across frames is torch wobble, blob-flip, or head movement, not
+    #   real strabismus (strabismus is stable across frames by definition).
+    CLR_POSITION_DRIFT_TOLERANCE = 0.25
+
+    if len(accepted_indices) >= 4:
+        left_norms  = [frame_reports[i].get('technical', {}).get('left_displacement_norm',  0.0) for i in accepted_indices]
+        right_norms = [frame_reports[i].get('technical', {}).get('right_displacement_norm', 0.0) for i in accepted_indices]
+        median_left  = float(np.median(left_norms))
+        median_right = float(np.median(right_norms))
+
+        keep_devs, keep_asym, keep_asymdeg, keep_idx = [], [], [], []
+        for dev, asym, asymdeg, idx, ln, rn in zip(
+            accepted_deviations, accepted_asymmetries, accepted_asym_degrees,
+            accepted_indices, left_norms, right_norms,
+        ):
+            if max(abs(ln - median_left), abs(rn - median_right)) > CLR_POSITION_DRIFT_TOLERANCE:
+                per_frame_readings[idx]   = None
+                per_frame_rejections[idx] = "clr_position_drift"
+                rejected_frames.append({"frame": idx, "reason": "clr_position_drift"})
+                logger.debug(
+                    f"[Aggregate] Frame {idx} CLR drift: "
+                    f"L={ln:.3f}(m{median_left:.3f}) R={rn:.3f}(m{median_right:.3f})"
+                )
+            else:
+                keep_devs.append(dev)
+                keep_asym.append(asym)
+                keep_asymdeg.append(asymdeg)
+                keep_idx.append(idx)
+
+        if len(keep_idx) < len(accepted_indices):
+            logger.info(
+                f"[Aggregate] CLR drift filter rejected "
+                f"{len(accepted_indices) - len(keep_idx)} additional frames "
+                f"(median L={median_left:.3f}, R={median_right:.3f})"
+            )
+
+        accepted_deviations   = keep_devs
+        accepted_asymmetries  = keep_asym
+        accepted_asym_degrees = keep_asymdeg
+        accepted_indices      = keep_idx
+
     frames_accepted = len(accepted_deviations)
     frames_rejected = total_frames - frames_accepted
 
     logger.info(
-        f"[Aggregate] Accepted {frames_accepted}/{total_frames} frames "
-        f"({frames_after_quality - frames_accepted} outliers removed)"
+        f"[Aggregate] Accepted {frames_accepted}/{total_frames} frames after all filters"
     )
 
     # ── Step 3: Check minimum frames ─────────────────────────
