@@ -29,17 +29,17 @@ const PIPELINE_MODULES = [
   { name: "Report",              desc: "Generating annotated result image" },
 ] as const;
 
+const TOTAL_FRAMES      = 20;    // frames to capture (2 fps × 10 s)
+const FRAME_INTERVAL_MS = 500;   // 2 frames per second
+
 // Expected processing time per frame on Railway (~1.5s), plus aggregation (~3s)
-const MS_PER_FRAME    = 1500;
-const MS_AGGREGATION  = 3000;
+const MS_PER_FRAME      = 1500;
+const MS_AGGREGATION    = 3000;
 const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
 // ── Iris landmark indices (MediaPipe FaceMesh) ──────────────
 const LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472];
 const RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477];
-
-const TOTAL_FRAMES  = 20;   // frames to capture (2 fps × 10 s)
-const FRAME_INTERVAL_MS = 500; // 2 frames per second
 
 type CaptureStatus =
   | "idle"           // waiting for user to start
