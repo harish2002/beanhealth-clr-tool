@@ -106,18 +106,6 @@ export default function LandingPage() {
             </div>
           </div>
 
-          {/* Credibility badges */}
-          <div className="hidden sm:flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold tracking-widest text-slate-500 uppercase
-                             border border-slate-200 rounded-full px-2.5 py-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              CDSCO Class A SaMD
-            </span>
-            <span className="hidden md:inline-flex items-center text-[10px] font-semibold tracking-widest text-slate-500 uppercase
-                             border border-slate-200 rounded-full px-2.5 py-1">
-              LVPEI BIONEST research partner
-            </span>
-          </div>
         </div>
       </nav>
 
