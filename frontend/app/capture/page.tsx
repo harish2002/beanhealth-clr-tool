@@ -78,7 +78,7 @@ export default function CapturePage() {
 
           <div className="text-center">
             <p className="text-slate-800 text-sm font-semibold">{patientName}</p>
-            <p className="text-slate-400 text-xs">Age {patientAge} · 30-Frame Analysis</p>
+            <p className="text-slate-400 text-xs">Age {patientAge} · 20-Frame Analysis</p>
           </div>
 
           <div className="w-6" />
@@ -112,7 +112,7 @@ export default function CapturePage() {
                   { n: "3", title: "CLR Detection",      desc: "Top 3% brightest pixels isolate the torch reflection on the cornea" },
                   { n: "4", title: "Displacement",       desc: "Vector measured from pupil → corneal reflex, normalised by iris radius" },
                   { n: "5", title: "Hirschberg Angle",   desc: "1 mm displacement ≈ 7° ocular deviation (clinical standard)" },
-                  { n: "6", title: "Aggregation",        desc: "30 frames averaged · IQR outliers removed · std dev scored" },
+                  { n: "6", title: "Aggregation",        desc: "20 frames averaged · IQR outliers removed · std dev scored" },
                 ].map((s) => (
                   <li key={s.n} className="flex gap-3">
                     <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">

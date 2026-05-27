@@ -419,27 +419,28 @@ async def analyse_stream(
             status_code=200,
         )
 
-    # ── Load all frames concurrently, then process in parallel ──
-    async def _load_and_run(i: int, upload: UploadFile) -> dict:
+    # ── Process frames sequentially ───────────────────────────
+    # MediaPipe + OpenCV are CPU-bound and block the event loop —
+    # asyncio.gather gives no speedup here and causes GIL contention.
+    # Sequential processing is simpler and reliably within timeout.
+    frame_reports: TList[dict] = []
+    for i, upload in enumerate(images):
         try:
             img_rgb = await _load_image(upload)
         except HTTPException:
-            return {
+            frame_reports.append({
                 "status": "INCONCLUSIVE",
                 "reason": "invalid_image",
                 "reason_human": f"Frame {i} could not be decoded.",
-            }
+            })
+            continue
+
         report = await _run_single_frame_pipeline(img_rgb, patient_name, patient_age)
+        frame_reports.append(report)
         logger.debug(
             f"[API] Frame {i}: status={report.get('status')} "
             f"deviation={report.get('result', {}).get('deviation_degrees', 'N/A')}"
         )
-        return report
-
-    import asyncio as _asyncio
-    frame_reports: TList[dict] = list(
-        await _asyncio.gather(*[_load_and_run(i, upload) for i, upload in enumerate(images)])
-    )
 
     # ── Aggregate across frames ───────────────────────────────
     try:

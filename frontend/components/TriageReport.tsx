@@ -143,7 +143,7 @@ export default function TriageReport({ result, onRetry }: TriageReportProps) {
             {result.frames_total !== undefined && result.frames_total > 1 && (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 print:hidden">
                 <div className="flex items-center justify-between mb-3">
-                  <h2 className="text-slate-900 font-semibold">30-Frame Analysis</h2>
+                  <h2 className="text-slate-900 font-semibold">20-Frame Analysis</h2>
                   {result.aggregate_confidence && (
                     <span className={`text-xs px-2.5 py-1 rounded-full border font-semibold ${CONF_COLOUR[result.aggregate_confidence] ?? ""}`}>
                       {result.aggregate_confidence} confidence
