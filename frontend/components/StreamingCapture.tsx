@@ -49,6 +49,36 @@ type CaptureStatus =
   | "processing"     // sent to backend, waiting for response
   | "done";          // response received
 
+// ── Live quality metrics ──────────────────────────────────────
+interface QualityScore {
+  eyesDetected: boolean;
+  distance:     "too_close" | "ok" | "too_far" | "unknown";
+  pose:         "ok" | "off_axis" | "unknown";
+  openness:     "ok" | "closing" | "unknown";
+  lighting:     "dark" | "ok" | "bright" | "unknown";
+}
+
+const QUALITY_DEFAULT: QualityScore = {
+  eyesDetected: false,
+  distance:     "unknown",
+  pose:         "unknown",
+  openness:     "unknown",
+  lighting:     "unknown",
+};
+
+/** All 4 core checks must pass before capture is allowed. */
+function isReadyToCapture(q: QualityScore): boolean {
+  return q.eyesDetected && q.distance === "ok" && q.pose === "ok" && q.openness === "ok";
+}
+
+// Eyelid landmark indices for eye openness (MediaPipe FaceMesh)
+// Subject's left eye  (iris indices 468-472): upper=159, lower=145
+// Subject's right eye (iris indices 473-477): upper=386, lower=374
+const LEFT_UPPER_LID  = 159;
+const LEFT_LOWER_LID  = 145;
+const RIGHT_UPPER_LID = 386;
+const RIGHT_LOWER_LID = 374;
+
 interface Props {
   patientName: string;
   patientAge: number;
@@ -87,6 +117,10 @@ export default function StreamingCapture({
   const [isAggregating, setIsAggregating] = useState(false);
   const procTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const procStartRef = useRef<number>(0);
+
+  // Live quality meter
+  const [quality, setQuality] = useState<QualityScore>(QUALITY_DEFAULT);
+  const qualityTickRef = useRef<number>(0); // throttle quality state updates to 5fps
 
   // Accumulate captured frames as blobs
   const framesRef    = useRef<Blob[]>([]);
@@ -138,6 +172,44 @@ export default function StreamingCapture({
     };
   }, [status]);
 
+  // ── Luminance sampling (2 fps, separate from MediaPipe) ─────
+  // Samples a 64×36 thumbnail of the video to estimate ambient brightness.
+  // This runs independently of MediaPipe so it still works even if face
+  // detection is momentarily lost.
+
+  useEffect(() => {
+    if (status !== "detecting" && status !== "capturing") return;
+
+    const id = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.readyState < 2) return;
+
+      const tmp = document.createElement("canvas");
+      tmp.width = 64; tmp.height = 36;
+      const ctx = tmp.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(video, 0, 0, 64, 36);
+      const data = ctx.getImageData(0, 0, 64, 36).data;
+      let lum = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        // Rec. 709 luminance weights
+        lum += data[i] * 0.2126 + data[i + 1] * 0.7152 + data[i + 2] * 0.0722;
+      }
+      lum /= data.length / 4;
+
+      // With the torch on the eye crop will be bright, but the overall frame
+      // is dominated by ambient light. Thresholds (0-255):
+      //   < 20 → very dark room, torch may not produce a clean reflex
+      //   > 200 → overexposed / bright sunlight, CLR will wash out
+      const lighting: QualityScore["lighting"] =
+        lum < 20 ? "dark" : lum > 200 ? "bright" : "ok";
+
+      setQuality((q) => ({ ...q, lighting }));
+    }, 500);
+
+    return () => clearInterval(id);
+  }, [status]);
+
   // ── Start camera ──────────────────────────────────────────
 
   const startCamera = useCallback(async () => {
@@ -179,6 +251,7 @@ export default function StreamingCapture({
   const stopCamera = useCallback(() => {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+    setQuality(QUALITY_DEFAULT);
   }, []);
 
   // ── Load MediaPipe FaceMesh dynamically ───────────────────
@@ -258,6 +331,13 @@ export default function StreamingCapture({
     const lms = results.multiFaceLandmarks?.[0];
     if (!lms) {
       setEyesDetected(false);
+      setQuality((q) => ({
+        ...q,
+        eyesDetected: false,
+        distance: "unknown",
+        pose:     "unknown",
+        openness: "unknown",
+      }));
       return;
     }
 
@@ -331,6 +411,49 @@ export default function StreamingCapture({
 
     drawIris(LEFT_IRIS_INDICES,  "L");
     drawIris(RIGHT_IRIS_INDICES, "R");
+
+    // ── Quality metrics (throttled to 5 fps) ─────────────────
+    const now = performance.now();
+    if (now - qualityTickRef.current > 200) {
+      qualityTickRef.current = now;
+
+      // Iris centres and radii in canvas-pixel space
+      const liPts = LEFT_IRIS_INDICES.map((i) => px(lms[i]));
+      const riPts = RIGHT_IRIS_INDICES.map((i) => px(lms[i]));
+      const lc = liPts[0];
+      const rc = riPts[0];
+      const lr = liPts.slice(1).map((p) => Math.hypot(p.x - lc.x, p.y - lc.y))
+                       .reduce((a, b) => a + b, 0) / 4;
+      const rr = riPts.slice(1).map((p) => Math.hypot(p.x - rc.x, p.y - rc.y))
+                       .reduce((a, b) => a + b, 0) / 4;
+      const avgR = (lr + rr) / 2;
+
+      // ① Distance — iris diameter as % of canvas height
+      // Typical phone at 30–40 cm: iris ≈ 7–13 % of frame height
+      const irisHRatio = (avgR * 2) / H;
+      const distance: QualityScore["distance"] =
+        irisHRatio > 0.15 ? "too_close" :
+        irisHRatio < 0.04 ? "too_far"   : "ok";
+
+      // ② Head pose — horizontal yaw + vertical tilt from iris symmetry
+      // For a frontal face: lx + rx ≈ W  (mirrored symmetry)
+      const yawErr  = Math.abs((lc.x + rc.x) / W - 1.0);        // ideal = 0
+      const tiltErr = Math.abs(lc.y - rc.y) / (avgR * 2);        // in iris-diameters
+      const pose: QualityScore["pose"] =
+        (yawErr > 0.12 || tiltErr > 0.5) ? "off_axis" : "ok";
+
+      // ③ Eye openness — eyelid gap vs iris diameter (eye aspect ratio)
+      const luY = px(lms[LEFT_UPPER_LID]).y;
+      const llY = px(lms[LEFT_LOWER_LID]).y;
+      const ruY = px(lms[RIGHT_UPPER_LID]).y;
+      const rlY = px(lms[RIGHT_LOWER_LID]).y;
+      const lEAR = (llY - luY) / (lr * 2);
+      const rEAR = (rlY - ruY) / (rr * 2);
+      const openness: QualityScore["openness"] =
+        Math.min(lEAR, rEAR) > 0.25 ? "ok" : "closing";
+
+      setQuality((q) => ({ ...q, eyesDetected: true, distance, pose, openness }));
+    }
 
     // "Eyes detected" badge
     ctx.font         = "12px system-ui, sans-serif";
@@ -584,28 +707,126 @@ export default function StreamingCapture({
 
         {status === "detecting" && (
           <div className="flex flex-col gap-3 w-full">
-            {/* Eye detection status */}
-            <div className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
-              eyesDetected
-                ? "bg-emerald-50 border-emerald-200 text-emerald-700"
-                : "bg-amber-50 border-amber-200 text-amber-700"
-            }`}>
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${eyesDetected ? "bg-emerald-500" : "bg-amber-400"}`} />
-              {eyesDetected
-                ? "Both eyes detected — ready to scan"
-                : "Searching for eyes… point torch at both eyes from ~30 cm"}
+            {/* ── Live quality card ── */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-widest mb-3">
+                Live capture quality
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {(
+                  [
+                    {
+                      label:   "Eyes found",
+                      ok:      quality.eyesDetected,
+                      unknown: false,
+                      okTip:   "Both irises detected",
+                      warnTip: "Aim torch at both eyes",
+                    },
+                    {
+                      label:   "Distance",
+                      ok:      quality.distance === "ok",
+                      unknown: quality.distance === "unknown",
+                      okTip:   "30–40 cm away ✓",
+                      warnTip: quality.distance === "too_close"
+                                 ? "Move further back"
+                                 : quality.distance === "too_far"
+                                 ? "Move closer"
+                                 : "Detecting…",
+                    },
+                    {
+                      label:   "Head angle",
+                      ok:      quality.pose === "ok",
+                      unknown: quality.pose === "unknown",
+                      okTip:   "Facing straight ✓",
+                      warnTip: "Look straight at camera",
+                    },
+                    {
+                      label:   "Eyes open",
+                      ok:      quality.openness === "ok",
+                      unknown: quality.openness === "unknown",
+                      okTip:   "Both eyes open ✓",
+                      warnTip: "Open eyes wider",
+                    },
+                    {
+                      label:   "Lighting",
+                      ok:      quality.lighting === "ok",
+                      unknown: quality.lighting === "unknown",
+                      okTip:   "Good ambient light",
+                      warnTip: quality.lighting === "dark"
+                                 ? "Room too dark"
+                                 : quality.lighting === "bright"
+                                 ? "Too bright / outdoors"
+                                 : "Checking…",
+                    },
+                  ] as const
+                ).map(({ label, ok, unknown, okTip, warnTip }) => (
+                  <div
+                    key={label}
+                    className={`flex items-start gap-2 px-3 py-2 rounded-lg transition-colors duration-300 ${
+                      unknown
+                        ? "bg-slate-50"
+                        : ok
+                        ? "bg-emerald-50"
+                        : "bg-amber-50"
+                    }`}
+                  >
+                    <span
+                      className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${
+                        unknown
+                          ? "bg-slate-300"
+                          : ok
+                          ? "bg-emerald-500"
+                          : "bg-amber-400 animate-pulse"
+                      }`}
+                    />
+                    <div className="min-w-0">
+                      <p
+                        className={`text-xs font-semibold leading-tight ${
+                          unknown
+                            ? "text-slate-400"
+                            : ok
+                            ? "text-emerald-700"
+                            : "text-amber-700"
+                        }`}
+                      >
+                        {label}
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-tight mt-0.5 truncate">
+                        {unknown ? "Waiting…" : ok ? okTip : warnTip}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Overall readiness summary */}
+              {quality.eyesDetected && (
+                <p
+                  className={`mt-3 text-xs text-center font-medium ${
+                    isReadyToCapture(quality)
+                      ? "text-emerald-600"
+                      : "text-amber-600"
+                  }`}
+                >
+                  {isReadyToCapture(quality)
+                    ? "✓ All checks passed — ready to scan"
+                    : "Fix the amber items above for best accuracy"}
+                </p>
+              )}
             </div>
 
             <button
               onClick={startCapture}
-              disabled={!eyesDetected}
+              disabled={!isReadyToCapture(quality)}
               className={`w-full py-3.5 font-semibold rounded-xl transition-all ${
-                eyesDetected
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md"
+                isReadyToCapture(quality)
+                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25"
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
-              Start 10-Frame Analysis
+              {isReadyToCapture(quality)
+                ? "Start 10-Frame Analysis"
+                : "Align for best results…"}
             </button>
           </div>
         )}
