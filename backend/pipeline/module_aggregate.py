@@ -84,6 +84,16 @@ def _is_frame_usable(frame_report: Dict[str, Any]) -> Tuple[bool, str]:
         • Non-SUCCESS frames (blink / no flash / no face detected)
         • Frames with a mathematically invalid deviation value
 
+    NOTE on ambiguous_reflex:
+        We intentionally do NOT reject frames with ambiguous_reflex here.
+        Proximity-based selection in Module 3 already deterministically picks
+        the blob closest to the pupil centre — the ambiguity is resolved before
+        the measurement is made.  The flag is kept on the frame for display
+        purposes, but the measurement itself is valid.
+        The variance gate in Step 8 (asym_deg_std ≥ 2.5°) is the correct
+        safety mechanism for catching frames where multi-blob selection produced
+        an incorrect reading — it is data-driven rather than flag-driven.
+
     Returns:
         (True, "ok") if the frame passes all checks.
         (False, reason_code) if the frame should be rejected.
@@ -98,14 +108,6 @@ def _is_frame_usable(frame_report: Dict[str, Any]) -> Tuple[bool, str]:
     # Sanity bound — anything above 60° is almost certainly a detection error
     if deviation > 60.0:
         return False, "deviation_out_of_range"
-
-    # Reject frames where CLR detection was ambiguous (multiple blobs passed
-    # the filter).  Even though proximity-based selection now picks the closest
-    # blob, a frame with competing reflexes (e.g. glasses glare + cornea) is
-    # inherently less reliable and should not contribute to the average.
-    tech_flags = frame_report.get("technical", {}).get("flags", [])
-    if any("ambiguous_reflex" in f for f in tech_flags):
-        return False, "ambiguous_reflex"
 
     return True, "ok"
 
