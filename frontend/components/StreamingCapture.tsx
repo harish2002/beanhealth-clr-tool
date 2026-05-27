@@ -15,8 +15,24 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { analyseStream } from "@/lib/api";
+import { analyseStream, checkHealth } from "@/lib/api";
 import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
+
+// ── Pipeline module definitions (for processing animation) ───
+const PIPELINE_MODULES = [
+  { name: "Eye Detection",       desc: "MediaPipe FaceMesh locating both irises" },
+  { name: "Pupil Localisation",  desc: "Cross-validating pupil centre (2 methods)" },
+  { name: "CLR Detection",       desc: "Isolating corneal light reflex (top 3% pixels)" },
+  { name: "Displacement",        desc: "Measuring vector from pupil to light reflex" },
+  { name: "Hirschberg Angle",    desc: "Converting displacement to clinical degrees" },
+  { name: "Classification",      desc: "Applying triage criteria + ICD-10 code" },
+  { name: "Report",              desc: "Generating annotated result image" },
+] as const;
+
+// Expected processing time per frame on Railway (~1.5s), plus aggregation (~3s)
+const MS_PER_FRAME    = 1500;
+const MS_AGGREGATION  = 3000;
+const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
 // ── Iris landmark indices (MediaPipe FaceMesh) ──────────────
 const LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472];
@@ -53,17 +69,73 @@ export default function StreamingCapture({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const faceMeshRef = useRef<any>(null);
 
-  const [status,       setStatus]       = useState<CaptureStatus>("idle");
-  const [eyesDetected, setEyesDetected] = useState(false);
-  const [countdown,    setCountdown]    = useState(TOTAL_FRAMES);
+  const [status,        setStatus]        = useState<CaptureStatus>("idle");
+  const [eyesDetected,  setEyesDetected]  = useState(false);
+  const [countdown,     setCountdown]     = useState(TOTAL_FRAMES);
   const [capturedCount, setCapturedCount] = useState(0);
-  const [torchOn,      setTorchOn]      = useState(false);
-  const [cameraError,  setCameraError]  = useState<string | null>(null);
+  const [torchOn,       setTorchOn]       = useState(false);
+  const [cameraError,   setCameraError]   = useState<string | null>(null);
+
+  // Server warm-up state
+  const [serverReady, setServerReady] = useState<boolean | null>(null); // null=checking
+
+  // Processing animation state
+  const [procFrame,    setProcFrame]    = useState(0);   // 0-based frame index
+  const [procModule,   setProcModule]   = useState(0);   // 0-6 module index
+  const [procProgress, setProcProgress] = useState(0);   // 0-100
+  const [isAggregating, setIsAggregating] = useState(false);
+  const procTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const procStartRef = useRef<number>(0);
 
   // Accumulate captured frames as blobs
   const framesRef    = useRef<Blob[]>([]);
   const capturingRef = useRef(false);
   const intervalRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // ── Wake-up ping on mount ─────────────────────────────────
+
+  useEffect(() => {
+    setServerReady(null);
+    checkHealth().then((ok) => setServerReady(ok));
+  }, []);
+
+  // ── Processing animation timer ────────────────────────────
+
+  useEffect(() => {
+    if (status === "processing") {
+      procStartRef.current = Date.now();
+      setProcFrame(0);
+      setProcModule(0);
+      setProcProgress(0);
+      setIsAggregating(false);
+
+      procTimerRef.current = setInterval(() => {
+        const elapsed = Date.now() - procStartRef.current;
+        const frameDone = Math.min(
+          Math.floor(elapsed / MS_PER_FRAME),
+          TOTAL_FRAMES - 1
+        );
+        const moduleIdx = Math.floor(
+          ((elapsed % MS_PER_FRAME) / MS_PER_FRAME) * PIPELINE_MODULES.length
+        ) % PIPELINE_MODULES.length;
+        const progress = Math.min((elapsed / TOTAL_EXPECTED_MS) * 100, 97);
+        const aggregating = elapsed > TOTAL_FRAMES * MS_PER_FRAME;
+
+        setProcFrame(frameDone);
+        setProcModule(moduleIdx);
+        setProcProgress(progress);
+        setIsAggregating(aggregating);
+      }, 100);
+    } else {
+      if (procTimerRef.current) {
+        clearInterval(procTimerRef.current);
+        procTimerRef.current = null;
+      }
+    }
+    return () => {
+      if (procTimerRef.current) clearInterval(procTimerRef.current);
+    };
+  }, [status]);
 
   // ── Start camera ──────────────────────────────────────────
 
@@ -400,9 +472,60 @@ export default function StreamingCapture({
 
         {/* Processing overlay */}
         {status === "processing" && (
-          <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center gap-3">
-            <div className="w-10 h-10 border-4 border-white border-t-emerald-400 rounded-full animate-spin" />
-            <p className="text-white text-sm font-medium">Analysing {capturedCount} frames…</p>
+          <div className="absolute inset-0 bg-black/75 flex flex-col items-center justify-center gap-4 px-5">
+            {/* Progress bar */}
+            <div className="w-full bg-white/20 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-full bg-emerald-400 rounded-full transition-all duration-300 ease-linear"
+                style={{ width: `${procProgress}%` }}
+              />
+            </div>
+
+            {/* Frame counter / aggregating label */}
+            <div className="text-center">
+              {isAggregating ? (
+                <p className="text-emerald-300 text-xs font-semibold uppercase tracking-widest">
+                  Aggregating results…
+                </p>
+              ) : (
+                <p className="text-white/60 text-xs">
+                  Frame <span className="text-white font-semibold">{procFrame + 1}</span> of {TOTAL_FRAMES}
+                </p>
+              )}
+            </div>
+
+            {/* Module steps */}
+            <div className="w-full flex flex-col gap-1.5">
+              {PIPELINE_MODULES.map((mod, i) => {
+                const done    = !isAggregating && i < procModule;
+                const active  = !isAggregating && i === procModule;
+                const pending = isAggregating || i > procModule;
+                return (
+                  <div
+                    key={mod.name}
+                    className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all duration-200 ${
+                      active  ? "bg-emerald-500/25 border border-emerald-400/40" :
+                      done    ? "opacity-50" : "opacity-25"
+                    }`}
+                  >
+                    {/* Status icon */}
+                    <span className="w-4 h-4 flex-shrink-0 flex items-center justify-center">
+                      {done   && <span className="text-emerald-400 text-xs">✓</span>}
+                      {active && <span className="w-3 h-3 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin block" />}
+                      {pending && <span className="w-1.5 h-1.5 rounded-full bg-white/30 block" />}
+                    </span>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-semibold truncate ${active ? "text-emerald-300" : done ? "text-white/70" : "text-white/40"}`}>
+                        {i + 1}. {mod.name}
+                      </p>
+                      {active && (
+                        <p className="text-white/50 text-[10px] truncate">{mod.desc}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>
@@ -410,12 +533,27 @@ export default function StreamingCapture({
       {/* Status bar */}
       <div className="w-full">
         {status === "idle" && !cameraError && (
-          <button
-            onClick={startCamera}
-            className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-colors"
-          >
-            Enable Camera
-          </button>
+          <div className="flex flex-col gap-2 w-full">
+            {/* Server warm-up status */}
+            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+              serverReady === null ? "bg-amber-50 border border-amber-200 text-amber-700" :
+              serverReady         ? "bg-emerald-50 border border-emerald-200 text-emerald-700" :
+                                    "bg-red-50 border border-red-200 text-red-600"
+            }`}>
+              {serverReady === null && <span className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin flex-shrink-0" />}
+              {serverReady === true  && <span className="text-emerald-500 flex-shrink-0">●</span>}
+              {serverReady === false && <span className="text-red-400 flex-shrink-0">●</span>}
+              {serverReady === null  ? "Warming up server…"     :
+               serverReady          ? "Server ready"           :
+                                      "Server unreachable — check connection"}
+            </div>
+            <button
+              onClick={startCamera}
+              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-colors"
+            >
+              Enable Camera
+            </button>
+          </div>
         )}
 
         {cameraError && (
