@@ -346,6 +346,36 @@ def aggregate_frame_results(
     else:
         avg_severity = SEVERITY_SEVERE
 
+    # ── Collect cross-frame flags (used by SNR downgrade + final report) ──
+    all_flags = list({
+        f
+        for i in accepted_indices
+        for f in frame_reports[i].get("technical", {}).get("flags", [])
+    })
+
+    # ── Step 7b: Signal-to-noise downgrade ────────────────────
+    #
+    # Real strabismus produces a STABLE asymmetry — true mild eso of 8° will
+    # read ≈8° every frame, with σ <1°.  A measured mean of 7° with σ=6° is
+    # NOT clinically mild eso — it is straight eyes being measured under noisy
+    # conditions (hand-held torch, screen reflection, weak corneal reflex).
+    #
+    # SNR = mean / std.  A genuine MILD/MODERATE finding has SNR ≥ 3.
+    # Below SNR=2, signal and noise are comparable → measurement is dominated
+    # by noise and the true severity is most likely NORMAL.  We downgrade to
+    # avoid false-positive referrals; user is told via a low_snr flag that the
+    # capture conditions limited certainty.
+    SNR_DOWNGRADE_THRESHOLD = 2.0
+    asym_snr = asym_deg_mean / max(asym_deg_std, 0.5)   # floor std at 0.5°
+    if avg_severity in (SEVERITY_MILD, SEVERITY_MODERATE) and asym_snr < SNR_DOWNGRADE_THRESHOLD:
+        logger.info(
+            f"[Aggregate] SNR-downgrade {avg_severity}→NORMAL: "
+            f"asym_mean={asym_deg_mean:.2f}° std={asym_deg_std:.2f}° "
+            f"snr={asym_snr:.2f} (< {SNR_DOWNGRADE_THRESHOLD})"
+        )
+        all_flags.append("low_snr_noise_dominated")
+        avg_severity = SEVERITY_NORMAL
+
     dominant_dir  = best_technical.get("dominant_eye", "left")
     dominant_dir_label = best_technical.get("left_direction", "nasal") \
         if dominant_dir != "right" else best_technical.get("right_direction", "nasal")
@@ -358,24 +388,26 @@ def aggregate_frame_results(
     avg_timeframe = classification["timeframe"]
     avg_narrative = classification["narrative"]
 
-    # Collect all flags seen across accepted frames
-    all_flags = list({
-        f
-        for i in accepted_indices
-        for f in frame_reports[i].get("technical", {}).get("flags", [])
-    })
-
-    # ── Step 8: Variance-asymmetry INCONCLUSIVE gate ──────────
+    # ── Step 8: Tier-aware variance INCONCLUSIVE gate ─────────
     #
-    # High inter-frame variance in asymmetry readings combined with a
-    # non-NORMAL classification = fixation loss is a plausible explanation.
-    # Returning a triage result under these conditions risks a false positive.
-    # Return INCONCLUSIVE and ask the user to recapture with better fixation.
+    # Returning a triage result under high inter-frame variance risks a false
+    # positive (escalating noise into a clinical finding).  But the threshold
+    # should match the *cost* of being wrong:
     #
-    # NOTE: We only gate on MILD or above — NORMAL findings are safe to return
-    # even with high variance (noise around zero is not clinically harmful).
+    #   NORMAL  → never INCONCLUSIVE (noise around zero is safe to report)
+    #   MILD    → lenient gate (4.0°): a false MILD only schedules a re-screen
+    #             in 3 months, low harm.  Wide gate avoids stuck-in-INCONCLUSIVE.
+    #   MOD/SEV → strict gate (2.5°): false MODERATE/SEVERE causes urgent
+    #             referral.  Better to ask for a re-capture than to send a
+    #             healthy patient for surgery review.
+    if avg_severity == SEVERITY_NORMAL:
+        variance_threshold = float("inf")
+    elif avg_severity == SEVERITY_MILD:
+        variance_threshold = 4.0
+    else:
+        variance_threshold = VARIANCE_INCONCLUSIVE_STD_THRESHOLD   # 2.5
 
-    if avg_severity != SEVERITY_NORMAL and asym_deg_std >= VARIANCE_INCONCLUSIVE_STD_THRESHOLD:
+    if asym_deg_std >= variance_threshold:
         logger.warning(
             f"[Aggregate] INCONCLUSIVE — high variance + non-NORMAL asymmetry: "
             f"severity={avg_severity}, asym_deg_std={asym_deg_std:.2f}°"
