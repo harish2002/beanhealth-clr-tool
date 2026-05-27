@@ -45,6 +45,27 @@ STD_MEDIUM_THRESHOLD = 3.0   # degrees — std below this → MEDIUM confidence
 IQR_OUTLIER_FACTOR   = 1.5   # frames outside 1.5×IQR are rejected
 MIN_ACCEPTED_FRAMES  = 3     # need at least 3 good frames to report a result
 
+# ── Variance-asymmetry interaction (key clinical innovation) ──
+#
+# Real strabismus produces stable, consistent asymmetry across frames
+# (the eye is persistently misaligned → same CLR offset every frame).
+# Fixation loss or measurement noise produces wildly varying readings
+# (the eye position changes or detection is unreliable frame-to-frame).
+#
+# Rule: if asymmetry is clinically significant (≥ MILD threshold) AND
+#       the asymmetry standard deviation across frames is high →
+#       the finding is INCONCLUSIVE — prompt recapture rather than
+#       mis-classify measurement noise as strabismus.
+#
+# Threshold rationale:
+#   MILD asymmetry starts at 5° — an std of 2.5° means ±50% of the mean,
+#   which is too noisy to confidently distinguish MILD strabismus from
+#   normal fixation variance.
+VARIANCE_INCONCLUSIVE_STD_THRESHOLD = 2.5   # degrees — asym_std above this
+                                             # + non-NORMAL asymmetry → INCONCLUSIVE
+VARIANCE_CONFIDENT_STD_THRESHOLD    = 1.5   # degrees — asym_std below this
+                                             # → HIGH confidence even if dev_std is higher
+
 
 # ─────────────────────────────────────────────────────────────
 # Frame-level validation
@@ -236,15 +257,40 @@ def aggregate_frame_results(
     asym_deg_array  = np.array(accepted_asym_degrees)
 
     dev_mean      = float(np.mean(dev_array))
-    dev_std       = float(np.std(dev_array, ddof=1)) if frames_accepted > 1 else 0.0
+    dev_std       = float(np.std(dev_array,      ddof=1)) if frames_accepted > 1 else 0.0
     dev_min       = float(np.min(dev_array))
     dev_max       = float(np.max(dev_array))
     asym_mean     = float(np.mean(asym_array))
     asym_deg_mean = float(np.mean(asym_deg_array))
+    asym_deg_std  = float(np.std(asym_deg_array, ddof=1)) if frames_accepted > 1 else 0.0
 
-    # ── Step 5: Confidence tier from std dev ─────────────────
+    logger.info(
+        f"[Aggregate] dev_mean={dev_mean:.2f}° std={dev_std:.2f}° | "
+        f"asym_mean={asym_deg_mean:.2f}° asym_std={asym_deg_std:.2f}°"
+    )
 
-    if dev_std < STD_HIGH_THRESHOLD:
+    # ── Step 5: Variance-asymmetry interaction ────────────────
+    #
+    # This is the key innovation: real strabismus produces stable, consistent
+    # asymmetry across all frames (the eye is persistently misaligned).
+    # Fixation loss or noisy detection produces wildly varying per-frame
+    # asymmetry readings — high mean + high std → not trustworthy.
+    #
+    # Decision matrix:
+    #   Low asym + low std   → NORMAL     (clean, confident)
+    #   Low asym + high std  → NORMAL     (noisy but not significant)
+    #   High asym + low std  → CLASSIFIED (stable finding → confident)
+    #   High asym + high std → INCONCLUSIVE (could be fixation loss → recapture)
+
+    if asym_deg_std >= VARIANCE_INCONCLUSIVE_STD_THRESHOLD:
+        agg_confidence = "LOW"
+        logger.warning(
+            f"[Aggregate] High inter-frame variance: asym_std={asym_deg_std:.2f}° "
+            f"≥ {VARIANCE_INCONCLUSIVE_STD_THRESHOLD}°"
+        )
+    elif asym_deg_std < VARIANCE_CONFIDENT_STD_THRESHOLD:
+        agg_confidence = "HIGH"
+    elif dev_std < STD_HIGH_THRESHOLD:
         agg_confidence = "HIGH"
     elif dev_std < STD_MEDIUM_THRESHOLD:
         agg_confidence = "MEDIUM"
@@ -304,6 +350,44 @@ def aggregate_frame_results(
         for f in frame_reports[i].get("technical", {}).get("flags", [])
     })
 
+    # ── Step 8: Variance-asymmetry INCONCLUSIVE gate ──────────
+    #
+    # High inter-frame variance in asymmetry readings combined with a
+    # non-NORMAL classification = fixation loss is a plausible explanation.
+    # Returning a triage result under these conditions risks a false positive.
+    # Return INCONCLUSIVE and ask the user to recapture with better fixation.
+    #
+    # NOTE: We only gate on MILD or above — NORMAL findings are safe to return
+    # even with high variance (noise around zero is not clinically harmful).
+
+    if avg_severity != SEVERITY_NORMAL and asym_deg_std >= VARIANCE_INCONCLUSIVE_STD_THRESHOLD:
+        logger.warning(
+            f"[Aggregate] INCONCLUSIVE — high variance + non-NORMAL asymmetry: "
+            f"severity={avg_severity}, asym_deg_std={asym_deg_std:.2f}°"
+        )
+        return {
+            "status":       "INCONCLUSIVE",
+            "reason":       "high_variance_asymmetry",
+            "reason_human": (
+                f"The asymmetry readings varied too much between frames "
+                f"(±{asym_deg_std:.1f}°). This usually means the eyes moved "
+                f"during capture or fixation was lost. "
+                f"Please hold the phone steadier, ask the patient to look "
+                f"directly at the camera, and try again."
+            ),
+            "frames_total":       total_frames,
+            "frames_accepted":    frames_accepted,
+            "frames_rejected":    frames_rejected,
+            "per_frame_readings": [round(v, 2) if v is not None else None
+                                   for v in per_frame_readings],
+            # Still include the raw measurements so the clinician can see them
+            "deviation_avg_deg":  round(dev_mean,      2),
+            "deviation_std_deg":  round(dev_std,        2),
+            "asymmetry_avg_deg":  round(asym_deg_mean,  2),
+            "asymmetry_std_deg":  round(asym_deg_std,   2),
+            "flags": all_flags + ["high_variance_asymmetry"],
+        }
+
     return {
         "status":         "SUCCESS",
         # ── Aggregated measurements ──
@@ -312,11 +396,13 @@ def aggregate_frame_results(
         "frames_rejected": frames_rejected,
         "per_frame_readings": [round(v, 2) if v is not None else None
                                 for v in per_frame_readings],
-        "deviation_avg_deg":  round(dev_mean,  2),
-        "deviation_std_deg":  round(dev_std,   2),
-        "deviation_min_deg":  round(dev_min,   2),
-        "deviation_max_deg":  round(dev_max,   2),
-        "asymmetry_avg":      round(asym_mean, 4),
+        "deviation_avg_deg":  round(dev_mean,      2),
+        "deviation_std_deg":  round(dev_std,       2),
+        "deviation_min_deg":  round(dev_min,       2),
+        "deviation_max_deg":  round(dev_max,       2),
+        "asymmetry_avg":      round(asym_mean,     4),
+        "asymmetry_avg_deg":  round(asym_deg_mean, 2),
+        "asymmetry_std_deg":  round(asym_deg_std,  2),
         "aggregate_confidence": agg_confidence,
         # ── Re-derived clinical result ──
         "result": {

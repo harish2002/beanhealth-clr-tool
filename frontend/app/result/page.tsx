@@ -51,13 +51,23 @@ function LoadingScreen() {
 
 // ─── Inconclusive screen ───────────────────────────────────────────────────────
 const REASON_ICON: Record<string, string> = {
-  no_flash:        "⚡",
-  no_face:         "👤",
-  eyes_closed:     "👁",
-  not_frontal:     "↩",
-  no_reflex_left:  "●",
-  no_reflex_right: "●",
-  no_reflex_both:  "●●",
+  no_flash:                 "⚡",
+  no_face:                  "👤",
+  eyes_closed:              "👁",
+  not_frontal:              "↩",
+  no_reflex_left:           "●",
+  no_reflex_right:          "●",
+  no_reflex_both:           "●●",
+  high_variance_asymmetry:  "📊",
+  insufficient_frames:      "🎞",
+};
+
+const REASON_TIP: Record<string, string> = {
+  high_variance_asymmetry: "The eye position shifted between frames. Ask the patient to stare steadily at the camera dot and try again.",
+  no_flash:                "Enable the torch and ensure the bright dot is visible in both eyes.",
+  no_face:                 "Move closer and ensure your face is fully in frame.",
+  eyes_closed:             "Ask the patient to open their eyes wide and look straight ahead.",
+  insufficient_frames:     "Too many frames were unusable — hold the phone steadier and keep eyes open.",
 };
 
 function InconclusiveScreen({
@@ -68,17 +78,50 @@ function InconclusiveScreen({
   onRetry: () => void;
 }) {
   const icon = REASON_ICON[result.reason] ?? "⚠";
+  const tip  = REASON_TIP[result.reason];
+  const isVariance = result.reason === "high_variance_asymmetry";
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 px-6 gap-6 text-center">
-      <div className="w-20 h-20 rounded-full bg-amber-100 border-2 border-amber-300 flex items-center justify-center">
+      <div className={`w-20 h-20 rounded-full border-2 flex items-center justify-center ${
+        isVariance ? "bg-blue-100 border-blue-300" : "bg-amber-100 border-amber-300"
+      }`}>
         <span className="text-3xl">{icon}</span>
       </div>
 
       <div className="max-w-sm">
-        <h2 className="text-slate-900 text-xl font-bold mb-2">Screening Incomplete</h2>
+        <h2 className="text-slate-900 text-xl font-bold mb-2">
+          {isVariance ? "Unstable Readings" : "Screening Incomplete"}
+        </h2>
         <p className="text-slate-600 text-sm leading-relaxed">{result.reason_human}</p>
       </div>
+
+      {/* Variance-specific stats */}
+      {"asymmetry_std_deg" in result && (
+        <div className="bg-white border border-blue-100 rounded-xl px-4 py-3 max-w-sm w-full text-left">
+          <p className="text-xs font-semibold text-slate-500 mb-2">Frame variance</p>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Mean asymmetry</span>
+            <span className="font-semibold text-slate-900">{(result as unknown as Record<string, number>)["asymmetry_avg_deg"]}°</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Std deviation</span>
+            <span className="font-semibold text-red-500">{(result as unknown as Record<string, number>)["asymmetry_std_deg"]}°</span>
+          </div>
+          <div className="flex justify-between text-sm">
+            <span className="text-slate-600">Frames accepted</span>
+            <span className="font-semibold text-slate-900">{result.frames_accepted} / {result.frames_total}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Specific tip */}
+      {tip && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 max-w-sm w-full text-left">
+          <p className="text-xs font-semibold text-amber-700 mb-1">How to fix this</p>
+          <p className="text-xs text-amber-600 leading-relaxed">{tip}</p>
+        </div>
+      )}
 
       {result.flags.length > 0 && (
         <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-500 font-mono shadow-sm max-w-sm w-full">
