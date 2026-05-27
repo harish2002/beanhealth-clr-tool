@@ -74,12 +74,22 @@ export interface SuccessResponse {
 }
 
 export interface InconclusiveResponse {
-  status:       "INCONCLUSIVE";
-  reason:       string;
-  reason_human: string;
-  flags:        string[];
-  patient?:     PatientInfo;
-  timestamp:    string;
+  status:             "INCONCLUSIVE";
+  reason:             string;
+  reason_human:       string;
+  flags:              string[];
+  patient?:           PatientInfo;
+  timestamp:          string;
+  // Present when reason = "high_variance_asymmetry" or "insufficient_frames"
+  frames_total?:      number;
+  frames_accepted?:   number;
+  frames_rejected?:   number;
+  per_frame_readings?: (number | null)[];
+  // Present when reason = "high_variance_asymmetry"
+  asymmetry_avg_deg?: number;
+  asymmetry_std_deg?: number;
+  deviation_avg_deg?: number;
+  deviation_std_deg?: number;
 }
 
 export interface ErrorResponse {

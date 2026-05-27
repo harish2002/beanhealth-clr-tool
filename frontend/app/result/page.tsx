@@ -97,16 +97,16 @@ function InconclusiveScreen({
       </div>
 
       {/* Variance-specific stats */}
-      {"asymmetry_std_deg" in result && (
+      {result.asymmetry_std_deg !== undefined && (
         <div className="bg-white border border-blue-100 rounded-xl px-4 py-3 max-w-sm w-full text-left">
           <p className="text-xs font-semibold text-slate-500 mb-2">Frame variance</p>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Mean asymmetry</span>
-            <span className="font-semibold text-slate-900">{(result as unknown as Record<string, number>)["asymmetry_avg_deg"]}°</span>
+            <span className="font-semibold text-slate-900">{result.asymmetry_avg_deg}°</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Std deviation</span>
-            <span className="font-semibold text-red-500">{(result as unknown as Record<string, number>)["asymmetry_std_deg"]}°</span>
+            <span className="font-semibold text-red-500">{result.asymmetry_std_deg}°</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Frames accepted</span>
