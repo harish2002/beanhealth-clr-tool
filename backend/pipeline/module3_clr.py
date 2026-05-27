@@ -291,9 +291,13 @@ def _apply_four_way_filter(
             continue
 
         # ── Filter ④: Iris Distance ──
+        # The real CLR must land on the cornea — at most ~1× iris_radius from
+        # the pupil centre.  A 30° squint displaces the reflex ≈ 0.75× radius,
+        # so a ceiling of 1.0× gives adequate margin while rejecting scleral
+        # glare that previously slipped through at the old 1.25× threshold.
         if pupil_centre is not None:
             dist_to_pupil = math.hypot(blob.centroid_x - pupil_centre[0], blob.centroid_y - pupil_centre[1])
-            max_dist = iris_radius * 1.25  # 25% margin in case pupil center is slightly off
+            max_dist = iris_radius * 1.0
             if dist_to_pupil > max_dist:
                 blob.fail_reason = f"distance {dist_to_pupil:.1f}px > max {max_dist:.1f}px from pupil {pupil_centre}"
                 logger.debug(f"Module 3 [{eye_label}]: blob {blob.label} REJECTED — {blob.fail_reason}")
@@ -315,23 +319,33 @@ def _apply_four_way_filter(
 # ─────────────────────────────────────────────────────────────
 
 def _select_clr_blob(
-    passing: List[BlobCandidate],
-    eye_label: str,
-    flags: List[str],
+    passing:      List[BlobCandidate],
+    eye_label:    str,
+    flags:        List[str],
+    pupil_centre: Optional[Tuple[float, float]] = None,
 ) -> BlobCandidate:
     """
-    From the blobs that passed all 3 filters, select the best CLR candidate.
+    From the blobs that passed all filters, select the best CLR candidate.
 
-    Selection rule: largest area (the corneal reflex is typically the
-    brightest and largest valid circular blob in the crop).
+    Selection rule (in priority order):
+      1. If only one blob passed — use it (no ambiguity).
+      2. If multiple blobs passed AND pupil_centre is known:
+         → pick the blob CLOSEST to the pupil centre.
+         The true corneal reflex is always on the cornea (near the pupil).
+         Competing blobs (glasses glare, eyelid highlight) that pass the
+         distance filter tend to sit further from centre.
+         Selecting by proximity makes the choice deterministic across frames
+         and eliminates the frame-to-frame flip between competing blobs.
+      3. Fallback (no pupil_centre): pick by largest area as before.
 
-    If multiple high-quality blobs exist (e.g. two corneal reflections from
-    glasses + cornea), flag `ambiguous_reflex` but still return the largest.
+    Flags `ambiguous_reflex_{eye}` whenever 2+ blobs pass — regardless of
+    which one is selected — so the aggregate can track detection instability.
 
     Args:
-        passing:   Blobs that passed all 3 filters.
-        eye_label: "left" or "right".
-        flags:     Mutable list — flags appended here.
+        passing:      Blobs that passed all 4 filters.
+        eye_label:    "left" or "right".
+        flags:        Mutable list — flags appended here.
+        pupil_centre: Pupil centre in crop pixels (from Module 2).
 
     Returns:
         The selected BlobCandidate.
@@ -340,18 +354,32 @@ def _select_clr_blob(
         CLRError: If no blobs passed (no_reflex_{eye_label}).
     """
     if not passing:
-        logger.warning(f"Module 3 [{eye_label}]: No blob passed all 3 filters → no_reflex")
+        logger.warning(f"Module 3 [{eye_label}]: No blob passed all filters → no_reflex")
         raise CLRError(f"no_reflex_{eye_label}")
 
-    if len(passing) > 3:
+    if len(passing) > 1:
+        # Flag any time there are 2+ candidates — the aggregate uses this
         flags.append(f"ambiguous_reflex_{eye_label}")
         logger.warning(
             f"Module 3 [{eye_label}]: {len(passing)} blobs passed filters — "
-            f"ambiguous, selecting largest."
+            f"selecting by {'pupil proximity' if pupil_centre else 'area'}."
         )
 
-    # Select the largest passing blob
-    best = max(passing, key=lambda b: b.area)
+        if pupil_centre is not None:
+            # PRIMARY: pick blob closest to pupil centre
+            best = min(
+                passing,
+                key=lambda b: math.hypot(
+                    b.centroid_x - pupil_centre[0],
+                    b.centroid_y - pupil_centre[1],
+                ),
+            )
+        else:
+            # FALLBACK: no pupil reference — pick largest
+            best = max(passing, key=lambda b: b.area)
+    else:
+        best = passing[0]
+
     logger.debug(
         f"Module 3 [{eye_label}]: Selected blob {best.label} — "
         f"area={best.area:.1f}, circ={best.circularity:.3f}, "
@@ -418,8 +446,8 @@ def _detect_clr_one_eye(
         min_area_ratio=min_area_ratio, max_area_ratio=max_area_ratio,
     )
 
-    # ── Step 6: Select best blob ──
-    best = _select_clr_blob(passing, eye_label, flags)
+    # ── Step 6: Select best blob (prefer proximity to pupil centre) ──
+    best = _select_clr_blob(passing, eye_label, flags, pupil_centre=pupil_centre)
 
     # ── Blob area ratio (for calibration export) ──
     iris_area = math.pi * (iris_radius ** 2)

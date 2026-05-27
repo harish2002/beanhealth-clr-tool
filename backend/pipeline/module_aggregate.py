@@ -99,6 +99,14 @@ def _is_frame_usable(frame_report: Dict[str, Any]) -> Tuple[bool, str]:
     if deviation > 60.0:
         return False, "deviation_out_of_range"
 
+    # Reject frames where CLR detection was ambiguous (multiple blobs passed
+    # the filter).  Even though proximity-based selection now picks the closest
+    # blob, a frame with competing reflexes (e.g. glasses glare + cornea) is
+    # inherently less reliable and should not contribute to the average.
+    tech_flags = frame_report.get("technical", {}).get("flags", [])
+    if any("ambiguous_reflex" in f for f in tech_flags):
+        return False, "ambiguous_reflex"
+
     return True, "ok"
 
 
