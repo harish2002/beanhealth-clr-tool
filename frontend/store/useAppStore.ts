@@ -2,7 +2,8 @@
  * BeanHealth CLR Tool — Global State (Zustand)
  *
  * Single source of truth for:
- *   - Patient info (name, age)
+ *   - Patient info (name, age, optional metadata)
+ *   - Session ID (generated at intake, stable for the lifetime of one screening)
  *   - Captured image (preview URL + raw File)
  *   - Analysis result from the API
  *   - Loading / error state
@@ -13,9 +14,19 @@ import type { AnalyseResponse } from "@/lib/types";
 
 interface AppStore {
   // ── Patient ──────────────────────────────────────────────────────────────
-  patientName: string;
-  patientAge:  number | null;
-  setPatient:  (name: string, age: number) => void;
+  patientName:        string;
+  patientAge:         number | null;
+  /** M / F / Other / "" (not specified) */
+  patientGender:      string;
+  /** e.g. "Parent", "ASHA Worker", "Nurse / ANM", "General Physician" */
+  screenerRole:       string;
+  /** Free-text location, e.g. "PHC Bangalore" */
+  screeningLocation:  string;
+  /** Unique per-screening ID generated client-side, e.g. BH-X4F7A2 */
+  sessionId:          string;
+
+  setPatient:     (name: string, age: number) => void;
+  setPatientMeta: (gender: string, role: string, location: string) => void;
 
   // ── Captured image ────────────────────────────────────────────────────────
   capturedImageDataUrl: string | null;
@@ -36,9 +47,17 @@ interface AppStore {
   reset: () => void;
 }
 
+function generateSessionId(): string {
+  return `BH-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+}
+
 const initialState = {
   patientName:          "",
   patientAge:           null,
+  patientGender:        "",
+  screenerRole:         "",
+  screeningLocation:    "",
+  sessionId:            "",
   capturedImageDataUrl: null,
   capturedImageFile:    null,
   analysisResult:       null,
@@ -50,7 +69,18 @@ export const useAppStore = create<AppStore>((set) => ({
   ...initialState,
 
   setPatient: (name, age) =>
-    set({ patientName: name, patientAge: age }),
+    set({
+      patientName: name,
+      patientAge:  age,
+      sessionId:   generateSessionId(),
+    }),
+
+  setPatientMeta: (gender, role, location) =>
+    set({
+      patientGender:     gender,
+      screenerRole:      role,
+      screeningLocation: location,
+    }),
 
   setCapturedImage: (dataUrl, file) =>
     set({ capturedImageDataUrl: dataUrl, capturedImageFile: file }),

@@ -16,8 +16,12 @@ export type AnalysisStatus = "SUCCESS" | "INCONCLUSIVE" | "ERROR";
 // ─── Sub-types ───────────────────────────────────────────────────────────────
 
 export interface PatientInfo {
-  name: string;
-  age:  number;
+  name:               string;
+  age:                number;
+  // Optional context captured at intake — not sent to backend, display-only
+  gender?:            string;
+  screener_role?:     string;
+  screening_location?: string;
 }
 
 export interface ClinicalResult {
@@ -108,23 +112,29 @@ export interface StreamClinicalResult extends ClinicalResult {
 }
 
 export interface StreamSuccessResponse {
-  status:               "SUCCESS";
-  patient:              PatientInfo;
-  frames_total:         number;
-  frames_accepted:      number;
-  frames_rejected:      number;
-  per_frame_readings:   (number | null)[];
-  deviation_avg_deg:    number;
-  deviation_std_deg:    number;
-  deviation_min_deg:    number;
-  deviation_max_deg:    number;
-  asymmetry_avg:        number;
-  aggregate_confidence: Confidence;
-  result:               StreamClinicalResult;
-  technical:            TechnicalDetail;
-  intermediate_images?: IntermediateImages;
-  annotated_image_b64?: string;
-  timestamp:            string;
+  status:                "SUCCESS";
+  patient:               PatientInfo;
+  frames_total:          number;
+  frames_accepted:       number;
+  frames_rejected:       number;
+  per_frame_readings:    (number | null)[];
+  /** Rejection reason for each frame — null = accepted, string = why rejected */
+  per_frame_rejections?: (string | null)[];
+  deviation_avg_deg:     number;
+  deviation_std_deg:     number;
+  deviation_min_deg:     number;
+  deviation_max_deg:     number;
+  asymmetry_avg:         number;
+  /** Mean inter-ocular asymmetry in clinical degrees across accepted frames */
+  asymmetry_avg_deg:     number;
+  /** Std dev of inter-ocular asymmetry across accepted frames */
+  asymmetry_std_deg:     number;
+  aggregate_confidence:  Confidence;
+  result:                StreamClinicalResult;
+  technical:             TechnicalDetail;
+  intermediate_images?:  IntermediateImages;
+  annotated_image_b64?:  string;
+  timestamp:             string;
 }
 
 export interface StreamInconclusiveResponse {
@@ -138,6 +148,11 @@ export interface StreamInconclusiveResponse {
   per_frame_readings: (number | null)[];
   flags:              string[];
   timestamp:          string;
+  // Present when reason === "high_variance_asymmetry"
+  asymmetry_avg_deg?: number;
+  asymmetry_std_deg?: number;
+  deviation_avg_deg?: number;
+  deviation_std_deg?: number;
 }
 
 export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;

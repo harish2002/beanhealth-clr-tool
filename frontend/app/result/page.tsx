@@ -4,7 +4,8 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import TriageReport from "@/components/TriageReport";
-import type { SuccessResponse, InconclusiveResponse } from "@/lib/types";
+import type { PatientMeta } from "@/components/TriageReport";
+import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
 
 // ─── Loading screen ────────────────────────────────────────────────────────────
 function LoadingScreen() {
@@ -74,7 +75,7 @@ function InconclusiveScreen({
   result,
   onRetry,
 }: {
-  result:  InconclusiveResponse;
+  result:  StreamInconclusiveResponse;
   onRetry: () => void;
 }) {
   const icon = REASON_ICON[result.reason] ?? "⚠";
@@ -96,13 +97,39 @@ function InconclusiveScreen({
         <p className="text-slate-600 text-sm leading-relaxed">{result.reason_human}</p>
       </div>
 
+      {/* Per-frame reading strip (for both variance and insufficient cases) */}
+      {result.per_frame_readings && result.per_frame_readings.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 max-w-sm w-full">
+          <p className="text-xs font-semibold text-slate-500 mb-2">
+            Frame readings ({result.frames_accepted}/{result.frames_total} accepted)
+          </p>
+          <div className="flex gap-1 flex-wrap">
+            {result.per_frame_readings.map((v, i) => (
+              <div
+                key={i}
+                className={`flex flex-col items-center justify-center w-9 h-10 rounded-lg border text-xs font-semibold ${
+                  v !== null
+                    ? "bg-emerald-50 border-emerald-200 text-emerald-700"
+                    : "bg-slate-100 border-slate-200 text-slate-400"
+                }`}
+              >
+                <span className="text-[9px] text-slate-400 font-normal">f{i + 1}</span>
+                <span>{v !== null ? `${v}°` : "✕"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Variance-specific stats */}
       {result.asymmetry_std_deg !== undefined && (
         <div className="bg-white border border-blue-100 rounded-xl px-4 py-3 max-w-sm w-full text-left">
           <p className="text-xs font-semibold text-slate-500 mb-2">Frame variance</p>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Mean asymmetry</span>
-            <span className="font-semibold text-slate-900">{result.asymmetry_avg_deg}°</span>
+            <span className="font-semibold text-slate-900">
+              {result.asymmetry_avg_deg !== undefined ? `${result.asymmetry_avg_deg}°` : "–"}
+            </span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-slate-600">Std deviation</span>
@@ -191,11 +218,15 @@ function ErrorScreen({
 
 // ─── Main result page ──────────────────────────────────────────────────────────
 export default function ResultPage() {
-  const router         = useRouter();
-  const analysisResult = useAppStore((s) => s.analysisResult);
-  const isLoading      = useAppStore((s) => s.isLoading);
-  const errorMessage   = useAppStore((s) => s.errorMessage);
-  const reset          = useAppStore((s) => s.reset);
+  const router              = useRouter();
+  const analysisResult      = useAppStore((s) => s.analysisResult);
+  const isLoading           = useAppStore((s) => s.isLoading);
+  const errorMessage        = useAppStore((s) => s.errorMessage);
+  const reset               = useAppStore((s) => s.reset);
+  const patientGender       = useAppStore((s) => s.patientGender);
+  const screenerRole        = useAppStore((s) => s.screenerRole);
+  const screeningLocation   = useAppStore((s) => s.screeningLocation);
+  const sessionId           = useAppStore((s) => s.sessionId);
 
   // Redirect to home if nothing in store
   useEffect(() => {
@@ -209,14 +240,14 @@ export default function ResultPage() {
     router.push("/");
   }
 
-  if (isLoading)      return <LoadingScreen />;
-  if (errorMessage)   return <ErrorScreen message={errorMessage} onRetry={handleRetry} />;
+  if (isLoading)       return <LoadingScreen />;
+  if (errorMessage)    return <ErrorScreen message={errorMessage} onRetry={handleRetry} />;
   if (!analysisResult) return <LoadingScreen />;
 
   if (analysisResult.status === "INCONCLUSIVE") {
     return (
       <InconclusiveScreen
-        result={analysisResult as InconclusiveResponse}
+        result={analysisResult as StreamInconclusiveResponse}
         onRetry={handleRetry}
       />
     );
@@ -225,15 +256,25 @@ export default function ResultPage() {
   if (analysisResult.status === "ERROR") {
     return (
       <ErrorScreen
-        message={analysisResult.message || "An unexpected error occurred. Please retry."}
+        message={"message" in analysisResult
+          ? (analysisResult as { message: string }).message
+          : "An unexpected error occurred. Please retry."}
         onRetry={handleRetry}
       />
     );
   }
 
+  const patientMeta: PatientMeta = {
+    gender:            patientGender  || undefined,
+    screenerRole:      screenerRole   || undefined,
+    screeningLocation: screeningLocation || undefined,
+    sessionId:         sessionId      || undefined,
+  };
+
   return (
     <TriageReport
-      result={analysisResult as SuccessResponse}
+      result={analysisResult as StreamSuccessResponse}
+      patientMeta={patientMeta}
       onRetry={handleRetry}
     />
   );

@@ -184,7 +184,8 @@ def aggregate_frame_results(
     accepted_indices: List[int]            = []
     rejected_frames: List[Dict[str, Any]]  = []
 
-    per_frame_readings: List[Optional[float]] = []
+    per_frame_readings:   List[Optional[float]] = []
+    per_frame_rejections: List[Optional[str]]   = []   # None = accepted, str = rejection reason
 
     for i, report in enumerate(frame_reports):
         usable, reason = _is_frame_usable(report)
@@ -202,6 +203,7 @@ def aggregate_frame_results(
             accepted_asym_degrees.append(asym_deg)
             accepted_indices.append(i)
             per_frame_readings.append(round(dev, 2))
+            per_frame_rejections.append(None)
             logger.debug(
                 f"[Aggregate] Frame {i}: ACCEPTED deviation={dev:.2f}°, "
                 f"asymmetry_deg={asym_deg:.2f}°"
@@ -209,6 +211,7 @@ def aggregate_frame_results(
         else:
             rejected_frames.append({"frame": i, "reason": reason})
             per_frame_readings.append(None)
+            per_frame_rejections.append(reason)
             logger.debug(f"[Aggregate] Frame {i}: REJECTED reason={reason}")
 
     frames_after_quality = len(accepted_deviations)
@@ -220,7 +223,8 @@ def aggregate_frame_results(
             accepted_deviations, accepted_indices
         )
         for idx in outlier_idx:
-            per_frame_readings[idx] = None   # mark as rejected in strip
+            per_frame_readings[idx]   = None                  # mark as rejected in strip
+            per_frame_rejections[idx] = "statistical_outlier" # record rejection reason
             rejected_frames.append({"frame": idx, "reason": "statistical_outlier"})
 
         accepted_deviations   = clean_devs
@@ -251,10 +255,11 @@ def aggregate_frame_results(
                 f"(minimum {MIN_ACCEPTED_FRAMES} required). "
                 "Please hold the phone steadier, ensure torch is on, and keep eyes open."
             ),
-            "frames_total":    total_frames,
-            "frames_accepted": frames_accepted,
-            "frames_rejected": frames_rejected,
+            "frames_total":       total_frames,
+            "frames_accepted":    frames_accepted,
+            "frames_rejected":    frames_rejected,
             "per_frame_readings": per_frame_readings,
+            "per_frame_rejections": per_frame_rejections,
             "flags": [r["reason"] for r in rejected_frames],
         }
 
@@ -388,6 +393,7 @@ def aggregate_frame_results(
             "frames_rejected":    frames_rejected,
             "per_frame_readings": [round(v, 2) if v is not None else None
                                    for v in per_frame_readings],
+            "per_frame_rejections": per_frame_rejections,
             # Still include the raw measurements so the clinician can see them
             "deviation_avg_deg":  round(dev_mean,      2),
             "deviation_std_deg":  round(dev_std,        2),
@@ -404,6 +410,7 @@ def aggregate_frame_results(
         "frames_rejected": frames_rejected,
         "per_frame_readings": [round(v, 2) if v is not None else None
                                 for v in per_frame_readings],
+        "per_frame_rejections": per_frame_rejections,
         "deviation_avg_deg":  round(dev_mean,      2),
         "deviation_std_deg":  round(dev_std,       2),
         "deviation_min_deg":  round(dev_min,       2),

@@ -4,14 +4,27 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 
-export default function PatientFormPage() {
-  const router     = useRouter();
-  const setPatient = useAppStore((s) => s.setPatient);
-  const reset      = useAppStore((s) => s.reset);
+const SCREENER_ROLES = [
+  "Parent / Guardian",
+  "ASHA Worker",
+  "Nurse / ANM",
+  "General Physician",
+  "Ophthalmologist",
+  "Other",
+];
 
-  const [name,  setName]  = useState("");
-  const [age,   setAge]   = useState("");
-  const [error, setError] = useState<string | null>(null);
+export default function PatientFormPage() {
+  const router          = useRouter();
+  const setPatient      = useAppStore((s) => s.setPatient);
+  const setPatientMeta  = useAppStore((s) => s.setPatientMeta);
+  const reset           = useAppStore((s) => s.reset);
+
+  const [name,     setName]     = useState("");
+  const [age,      setAge]      = useState("");
+  const [gender,   setGender]   = useState<"" | "Male" | "Female" | "Other">("");
+  const [role,     setRole]     = useState("");
+  const [location, setLocation] = useState("");
+  const [error,    setError]    = useState<string | null>(null);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,6 +44,7 @@ export default function PatientFormPage() {
 
     reset();
     setPatient(trimmedName, parsedAge);
+    setPatientMeta(gender, role, location.trim());
     router.push("/capture");
   }
 
@@ -72,9 +86,9 @@ export default function PatientFormPage() {
           {/* Progress steps */}
           <div className="flex items-stretch gap-0 max-w-sm md:max-w-md mx-auto mb-8">
             {[
-              { n: "1", label: "Patient info",  icon: "👤" },
-              { n: "2", label: "Capture photo", icon: "📷" },
-              { n: "3", label: "View results",  icon: "📋" },
+              { n: "1", label: "Patient info",  },
+              { n: "2", label: "Capture photo", },
+              { n: "3", label: "View results",  },
             ].map((step, i) => (
               <div key={step.n} className="flex-1 flex flex-col items-center">
                 <div className="flex items-center w-full">
@@ -98,12 +112,14 @@ export default function PatientFormPage() {
             {/* Patient form card */}
             <div className="flex-1 bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
               <h2 className="text-base font-semibold text-slate-900 mb-0.5">Patient Details</h2>
-              <p className="text-slate-400 text-xs mb-5">Enter details before capturing the photo.</p>
+              <p className="text-slate-400 text-xs mb-5">Required fields marked with *</p>
 
               <form onSubmit={handleSubmit} className="space-y-4">
+
+                {/* Name */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="name">
-                    Patient Name
+                    Patient Name <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="name"
@@ -120,9 +136,10 @@ export default function PatientFormPage() {
                   />
                 </div>
 
+                {/* Age */}
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="age">
-                    Age (years)
+                    Age (years) <span className="text-red-500">*</span>
                   </label>
                   <input
                     id="age"
@@ -133,6 +150,76 @@ export default function PatientFormPage() {
                     placeholder="e.g. 5"
                     value={age}
                     onChange={(e) => setAge(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3
+                               text-slate-900 placeholder-slate-400 text-base
+                               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                               transition"
+                  />
+                </div>
+
+                {/* Optional metadata divider */}
+                <div className="pt-1 pb-0.5">
+                  <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
+                    Optional — for report context
+                  </p>
+                </div>
+
+                {/* Gender toggle buttons */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                    Gender
+                  </label>
+                  <div className="flex gap-2">
+                    {(["Male", "Female", "Other"] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setGender(gender === g ? "" : g)}
+                        className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-colors ${
+                          gender === g
+                            ? "bg-blue-600 border-blue-600 text-white"
+                            : "bg-slate-50 border-slate-200 text-slate-500 hover:border-slate-300"
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Screener role */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="role">
+                    Screener Role
+                  </label>
+                  <select
+                    id="role"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3
+                               text-slate-900 text-base
+                               focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                               transition"
+                  >
+                    <option value="">Not specified</option>
+                    {SCREENER_ROLES.map((r) => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Screening location */}
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 mb-1.5" htmlFor="location">
+                    Screening Location
+                  </label>
+                  <input
+                    id="location"
+                    type="text"
+                    inputMode="text"
+                    placeholder="e.g. PHC Bangalore, Home, School"
+                    value={location}
+                    onChange={(e) => setLocation(e.target.value)}
                     className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3
                                text-slate-900 placeholder-slate-400 text-base
                                focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
