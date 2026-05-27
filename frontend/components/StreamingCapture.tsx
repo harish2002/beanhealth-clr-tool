@@ -9,7 +9,7 @@
  *  1. Opens the back-facing camera with torch enabled
  *  2. Runs @mediapipe/face_mesh in the browser (WASM, ~30 fps) to detect iris
  *  3. Draws iris circles, pupil dots, and "L / R" labels on a canvas overlay
- *  4. When user taps "Start Analysis", captures 1 frame per second for N seconds
+ *  4. When user taps "Start Analysis", captures 2 frames per second for 15 seconds (30 frames)
  *  5. Shows a countdown + per-frame pulse indicator while capturing
  *  6. Sends all frames to POST /analyse-stream and returns the aggregated result
  */
@@ -22,8 +22,8 @@ import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/ty
 const LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472];
 const RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477];
 
-const TOTAL_FRAMES  = 15;   // frames to capture
-const FRAME_INTERVAL_MS = 1000; // 1 frame per second
+const TOTAL_FRAMES  = 30;   // frames to capture (2 fps × 15 s)
+const FRAME_INTERVAL_MS = 500; // 2 frames per second
 
 type CaptureStatus =
   | "idle"           // waiting for user to start
@@ -447,7 +447,7 @@ export default function StreamingCapture({
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
-              Start 15-Frame Analysis
+              Start 30-Frame Analysis
             </button>
           </div>
         )}
@@ -484,7 +484,7 @@ export default function StreamingCapture({
             <li>• Hold the phone <strong>30 cm</strong> from the patient&apos;s face</li>
             <li>• Ensure <strong>torch is on</strong> — you should see reflections in both eyes</li>
             <li>• Keep <strong>eyes open and looking straight</strong> at the camera</li>
-            <li>• The app captures <strong>15 frames over 15 seconds</strong> and averages them</li>
+            <li>• The app captures <strong>30 frames over 15 seconds</strong> and averages them</li>
           </ul>
         </div>
       )}
