@@ -209,20 +209,36 @@ async def analyse(
             upstream_flags=upstream_flags,
         )
 
-        # Module 5 — Asymmetry score + Hirschberg angle
+        # Module 5 — Bilateral asymmetry vector + Hirschberg angle
         asymmetry = compute_asymmetry_and_angle(
             left_displacement_norm=displacement.left_displacement_norm,
             right_displacement_norm=displacement.right_displacement_norm,
             upstream_flags=displacement.flags,
+            # Pass raw vectors so Module 5 can compute the kappa-cancelling BAV
+            left_dx=displacement.left_dx,
+            left_dy=displacement.left_dy,
+            right_dx=displacement.right_dx,
+            right_dy=displacement.right_dy,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
         )
 
         # Module 6 — Clinical classification
-        # Use the dominant eye's direction for the condition label
+        # BAV direction: if |bav_nasal| > |bav_vertical|, primary axis is nasal/temporal
+        # otherwise it's vertical — use this to pick the condition label
         dominant_eye = asymmetry.dominant_eye
-        dominant_dir = (
-            displacement.left_direction if dominant_eye != "right"
-            else displacement.right_direction
-        )
+        if abs(asymmetry.bav_nasal) >= abs(asymmetry.bav_vertical):
+            # Horizontal strabismus — use dominant eye's nasal/temporal direction
+            dominant_dir = (
+                displacement.left_direction if dominant_eye != "right"
+                else displacement.right_direction
+            )
+        else:
+            # Vertical strabismus — use dominant eye's superior/inferior direction
+            dominant_dir = (
+                displacement.left_direction if dominant_eye != "right"
+                else displacement.right_direction
+            )
         classification = classify_strabismus(
             dominant_direction=dominant_dir,
             severity=asymmetry.severity,
@@ -315,6 +331,12 @@ async def _run_single_frame_pipeline(
             left_displacement_norm=displacement.left_displacement_norm,
             right_displacement_norm=displacement.right_displacement_norm,
             upstream_flags=displacement.flags,
+            left_dx=displacement.left_dx,
+            left_dy=displacement.left_dy,
+            right_dx=displacement.right_dx,
+            right_dy=displacement.right_dy,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
         )
         dominant_dir = (
             displacement.left_direction if asymmetry.dominant_eye != "right"
