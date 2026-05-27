@@ -87,35 +87,52 @@ class CLRResult:
     # Non-fatal warnings
     flags: List[str] = field(default_factory=list)
 
+    # Calibration measurements — carried for session-level auto-calibration
+    left_peak_brightness:   float = 0.0   # max pixel in grayscale crop
+    right_peak_brightness:  float = 0.0
+    left_blob_area_ratio:   float = 0.0   # CLR blob area / iris area
+    right_blob_area_ratio:  float = 0.0
+
 
 # ─────────────────────────────────────────────────────────────
 # Internal: Flash validation
 # ─────────────────────────────────────────────────────────────
 
-def _validate_flash(gray: np.ndarray, eye_label: str) -> None:
+def _validate_flash(
+    gray:            np.ndarray,
+    eye_label:       str,
+    min_brightness:  float = CLR_MIN_PEAK_BRIGHTNESS,
+) -> float:
     """
     Check whether the torch/flash was active when the photo was taken.
 
-    If the brightest pixel in the crop is below CLR_MIN_PEAK_BRIGHTNESS (240),
+    If the brightest pixel in the crop is below min_brightness (default 240),
     there is no torch reflection to find. Returning a guessed position here
     would be dangerous — raise immediately.
 
     Args:
-        gray:      Grayscale eye crop.
-        eye_label: "left" or "right" for logging.
+        gray:           Grayscale eye crop.
+        eye_label:      "left" or "right" for logging.
+        min_brightness: Override the default flash detection threshold.
+                        Session calibration may lower this for weak-torch devices.
+
+    Returns:
+        float — the measured peak brightness (used for session calibration).
 
     Raises:
         CLRError("no_flash"): If peak brightness < threshold.
     """
-    peak = int(np.max(gray))
-    logger.debug(f"Module 3 [{eye_label}]: peak brightness = {peak}")
+    peak = float(np.max(gray))
+    logger.debug(f"Module 3 [{eye_label}]: peak brightness = {peak:.0f}")
 
-    if peak < CLR_MIN_PEAK_BRIGHTNESS:
+    if peak < min_brightness:
         logger.warning(
-            f"Module 3 [{eye_label}]: Peak brightness {peak} < {CLR_MIN_PEAK_BRIGHTNESS} "
+            f"Module 3 [{eye_label}]: Peak brightness {peak:.0f} < {min_brightness:.0f} "
             f"— torch not detected."
         )
         raise CLRError("no_flash")
+
+    return peak
 
 
 # ─────────────────────────────────────────────────────────────
@@ -212,25 +229,32 @@ def _find_blobs(mask: np.ndarray) -> List[BlobCandidate]:
 # ─────────────────────────────────────────────────────────────
 
 def _apply_four_way_filter(
-    blobs: List[BlobCandidate],
-    crop_w: int,
-    crop_h: int,
-    iris_radius: float,
-    pupil_centre: Optional[Tuple[float, float]],
-    eye_label: str,
+    blobs:                List[BlobCandidate],
+    crop_w:               int,
+    crop_h:               int,
+    iris_radius:          float,
+    pupil_centre:         Optional[Tuple[float, float]],
+    eye_label:            str,
+    min_area_ratio:       float = CLR_MIN_AREA_RATIO,
+    max_area_ratio:       float = CLR_MAX_AREA_RATIO,
 ) -> List[BlobCandidate]:
     """
     Apply four mandatory filters to the blob list.
 
     Filter ①  Location: central 80% of crop.
-    Filter ②  Area: acceptable size for CLR.
+    Filter ②  Area: acceptable size for CLR (bounds may be calibrated per session).
     Filter ③  Circularity: > 0.5.
     Filter ④  Iris Distance: if pupil_centre is known, distance from pupil center to CLR must be <= 1.2 × iris_radius.
               (The reflection must fall on the cornea, which roughly matches the iris). This rejects scleral glare.
+
+    Args:
+        min_area_ratio: Lower bound for CLR area / iris_area.  Can be overridden
+                        by session calibration (defaults to CLR_MIN_AREA_RATIO).
+        max_area_ratio: Upper bound.  Overridable (defaults to CLR_MAX_AREA_RATIO).
     """
     iris_area  = math.pi * (iris_radius ** 2)
-    min_area   = CLR_MIN_AREA_RATIO * iris_area
-    max_area   = CLR_MAX_AREA_RATIO * iris_area
+    min_area   = min_area_ratio * iris_area
+    max_area   = max_area_ratio * iris_area
 
     margin     = CLR_LOCATION_MARGIN
     x_min = crop_w * margin
@@ -341,24 +365,31 @@ def _select_clr_blob(
 # ─────────────────────────────────────────────────────────────
 
 def _detect_clr_one_eye(
-    crop_rgb:    np.ndarray,
-    iris_radius: float,
-    pupil_centre: Optional[Tuple[float, float]],
-    eye_label:   str,
-    flags:       List[str],
-) -> Tuple[Tuple[float, float], float]:
+    crop_rgb:         np.ndarray,
+    iris_radius:      float,
+    pupil_centre:     Optional[Tuple[float, float]],
+    eye_label:        str,
+    flags:            List[str],
+    min_area_ratio:   float = CLR_MIN_AREA_RATIO,
+    max_area_ratio:   float = CLR_MAX_AREA_RATIO,
+    min_peak_brightness: float = CLR_MIN_PEAK_BRIGHTNESS,
+) -> Tuple[Tuple[float, float], float, float, float]:
     """
     Run the full CLR detection pipeline for one eye.
 
     Args:
-        crop_rgb:    RGB eye crop from Module 1.
-        iris_radius: Iris radius in crop pixels from Module 2.
-        pupil_centre: Pupil center in crop pixels from Module 2 (if available).
-        eye_label:   "left" or "right".
-        flags:       Mutable list for non-fatal warnings.
+        crop_rgb:           RGB eye crop from Module 1.
+        iris_radius:        Iris radius in crop pixels from Module 2.
+        pupil_centre:       Pupil center in crop pixels from Module 2 (if available).
+        eye_label:          "left" or "right".
+        flags:              Mutable list for non-fatal warnings.
+        min_area_ratio:     Session-calibrated lower bound for blob area / iris_area.
+        max_area_ratio:     Session-calibrated upper bound.
+        min_peak_brightness: Session-calibrated flash detection threshold.
 
     Returns:
-        ((clr_x, clr_y), circularity_score)
+        ((clr_x, clr_y), circularity_score, peak_brightness, blob_area_ratio)
+        — peak_brightness and blob_area_ratio are used for session calibration.
 
     Raises:
         CLRError: On no_flash, no_reflex, or other detection failure.
@@ -368,8 +399,8 @@ def _detect_clr_one_eye(
     # ── Step 1: Grayscale ──
     gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
 
-    # ── Step 2: Flash validation ──
-    _validate_flash(gray, eye_label)
+    # ── Step 2: Flash validation — returns measured peak brightness ──
+    peak_brightness = _validate_flash(gray, eye_label, min_brightness=min_peak_brightness)
 
     # ── Step 3: Adaptive threshold → binary mask ──
     mask, threshold_val = _adaptive_threshold_mask(gray)
@@ -381,13 +412,20 @@ def _detect_clr_one_eye(
         logger.warning(f"Module 3 [{eye_label}]: No blobs found in mask after threshold.")
         raise CLRError(f"no_reflex_{eye_label}")
 
-    # ── Step 5: 4-way filter ──
-    passing = _apply_four_way_filter(blobs, w, h, iris_radius, pupil_centre, eye_label)
+    # ── Step 5: 4-way filter (session-calibrated thresholds) ──
+    passing = _apply_four_way_filter(
+        blobs, w, h, iris_radius, pupil_centre, eye_label,
+        min_area_ratio=min_area_ratio, max_area_ratio=max_area_ratio,
+    )
 
     # ── Step 6: Select best blob ──
     best = _select_clr_blob(passing, eye_label, flags)
 
-    return (best.centroid_x, best.centroid_y), best.circularity
+    # ── Blob area ratio (for calibration export) ──
+    iris_area = math.pi * (iris_radius ** 2)
+    blob_area_ratio = best.area / iris_area if iris_area > 0 else 0.0
+
+    return (best.centroid_x, best.centroid_y), best.circularity, peak_brightness, blob_area_ratio
 
 
 # ─────────────────────────────────────────────────────────────
@@ -395,13 +433,17 @@ def _detect_clr_one_eye(
 # ─────────────────────────────────────────────────────────────
 
 def detect_clr(
-    left_crop:         np.ndarray,
-    right_crop:        np.ndarray,
-    left_iris_radius:  float,
-    right_iris_radius: float,
-    left_pupil:        Optional[Tuple[float, float]] = None,
-    right_pupil:       Optional[Tuple[float, float]] = None,
-    debug:             bool = False,
+    left_crop:            np.ndarray,
+    right_crop:           np.ndarray,
+    left_iris_radius:     float,
+    right_iris_radius:    float,
+    left_pupil:           Optional[Tuple[float, float]] = None,
+    right_pupil:          Optional[Tuple[float, float]] = None,
+    debug:                bool = False,
+    # Session-calibration overrides — set by module_calibrate.py for frames 4+
+    min_area_ratio:       Optional[float] = None,
+    max_area_ratio:       Optional[float] = None,
+    min_peak_brightness:  Optional[float] = None,
 ) -> CLRResult:
     """
     Detect the corneal light reflex in both eye crops.
@@ -414,35 +456,51 @@ def detect_clr(
     However, any CLRError still propagates to the caller as INCONCLUSIVE.
 
     Args:
-        left_crop:         RGB eye crop, left eye.
-        right_crop:        RGB eye crop, right eye.
-        left_iris_radius:  Iris radius in crop pixels, left eye.
-        right_iris_radius: Iris radius in crop pixels, right eye.
-        left_pupil:        Pupil coordinate in crop pixels, left eye.
-        right_pupil:       Pupil coordinate in crop pixels, right eye.
-        debug:             Log extra detail if True.
+        left_crop:            RGB eye crop, left eye.
+        right_crop:           RGB eye crop, right eye.
+        left_iris_radius:     Iris radius in crop pixels, left eye.
+        right_iris_radius:    Iris radius in crop pixels, right eye.
+        left_pupil:           Pupil coordinate in crop pixels, left eye.
+        right_pupil:          Pupil coordinate in crop pixels, right eye.
+        debug:                Log extra detail if True.
+        min_area_ratio:       Session-calibrated min CLR area / iris_area (overrides constant).
+        max_area_ratio:       Session-calibrated max CLR area / iris_area (overrides constant).
+        min_peak_brightness:  Session-calibrated flash detection threshold (overrides constant).
 
     Returns:
-        CLRResult with CLR positions, confidence scores, and flags.
+        CLRResult with CLR positions, confidence scores, flags,
+        and calibration measurements (peak_brightness, blob_area_ratio per eye).
 
     Raises:
         CLRError: If either eye's CLR cannot be located.
                   Caught by the API layer → INCONCLUSIVE response.
     """
+    # Resolve effective thresholds (session calibration or fallback to constants)
+    eff_min_area   = min_area_ratio      if min_area_ratio      is not None else CLR_MIN_AREA_RATIO
+    eff_max_area   = max_area_ratio      if max_area_ratio      is not None else CLR_MAX_AREA_RATIO
+    eff_min_peak   = min_peak_brightness if min_peak_brightness is not None else CLR_MIN_PEAK_BRIGHTNESS
+
     flags: List[str] = []
     left_error:  Optional[CLRError] = None
     right_error: Optional[CLRError] = None
 
     # ── Left eye ──
-    left_clr:        Optional[Tuple[float, float]] = None
-    left_confidence: float = 0.0
+    left_clr:             Optional[Tuple[float, float]] = None
+    left_confidence:      float = 0.0
+    left_peak_brightness: float = 0.0
+    left_blob_area_ratio: float = 0.0
     try:
-        left_clr, left_confidence = _detect_clr_one_eye(
-            left_crop, left_iris_radius, left_pupil, "left", flags
+        left_clr, left_confidence, left_peak_brightness, left_blob_area_ratio = (
+            _detect_clr_one_eye(
+                left_crop, left_iris_radius, left_pupil, "left", flags,
+                min_area_ratio=eff_min_area, max_area_ratio=eff_max_area,
+                min_peak_brightness=eff_min_peak,
+            )
         )
         logger.debug(
             f"Module 3 [left]: CLR at ({left_clr[0]:.1f},{left_clr[1]:.1f}), "
-            f"confidence={left_confidence:.3f}"
+            f"confidence={left_confidence:.3f}, peak={left_peak_brightness:.0f}, "
+            f"area_ratio={left_blob_area_ratio:.4f}"
         )
     except CLRError as e:
         left_error = e
@@ -450,15 +508,22 @@ def detect_clr(
         logger.warning(f"Module 3 [left]: {e}")
 
     # ── Right eye ──
-    right_clr:        Optional[Tuple[float, float]] = None
-    right_confidence: float = 0.0
+    right_clr:             Optional[Tuple[float, float]] = None
+    right_confidence:      float = 0.0
+    right_peak_brightness: float = 0.0
+    right_blob_area_ratio: float = 0.0
     try:
-        right_clr, right_confidence = _detect_clr_one_eye(
-            right_crop, right_iris_radius, right_pupil, "right", flags
+        right_clr, right_confidence, right_peak_brightness, right_blob_area_ratio = (
+            _detect_clr_one_eye(
+                right_crop, right_iris_radius, right_pupil, "right", flags,
+                min_area_ratio=eff_min_area, max_area_ratio=eff_max_area,
+                min_peak_brightness=eff_min_peak,
+            )
         )
         logger.debug(
             f"Module 3 [right]: CLR at ({right_clr[0]:.1f},{right_clr[1]:.1f}), "
-            f"confidence={right_confidence:.3f}"
+            f"confidence={right_confidence:.3f}, peak={right_peak_brightness:.0f}, "
+            f"area_ratio={right_blob_area_ratio:.4f}"
         )
     except CLRError as e:
         right_error = e
@@ -484,4 +549,8 @@ def detect_clr(
         left_clr_confidence=left_confidence,
         right_clr_confidence=right_confidence,
         flags=flags,
+        left_peak_brightness=left_peak_brightness,
+        right_peak_brightness=right_peak_brightness,
+        left_blob_area_ratio=left_blob_area_ratio,
+        right_blob_area_ratio=right_blob_area_ratio,
     )

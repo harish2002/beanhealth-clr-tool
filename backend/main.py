@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import io
 import logging
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
@@ -38,15 +38,21 @@ from models.response import (
     SuccessResponse,
 )
 from models.stream_response import StreamAnalyseResponse
-from pipeline.module_aggregate import aggregate_frame_results
+from pipeline.module_aggregate  import aggregate_frame_results
+from pipeline.module_calibrate  import (
+    CalibrationMeasurement,
+    SessionCalibration,
+    calibrate_from_measurements,
+)
 from pipeline.module1_detection    import detect_and_crop_eyes
 from pipeline.module2_pupil        import localise_pupils
-from pipeline.module3_clr          import detect_clr
+from pipeline.module3_clr          import CLRResult, detect_clr
 from pipeline.module4_displacement import compute_displacement
 from pipeline.module5_asymmetry    import compute_asymmetry_and_angle
 from pipeline.module6_classify     import classify_strabismus
 from pipeline.module7_report       import generate_report
-from utils.exceptions import CLRPipelineError, DetectionError, CLRError
+from utils.device_fingerprint      import parse_device_model
+from utils.exceptions              import CLRPipelineError, DetectionError, CLRError
 
 # ─────────────────────────────────────────────────────────────
 # Logging
@@ -297,8 +303,24 @@ async def _run_single_frame_pipeline(
     img_rgb:      np.ndarray,
     patient_name: str,
     patient_age:  int,
-) -> dict:
-    """Run the full 7-module pipeline on one frame. Always returns a report dict."""
+    calibration:  Optional[SessionCalibration] = None,
+) -> tuple[dict, Optional[CLRResult]]:
+    """
+    Run the full 7-module pipeline on one frame.
+
+    Args:
+        img_rgb:      RGB numpy array of the captured frame.
+        patient_name: Patient name (passed to report).
+        patient_age:  Patient age  (passed to report).
+        calibration:  Optional session-level calibration.  When present the
+                      Module 3 thresholds are replaced with the calibrated values.
+
+    Returns:
+        (report_dict, clr_result)
+        clr_result is None if the pipeline failed before Module 3 completed
+        (used by the caller to collect calibration measurements).
+    """
+    clr_result_out: Optional[CLRResult] = None
     try:
         detection    = detect_and_crop_eyes(img_rgb)
         pupil_result = localise_pupils(
@@ -309,7 +331,9 @@ async def _run_single_frame_pipeline(
             left_crop_box=detection.left_crop_box,
             right_crop_box=detection.right_crop_box,
         )
-        clr_result   = detect_clr(
+
+        # ── Module 3 — apply session-calibrated thresholds if available ──
+        clr_kwargs: dict = dict(
             left_crop=detection.left_crop,
             right_crop=detection.right_crop,
             left_iris_radius=pupil_result.left_iris_radius,
@@ -317,6 +341,14 @@ async def _run_single_frame_pipeline(
             left_pupil=pupil_result.left_pupil,
             right_pupil=pupil_result.right_pupil,
         )
+        if calibration and calibration.calibrated:
+            clr_kwargs["min_area_ratio"]      = calibration.session_min_area_ratio
+            clr_kwargs["max_area_ratio"]      = calibration.session_max_area_ratio
+            clr_kwargs["min_peak_brightness"] = calibration.session_min_peak_brightness
+
+        clr_result = detect_clr(**clr_kwargs)
+        clr_result_out = clr_result   # expose for calibration collection
+
         upstream_flags = pupil_result.flags + clr_result.flags
         displacement = compute_displacement(
             left_pupil=pupil_result.left_pupil,
@@ -348,7 +380,7 @@ async def _run_single_frame_pipeline(
             asymmetry_score=asymmetry.asymmetry_score,
             upstream_flags=asymmetry.flags,
         )
-        return generate_report(
+        report = generate_report(
             patient_name=patient_name,
             patient_age=patient_age,
             original_img=img_rgb,
@@ -359,12 +391,16 @@ async def _run_single_frame_pipeline(
             asymmetry=asymmetry,
             classification=classification,
         )
+        return report, clr_result_out
     except Exception as e:
-        return generate_report(
-            patient_name=patient_name,
-            patient_age=patient_age,
-            original_img=None,
-            error=e,
+        return (
+            generate_report(
+                patient_name=patient_name,
+                patient_age=patient_age,
+                original_img=None,
+                error=e,
+            ),
+            clr_result_out,  # may be None if Module 3 never completed
         )
 
 
@@ -378,6 +414,7 @@ async def analyse_stream(
     images:       List[UploadFile] = File(..., description="List of JPEG frames captured over ~10 seconds"),
     patient_name: str              = Form(..., min_length=1, max_length=100),
     patient_age:  int              = Form(..., ge=1, le=120),
+    user_agent:   str              = Form("", description="navigator.userAgent from the browser (used for session-level calibration)"),
 ) -> JSONResponse:
     """
     Accept N frames captured during a streaming session, run the full 7-module
@@ -385,9 +422,10 @@ async def analyse_stream(
     and return a statistically averaged result.
 
     **Request:** `multipart/form-data` with:
-    - `images[]`     — list of JPEG frames (typically 10, captured ~1 per second)
+    - `images[]`     — list of JPEG frames (typically 20, captured at 2 fps)
     - `patient_name` — patient's name
     - `patient_age`  — patient's age in years
+    - `user_agent`   — browser's navigator.userAgent (optional, for device calibration)
 
     **Response 200 — SUCCESS:**
     Aggregated report with mean deviation ± std dev, per-frame readings,
@@ -400,9 +438,11 @@ async def analyse_stream(
     patient_name = patient_name.strip()
     timestamp    = datetime.now(timezone.utc).isoformat()
 
+    # ── Device fingerprinting (Phase 1 calibration) ───────────
+    device_model = parse_device_model(user_agent)
     logger.info(
         f"[API] /analyse-stream — patient='{patient_name}' age={patient_age} "
-        f"frames={len(images)}"
+        f"frames={len(images)} device='{device_model}'"
     )
 
     if not images:
@@ -419,11 +459,19 @@ async def analyse_stream(
             status_code=200,
         )
 
-    # ── Process frames sequentially ───────────────────────────
+    # ── Process frames sequentially with live calibration ─────
     # MediaPipe + OpenCV are CPU-bound and block the event loop —
     # asyncio.gather gives no speedup here and causes GIL contention.
     # Sequential processing is simpler and reliably within timeout.
-    frame_reports: TList[dict] = []
+    #
+    # Session calibration strategy:
+    #   • Frames 1–3: use default thresholds; collect CLR measurements.
+    #   • After the 3rd successful frame: compute SessionCalibration.
+    #   • Frames 4+: pass calibrated thresholds into detect_clr().
+    frame_reports:    TList[dict]                  = []
+    cal_measurements: TList[CalibrationMeasurement] = []
+    calibration:      Optional[SessionCalibration]  = None
+
     for i, upload in enumerate(images):
         try:
             img_rgb = await _load_image(upload)
@@ -435,11 +483,32 @@ async def analyse_stream(
             })
             continue
 
-        report = await _run_single_frame_pipeline(img_rgb, patient_name, patient_age)
+        report, clr_result = await _run_single_frame_pipeline(
+            img_rgb, patient_name, patient_age, calibration=calibration
+        )
         frame_reports.append(report)
+
+        # ── Collect calibration measurements from successful frames ──
+        if clr_result is not None and len(cal_measurements) < 3:
+            cal_measurements.append(CalibrationMeasurement(
+                peak_brightness_left=clr_result.left_peak_brightness,
+                peak_brightness_right=clr_result.right_peak_brightness,
+                blob_area_ratio_left=clr_result.left_blob_area_ratio,
+                blob_area_ratio_right=clr_result.right_blob_area_ratio,
+            ))
+            # Compute calibration as soon as we have 3 good frames
+            if len(cal_measurements) == 3 and calibration is None:
+                calibration = calibrate_from_measurements(cal_measurements, device_model)
+                logger.info(
+                    f"[API] Session calibration ready after frame {i} — "
+                    f"bloom={calibration.bloom_factor:.2f}× "
+                    f"peak_threshold={calibration.session_min_peak_brightness:.1f}"
+                )
+
         logger.debug(
             f"[API] Frame {i}: status={report.get('status')} "
-            f"deviation={report.get('result', {}).get('deviation_degrees', 'N/A')}"
+            f"deviation={report.get('result', {}).get('deviation_degrees', 'N/A')} "
+            f"calibrated={'yes' if (calibration and calibration.calibrated) else 'no'}"
         )
 
     # ── Aggregate across frames ───────────────────────────────

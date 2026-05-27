@@ -121,6 +121,8 @@ export async function analyseStream(
   frames.forEach((f) => form.append("images", f));
   form.append("patient_name", patientName);
   form.append("patient_age",  String(patientAge));
+  // Send User-Agent for session-level device calibration (Phase 1)
+  form.append("user_agent",   typeof navigator !== "undefined" ? navigator.userAgent : "");
 
   try {
     const response = await axios.post<StreamAnalyseResponse>(
