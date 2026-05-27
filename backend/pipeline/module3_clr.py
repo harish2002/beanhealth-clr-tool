@@ -44,6 +44,8 @@ from utils.constants import (
     CLR_MIN_CIRCULARITY,
     CLR_MIN_PEAK_BRIGHTNESS,
     CLR_PERCENTILE_THRESHOLD,
+    CLR_RESCUE_MAX_AREA_RATIO,
+    CLR_RESCUE_MIN_CIRCULARITY,
 )
 from utils.exceptions import CLRError
 
@@ -237,20 +239,24 @@ def _apply_four_way_filter(
     eye_label:            str,
     min_area_ratio:       float = CLR_MIN_AREA_RATIO,
     max_area_ratio:       float = CLR_MAX_AREA_RATIO,
+    min_circularity:      float = CLR_MIN_CIRCULARITY,
 ) -> List[BlobCandidate]:
     """
     Apply four mandatory filters to the blob list.
 
     Filter ①  Location: central 80% of crop.
     Filter ②  Area: acceptable size for CLR (bounds may be calibrated per session).
-    Filter ③  Circularity: > 0.5.
-    Filter ④  Iris Distance: if pupil_centre is known, distance from pupil center to CLR must be <= 1.2 × iris_radius.
-              (The reflection must fall on the cornea, which roughly matches the iris). This rejects scleral glare.
+    Filter ③  Circularity: > min_circularity (default 0.35; rescue pass uses 0.20).
+    Filter ④  Iris Distance: if pupil_centre is known, distance from pupil → CLR
+              must be ≤ 1.5 × iris_radius.  1.5× gives room for pupil-detection
+              error at 640 px resolution while still rejecting far scleral glare.
+              (Proximity-based *selection* handles the case where a scleral blob
+              and the real CLR both survive — we no longer need this to be tight.)
 
     Args:
-        min_area_ratio: Lower bound for CLR area / iris_area.  Can be overridden
-                        by session calibration (defaults to CLR_MIN_AREA_RATIO).
-        max_area_ratio: Upper bound.  Overridable (defaults to CLR_MAX_AREA_RATIO).
+        min_area_ratio:  Lower bound for CLR area / iris_area.
+        max_area_ratio:  Upper bound.  Overridable by session calibration.
+        min_circularity: Circularity floor.  Rescue pass uses a lower value.
     """
     iris_area  = math.pi * (iris_radius ** 2)
     min_area   = min_area_ratio * iris_area
@@ -284,20 +290,21 @@ def _apply_four_way_filter(
             continue
 
         # ── Filter ③: Circularity ──
-        # Condition is strictly GREATER THAN — exactly 0.5 must fail
-        if blob.circularity <= CLR_MIN_CIRCULARITY:
-            blob.fail_reason = f"circularity {blob.circularity:.3f} < {CLR_MIN_CIRCULARITY}"
+        if blob.circularity <= min_circularity:
+            blob.fail_reason = f"circularity {blob.circularity:.3f} < {min_circularity}"
             logger.debug(f"Module 3 [{eye_label}]: blob {blob.label} REJECTED — {blob.fail_reason}")
             continue
 
         # ── Filter ④: Iris Distance ──
-        # The real CLR must land on the cornea — at most ~1× iris_radius from
-        # the pupil centre.  A 30° squint displaces the reflex ≈ 0.75× radius,
-        # so a ceiling of 1.0× gives adequate margin while rejecting scleral
-        # glare that previously slipped through at the old 1.25× threshold.
+        # The real CLR must land on the cornea — at most ~1.5× iris_radius from
+        # the pupil centre.  1.5× gives headroom for:
+        #   • Pupil detection error at 640 px resolution (±10–20 px common)
+        #   • 30° squint displaces the reflex ≈ 0.75× radius
+        # Far-outlier scleral glare is handled by proximity-based *selection*,
+        # so this filter is a coarse guard only.
         if pupil_centre is not None:
             dist_to_pupil = math.hypot(blob.centroid_x - pupil_centre[0], blob.centroid_y - pupil_centre[1])
-            max_dist = iris_radius * 1.0
+            max_dist = iris_radius * 1.5
             if dist_to_pupil > max_dist:
                 blob.fail_reason = f"distance {dist_to_pupil:.1f}px > max {max_dist:.1f}px from pupil {pupil_centre}"
                 logger.debug(f"Module 3 [{eye_label}]: blob {blob.label} REJECTED — {blob.fail_reason}")
@@ -440,14 +447,44 @@ def _detect_clr_one_eye(
         logger.warning(f"Module 3 [{eye_label}]: No blobs found in mask after threshold.")
         raise CLRError(f"no_reflex_{eye_label}")
 
-    # ── Step 5: 4-way filter (session-calibrated thresholds) ──
+    # ── Step 5: Primary 4-way filter (session-calibrated thresholds) ──
     passing = _apply_four_way_filter(
         blobs, w, h, iris_radius, pupil_centre, eye_label,
-        min_area_ratio=min_area_ratio, max_area_ratio=max_area_ratio,
+        min_area_ratio=min_area_ratio,
+        max_area_ratio=max_area_ratio,
+        min_circularity=CLR_MIN_CIRCULARITY,
     )
+
+    # ── Step 5b: Rescue pass ──────────────────────────────────────────────
+    # If primary pass found nothing, retry with relaxed area + circularity.
+    # This handles strong phone torches that create large / irregular reflexes.
+    # The rescue blob is flagged so the aggregate can track detection quality.
+    rescue_used = False
+    if not passing:
+        logger.info(
+            f"Module 3 [{eye_label}]: Primary pass found 0 blobs — "
+            f"trying rescue pass (area≤{CLR_RESCUE_MAX_AREA_RATIO:.2f}, "
+            f"circ≥{CLR_RESCUE_MIN_CIRCULARITY:.2f}, no distance filter)."
+        )
+        passing = _apply_four_way_filter(
+            blobs, w, h, iris_radius,
+            pupil_centre=None,           # disable distance filter in rescue
+            eye_label=eye_label,
+            min_area_ratio=min_area_ratio,
+            max_area_ratio=CLR_RESCUE_MAX_AREA_RATIO,
+            min_circularity=CLR_RESCUE_MIN_CIRCULARITY,
+        )
+        if passing:
+            rescue_used = True
+            flags.append(f"rescue_clr_{eye_label}")
+            logger.info(
+                f"Module 3 [{eye_label}]: Rescue pass found {len(passing)} blob(s) — "
+                f"result flagged as rescue_clr_{eye_label}."
+            )
 
     # ── Step 6: Select best blob (prefer proximity to pupil centre) ──
     best = _select_clr_blob(passing, eye_label, flags, pupil_centre=pupil_centre)
+    _ = rescue_used   # consumed via flags; suppress unused-var warning
 
     # ── Blob area ratio (for calibration export) ──
     iris_area = math.pi * (iris_radius ** 2)

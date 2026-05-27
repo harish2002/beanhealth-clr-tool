@@ -55,11 +55,19 @@ HOUGH_MAX_RADIUS_RATIO = 0.55
 # ─────────────────────────────────────────────
 
 CLR_PERCENTILE_THRESHOLD  = 97    # top 3% brightest pixels
-CLR_MIN_PEAK_BRIGHTNESS   = 240   # if max pixel < this → no flash
-CLR_MIN_AREA_RATIO        = 0.005 # of iris area
-CLR_MAX_AREA_RATIO        = 0.15
-CLR_MIN_CIRCULARITY       = 0.5   # 4π·area / perimeter²
+CLR_MIN_PEAK_BRIGHTNESS   = 235   # if max pixel < this → no flash (was 240; phones vary)
+
+# Primary detection pass — balanced precision / recall
+CLR_MIN_AREA_RATIO        = 0.004 # of iris area (lower = catch small reflexes)
+CLR_MAX_AREA_RATIO        = 0.25  # was 0.15; phone torches bloom at 30 cm
+CLR_MIN_CIRCULARITY       = 0.35  # was 0.5; bloomed LED reflex isn't perfectly round
 CLR_LOCATION_MARGIN       = 0.10  # 10% safe margin from crop edge
+
+# Rescue pass — only used if primary pass finds 0 blobs
+# Catches very bright / large / irregular reflexes that still beat background
+CLR_RESCUE_MAX_AREA_RATIO = 0.45  # allow large bloom
+CLR_RESCUE_MIN_CIRCULARITY = 0.20 # allow irregular shape
+# (rescue uses the same min_area and location margin as primary)
 
 # ─────────────────────────────────────────────
 # Module 5 — Hirschberg Angle
