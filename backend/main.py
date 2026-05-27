@@ -407,7 +407,7 @@ async def _run_single_frame_pipeline(
 @app.post(
     "/analyse-stream",
     tags=["Analysis"],
-    summary="Multi-frame averaged CLR analysis (10-frame streaming mode)",
+    summary="Multi-frame averaged CLR analysis (streaming mode)",
     response_description="Aggregated SUCCESS / INCONCLUSIVE / ERROR report",
 )
 async def analyse_stream(

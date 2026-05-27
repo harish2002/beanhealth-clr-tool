@@ -9,7 +9,7 @@
  *  1. Opens the back-facing camera with torch enabled
  *  2. Runs @mediapipe/face_mesh in the browser (WASM, ~30 fps) to detect iris
  *  3. Draws iris circles, pupil dots, and "L / R" labels on a canvas overlay
- *  4. When user taps "Start Analysis", captures 2 frames per second for 10 seconds (20 frames)
+ *  4. When user taps "Start Analysis", captures 2 frames per second for 5 seconds (10 frames)
  *  5. Shows a countdown + per-frame pulse indicator while capturing
  *  6. Sends all frames to POST /analyse-stream and returns the aggregated result
  */
@@ -29,11 +29,12 @@ const PIPELINE_MODULES = [
   { name: "Report",              desc: "Generating annotated result image" },
 ] as const;
 
-const TOTAL_FRAMES      = 20;    // frames to capture (2 fps × 10 s)
+const TOTAL_FRAMES      = 10;    // frames to capture (2 fps × 5 s)
 const FRAME_INTERVAL_MS = 500;   // 2 frames per second
 
-// Expected processing time per frame on Railway (~1.5s), plus aggregation (~3s)
-const MS_PER_FRAME      = 1500;
+// Expected processing time per frame on Railway (~2s), plus aggregation (~3s)
+// 10 frames × 2s + 3s = ~23s — well within Railway's 60s proxy timeout.
+const MS_PER_FRAME      = 2000;
 const MS_AGGREGATION    = 3000;
 const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
@@ -585,7 +586,7 @@ export default function StreamingCapture({
                   : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
-              Start 20-Frame Analysis
+              Start 10-Frame Analysis
             </button>
           </div>
         )}
@@ -622,7 +623,7 @@ export default function StreamingCapture({
             <li>• Hold the phone <strong>30 cm</strong> from the patient&apos;s face</li>
             <li>• Ensure <strong>torch is on</strong> — you should see reflections in both eyes</li>
             <li>• Keep <strong>eyes open and looking straight</strong> at the camera</li>
-            <li>• The app captures <strong>20 frames over 10 seconds</strong> and averages them</li>
+            <li>• The app captures <strong>10 frames over 5 seconds</strong> and averages them</li>
           </ul>
         </div>
       )}
