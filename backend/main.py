@@ -23,6 +23,7 @@ import io
 import logging
 from typing import List, Optional
 
+import cv2
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -293,6 +294,35 @@ async def analyse(
         )
         logger.exception(f"[API] Unexpected pipeline crash: {e}")
         return JSONResponse(content=report, status_code=500)
+
+
+def _pad_for_detection(img_rgb: np.ndarray, pad_ratio: float = 0.6) -> np.ndarray:
+    """
+    Add a neutral border around an image so MediaPipe FaceMesh can detect a
+    face that fills (or nearly fills) the frame.
+
+    MediaPipe's face detector expects the face to occupy only part of the
+    frame — it routinely fails ("no_face") on tight head-and-shoulders or
+    eyes-only crops where the face touches the image edges.  Many published
+    strabismus reference photos are exactly that kind of close-up.  Adding
+    margin around the crop gives the detector the surrounding context it
+    needs without altering the eye geometry we measure.
+
+    Args:
+        img_rgb:    RGB uint8 image.
+        pad_ratio:  Border thickness as a fraction of each dimension.
+
+    Returns:
+        A new, larger RGB image with the original centred inside a border.
+    """
+    h, w = img_rgb.shape[:2]
+    pad_x = int(w * pad_ratio)
+    pad_y = int(h * pad_ratio)
+    # Edge-replicate keeps skin-tone context around the face rather than a
+    # hard black frame, which the detector tolerates better.
+    return cv2.copyMakeBorder(
+        img_rgb, pad_y, pad_y, pad_x, pad_x, cv2.BORDER_REPLICATE
+    )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -602,6 +632,24 @@ async def analyse_test(
     report, _ = await _run_single_frame_pipeline(
         img_rgb, patient_name, patient_age, calibration=test_calibration,
     )
+
+    # ── Padding-retry fallback for tight crops ──
+    # MediaPipe FaceMesh fails ("no_face"/"eyes_not_visible") when the face
+    # fills the frame, which is the norm for cropped research/reference photos.
+    # Re-run once on a border-padded copy that gives the detector margin.
+    detection_failures = {"no_face", "eyes_not_visible", "not_frontal", "crop_too_small"}
+    if report.get("status") != "SUCCESS" and report.get("reason") in detection_failures:
+        logger.info(
+            f"[API] /analyse-test — detection failed ({report.get('reason')}); "
+            f"retrying on border-padded image"
+        )
+        padded = _pad_for_detection(img_rgb)
+        retry_report, _ = await _run_single_frame_pipeline(
+            padded, patient_name, patient_age, calibration=test_calibration,
+        )
+        # Only adopt the retry if it got further than the original attempt.
+        if retry_report.get("status") == "SUCCESS" or retry_report.get("reason") not in detection_failures:
+            report = retry_report
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
