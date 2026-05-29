@@ -56,6 +56,23 @@ export interface TechnicalDetail {
   flags:                    string[];
 }
 
+// ─── Corner-alignment (CLR-free screening net) ───────────────────────────────
+
+export type AlignmentVerdict = "ALIGNED" | "BORDERLINE" | "ASYMMETRIC" | "UNAVAILABLE";
+
+export interface AlignmentResult {
+  available:       boolean;
+  verdict:         AlignmentVerdict;
+  referral_flag:   boolean;
+  left_h_ratio:    number | null;
+  right_h_ratio:   number | null;
+  left_v_ratio:    number | null;
+  right_v_ratio:   number | null;
+  h_asymmetry:     number | null;
+  v_asymmetry:     number | null;
+  interpretation:  string;
+}
+
 // ─── Top-level response shapes ───────────────────────────────────────────────
 
 export interface IntermediateImages {
@@ -72,6 +89,7 @@ export interface SuccessResponse {
   patient:               PatientInfo;
   result:                ClinicalResult;
   technical:             TechnicalDetail;
+  alignment?:            AlignmentResult;
   intermediate_images?:  IntermediateImages;
   annotated_image_b64:   string;
   timestamp:             string;
@@ -132,6 +150,7 @@ export interface StreamSuccessResponse {
   aggregate_confidence:  Confidence;
   result:                StreamClinicalResult;
   technical:             TechnicalDetail;
+  alignment?:            AlignmentResult;
   intermediate_images?:  IntermediateImages;
   annotated_image_b64?:  string;
   timestamp:             string;
@@ -156,6 +175,51 @@ export interface StreamInconclusiveResponse {
 }
 
 export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;
+
+// ─── Batch pre-screen (school / camp) ────────────────────────────────────────
+
+export interface BatchItemHirschberg {
+  available:          boolean;
+  reason?:            string;
+  urgency_tier?:      UrgencyTier;
+  condition_name?:    string;
+  icd10_code?:        string;
+  asymmetry_degrees?: number;
+  deviation_degrees?: number;
+  severity?:          SeverityTier;
+}
+
+export interface BatchItemAlignment {
+  available:       boolean;
+  verdict:         AlignmentVerdict;
+  referral_flag:   boolean;
+  h_asymmetry:     number | null;
+  v_asymmetry:     number | null;
+  left_h_ratio:    number | null;
+  right_h_ratio:   number | null;
+  interpretation:  string;
+}
+
+export interface BatchItemResult {
+  index:         number;
+  label:         string;
+  status:        "SUCCESS" | "INCONCLUSIVE" | "ERROR";
+  reason:        string | null;
+  hirschberg:    BatchItemHirschberg | null;
+  alignment:     BatchItemAlignment | null;
+  referral_flag: boolean;
+}
+
+export interface BatchResponse {
+  status:          "DONE" | "ERROR";
+  message?:        string;
+  total:           number;
+  processed:       number;
+  flagged:         number;
+  elapsed_seconds: number;
+  items:           BatchItemResult[];
+  timestamp:       string;
+}
 
 // ─── UI state ────────────────────────────────────────────────────────────────
 

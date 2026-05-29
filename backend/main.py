@@ -52,6 +52,7 @@ from pipeline.module4_displacement import compute_displacement
 from pipeline.module5_asymmetry    import compute_asymmetry_and_angle
 from pipeline.module6_classify     import classify_strabismus
 from pipeline.module7_report       import generate_report
+from pipeline.module8_alignment    import compute_corner_alignment
 from utils.device_fingerprint      import parse_device_model
 from utils.exceptions              import CLRPipelineError, DetectionError, CLRError
 
@@ -731,3 +732,285 @@ async def analyse_test(
     )
 
     return JSONResponse(content=wrapped, status_code=200)
+
+
+# ─────────────────────────────────────────────────────────────
+# POST /analyse-batch — bulk pre-screen of many photos
+#
+# Designed for the school / camp screening use-case: upload N ordinary
+# photos and get back a compact per-photo referral list in one call.
+#
+# Each photo is run through BOTH:
+#   1. The Hirschberg CLR pipeline (relaxed test thresholds) — produces a
+#      clinical angle + triage tier ONLY when a corneal light reflex is
+#      present in the photo.
+#   2. The CLR-free corner-alignment net (Module 8) — always attempted when
+#      a face/eyes can be detected; flags gross pupil-vs-corner asymmetry even
+#      with no torch reflex.
+#
+# A photo is flagged for referral if EITHER signal is positive.  This endpoint
+# returns compact JSON (no per-photo annotated images) so large batches stay
+# within request limits.  NOT FOR CLINICAL DECISIONS — a flagged child must be
+# re-captured with a torch for a real Hirschberg measurement.
+# ─────────────────────────────────────────────────────────────
+
+# Conservative per-photo processing estimate (FaceMesh + optional padded retry
+# + pupil + CLR + alignment, sequential on a CPU worker).  The frontend mirrors
+# this constant to show an up-front time estimate.
+BATCH_SECONDS_PER_PHOTO = 2.5
+BATCH_MAX_PHOTOS        = 60
+
+
+def _detect_with_retry(img_rgb: np.ndarray) -> "EyeDetectionResult":  # type: ignore[name-defined]
+    """
+    Detect eyes with the full fallback chain used by test/batch modes:
+        FaceMesh → eyes-only Hough fallback → border-padded FaceMesh retry.
+    Raises DetectionError if every strategy fails.
+    """
+    detection_failures = {"no_face", "eyes_not_visible", "not_frontal", "crop_too_small"}
+    try:
+        return detect_and_crop_eyes(img_rgb)
+    except DetectionError as de:
+        if de.code not in detection_failures:
+            raise
+        # Try eyes-only Hough fallback
+        try:
+            return detect_eyes_only_fallback(img_rgb)
+        except DetectionError:
+            pass
+        # Try border-padded FaceMesh (face fills the frame)
+        try:
+            return detect_and_crop_eyes(_pad_for_detection(img_rgb))
+        except DetectionError:
+            raise de
+
+
+def _batch_calibration() -> SessionCalibration:
+    """Same relaxed thresholds as /analyse-test (saved photos, no live torch)."""
+    return SessionCalibration(
+        device_model="batch-mode-upload",
+        calibrated=True,
+        calibration_frames=0,
+        session_min_area_ratio=0.0003,
+        session_max_area_ratio=0.25,
+        session_min_peak_brightness=180.0,
+        bloom_factor=1.0,
+        peak_brightness_avg=0.0,
+    )
+
+
+def _process_batch_item(
+    img_rgb: np.ndarray,
+    index:   int,
+    label:   str,
+    calibration: SessionCalibration,
+) -> dict:
+    """
+    Run one batch photo through detection + alignment + (best-effort) Hirschberg.
+    Returns a compact record (no images).  Never raises.
+    """
+    record: dict = {
+        "index":         index,
+        "label":         label,
+        "status":        "INCONCLUSIVE",
+        "reason":        None,
+        "hirschberg":    None,
+        "alignment":     None,
+        "referral_flag": False,
+    }
+
+    # ── Detection + pupil (shared by both signals) ──
+    try:
+        detection = _detect_with_retry(img_rgb)
+    except DetectionError as de:
+        record["reason"] = de.code
+        return record
+    except Exception as e:                       # noqa: BLE001 — defensive per-item guard
+        logger.exception(f"[BATCH] item {index} detection crash: {e}")
+        record["status"] = "ERROR"
+        record["reason"] = "internal_error"
+        return record
+
+    try:
+        pupil_result = localise_pupils(
+            left_crop=detection.left_crop,
+            right_crop=detection.right_crop,
+            left_iris_landmarks_orig=detection.left_iris_landmarks,
+            right_iris_landmarks_orig=detection.right_iris_landmarks,
+            left_crop_box=detection.left_crop_box,
+            right_crop_box=detection.right_crop_box,
+        )
+    except Exception as e:                        # noqa: BLE001
+        logger.warning(f"[BATCH] item {index} pupil failure: {e}")
+        record["reason"] = "pupil_not_found"
+        return record
+
+    # ── Signal 2: CLR-free corner alignment (always when detection worked) ──
+    alignment = compute_corner_alignment(
+        left_pupil=pupil_result.left_pupil,
+        right_pupil=pupil_result.right_pupil,
+        left_crop_box=detection.left_crop_box,
+        right_crop_box=detection.right_crop_box,
+        left_eye_corners=detection.left_eye_corners,
+        right_eye_corners=detection.right_eye_corners,
+    )
+    record["alignment"] = {
+        "available":      alignment.available,
+        "verdict":        alignment.verdict,
+        "referral_flag":  alignment.referral_flag,
+        "h_asymmetry":    alignment.h_asymmetry,
+        "v_asymmetry":    alignment.v_asymmetry,
+        "left_h_ratio":   alignment.left_h_ratio,
+        "right_h_ratio":  alignment.right_h_ratio,
+        "interpretation": alignment.interpretation,
+    }
+
+    # ── Signal 1: best-effort Hirschberg (only if a CLR is present) ──
+    try:
+        clr_result = detect_clr(
+            left_crop=detection.left_crop,
+            right_crop=detection.right_crop,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
+            left_pupil=pupil_result.left_pupil,
+            right_pupil=pupil_result.right_pupil,
+            min_area_ratio=calibration.session_min_area_ratio,
+            max_area_ratio=calibration.session_max_area_ratio,
+            min_peak_brightness=calibration.session_min_peak_brightness,
+        )
+        displacement = compute_displacement(
+            left_pupil=pupil_result.left_pupil,
+            right_pupil=pupil_result.right_pupil,
+            left_clr=clr_result.left_clr,
+            right_clr=clr_result.right_clr,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
+            upstream_flags=pupil_result.flags + clr_result.flags,
+        )
+        asymmetry = compute_asymmetry_and_angle(
+            left_displacement_norm=displacement.left_displacement_norm,
+            right_displacement_norm=displacement.right_displacement_norm,
+            upstream_flags=displacement.flags,
+            left_dx=displacement.left_dx,
+            left_dy=displacement.left_dy,
+            right_dx=displacement.right_dx,
+            right_dy=displacement.right_dy,
+            left_iris_radius=pupil_result.left_iris_radius,
+            right_iris_radius=pupil_result.right_iris_radius,
+        )
+        dominant_dir = (
+            displacement.left_direction if asymmetry.dominant_eye != "right"
+            else displacement.right_direction
+        )
+        classification = classify_strabismus(
+            dominant_direction=dominant_dir,
+            severity=asymmetry.severity,
+            asymmetry_score=asymmetry.asymmetry_score,
+            upstream_flags=asymmetry.flags,
+        )
+        record["status"] = "SUCCESS"
+        record["hirschberg"] = {
+            "available":         True,
+            "urgency_tier":      classification.urgency_tier,
+            "condition_name":    classification.condition_name,
+            "icd10_code":        classification.icd10_code,
+            "asymmetry_degrees": round(asymmetry.asymmetry_degrees, 2),
+            "deviation_degrees": round(asymmetry.deviation_degrees, 2),
+            "severity":          asymmetry.severity,
+        }
+    except (CLRError, DetectionError, CLRPipelineError) as e:
+        # No torch reflex in this photo — Hirschberg unavailable, alignment stands.
+        record["status"] = "SUCCESS" if alignment.available else "INCONCLUSIVE"
+        record["reason"] = e.code if record["status"] != "SUCCESS" else None
+        record["hirschberg"] = {"available": False, "reason": e.code}
+    except Exception as e:                        # noqa: BLE001
+        logger.exception(f"[BATCH] item {index} hirschberg crash: {e}")
+        record["hirschberg"] = {"available": False, "reason": "internal_error"}
+        if not alignment.available:
+            record["status"] = "ERROR"
+
+    # ── Referral decision — either signal positive ──
+    hb = record["hirschberg"] or {}
+    hb_flag = bool(hb.get("available")) and hb.get("urgency_tier") not in (None, "NORMAL")
+    record["referral_flag"] = bool(hb_flag or alignment.referral_flag)
+    return record
+
+
+@app.post(
+    "/analyse-batch",
+    tags=["Analysis"],
+    summary="Bulk pre-screen many photos (school/camp screening)",
+    response_description="Compact per-photo referral list + summary",
+)
+async def analyse_batch(
+    images: List[UploadFile] = File(..., description="List of photos (JPEG/PNG) to pre-screen"),
+    labels: str             = Form("", description="Optional comma-separated labels aligned to images"),
+) -> JSONResponse:
+    """
+    Pre-screen a batch of ordinary photos in one request.
+
+    For each photo we run the Hirschberg CLR pipeline (only yields an angle when
+    a torch reflex is present) AND the CLR-free corner-alignment net.  A photo is
+    flagged when either signal is positive.
+
+    Returns compact JSON — no per-photo annotated images — so large class-sized
+    batches stay within request size limits.  Screening aid only.
+    """
+    started = datetime.now(timezone.utc)
+
+    if not images:
+        return JSONResponse(
+            content={"status": "ERROR", "message": "No images received.",
+                     "timestamp": started.isoformat()},
+            status_code=200,
+        )
+    if len(images) > BATCH_MAX_PHOTOS:
+        return JSONResponse(
+            content={
+                "status": "ERROR",
+                "message": f"Batch too large: {len(images)} photos (max {BATCH_MAX_PHOTOS}). "
+                           f"Split into smaller batches.",
+                "timestamp": started.isoformat(),
+            },
+            status_code=200,
+        )
+
+    label_list = [s.strip() for s in labels.split(",")] if labels else []
+    calibration = _batch_calibration()
+    logger.info(f"[API] /analyse-batch — {len(images)} photos")
+
+    items: List[dict] = []
+    for i, upload in enumerate(images):
+        label = label_list[i] if i < len(label_list) and label_list[i] else (upload.filename or f"photo_{i + 1}")
+        try:
+            img_rgb = await _load_image(upload)
+        except HTTPException:
+            items.append({
+                "index": i, "label": label, "status": "INCONCLUSIVE",
+                "reason": "invalid_image", "hirschberg": None,
+                "alignment": None, "referral_flag": False,
+            })
+            continue
+        items.append(_process_batch_item(img_rgb, i, label, calibration))
+
+    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+    flagged   = sum(1 for it in items if it["referral_flag"])
+    processed = sum(1 for it in items if it["status"] == "SUCCESS")
+
+    logger.info(
+        f"[API] /analyse-batch DONE — total={len(items)} processed={processed} "
+        f"flagged={flagged} elapsed={elapsed:.1f}s"
+    )
+
+    return JSONResponse(
+        content={
+            "status":          "DONE",
+            "total":           len(items),
+            "processed":       processed,
+            "flagged":         flagged,
+            "elapsed_seconds": round(elapsed, 1),
+            "items":           items,
+            "timestamp":       datetime.now(timezone.utc).isoformat(),
+        },
+        status_code=200,
+    )

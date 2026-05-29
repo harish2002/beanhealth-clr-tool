@@ -10,10 +10,21 @@
  */
 
 import axios, { AxiosError } from "axios";
-import type { AnalyseResponse, StreamAnalyseResponse } from "./types";
+import type { AnalyseResponse, BatchResponse, StreamAnalyseResponse } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
+
+/** Conservative per-photo processing estimate (mirrors backend BATCH_SECONDS_PER_PHOTO). */
+export const BATCH_SECONDS_PER_PHOTO = 2.5;
+/** Max photos accepted per batch request (mirrors backend BATCH_MAX_PHOTOS). */
+export const BATCH_MAX_PHOTOS = 60;
+
+/** Human-readable estimate of how long a batch of `n` photos will take. */
+export function estimateBatchSeconds(n: number): number {
+  // Add a small fixed overhead for upload + cold-start.
+  return Math.ceil(n * BATCH_SECONDS_PER_PHOTO + 3);
+}
 
 // ─── Mock response (Phase 3 dev — no live server needed) ────────────────────
 
@@ -178,6 +189,44 @@ export async function analyseTest(
     const axiosErr = err as AxiosError;
     if (axiosErr.response) {
       const data = axiosErr.response.data as StreamAnalyseResponse;
+      if (data?.status) return data;
+    }
+    if (axiosErr.code === "ECONNABORTED" || axiosErr.message.toLowerCase().includes("timeout")) {
+      throw new Error("TIMEOUT");
+    }
+    throw new Error("NETWORK_ERROR");
+  }
+}
+
+// ─── Batch pre-screen (school / camp) ────────────────────────────────────────
+//
+// Uploads N photos to /analyse-batch and returns a compact per-photo referral
+// list. Runs both the Hirschberg CLR pipeline and the CLR-free corner-alignment
+// net on each photo. Screening aid only — flagged children must be re-captured
+// with a torch for a real measurement.
+
+export async function analyseBatch(
+  files:  File[],
+  labels?: string[],
+): Promise<BatchResponse> {
+  const form = new FormData();
+  files.forEach((f) => form.append("images", f));
+  if (labels && labels.length) form.append("labels", labels.join(","));
+
+  // Scale the timeout with the batch size — processing is sequential server-side.
+  const timeout = Math.max(60_000, estimateBatchSeconds(files.length) * 1000 * 1.5);
+
+  try {
+    const response = await axios.post<BatchResponse>(
+      `${API_URL}/analyse-batch`,
+      form,
+      { headers: { "Content-Type": "multipart/form-data" }, timeout },
+    );
+    return response.data;
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    if (axiosErr.response) {
+      const data = axiosErr.response.data as BatchResponse;
       if (data?.status) return data;
     }
     if (axiosErr.code === "ECONNABORTED" || axiosErr.message.toLowerCase().includes("timeout")) {

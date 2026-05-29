@@ -29,11 +29,13 @@ from utils.constants import (
     CROP_PAD_HORIZONTAL,
     CROP_PAD_VERTICAL,
     LEFT_EYE_BOUNDARY,
+    LEFT_EYE_CORNERS,
     LEFT_IRIS_INDICES,
     MIN_CROP_HEIGHT,
     MIN_CROP_WIDTH,
     MIN_FACE_CONFIDENCE,
     RIGHT_EYE_BOUNDARY,
+    RIGHT_EYE_CORNERS,
     RIGHT_IRIS_INDICES,
 )
 from utils.exceptions import DetectionError
@@ -76,6 +78,13 @@ class EyeDetectionResult:
 
     # Non-fatal warnings accumulated during detection
     warnings: List[str] = field(default_factory=list)
+
+    # Eye corner (canthus) points in ORIGINAL image pixel coords, as
+    # (inner/medial, outer/lateral).  None when corners are unavailable
+    # (e.g. the eyes-only Hough fallback, which has no face landmarks).
+    # Used by Module 8 for the CLR-free corner-alignment screening net.
+    left_eye_corners:  Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
+    right_eye_corners: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -432,6 +441,12 @@ def detect_and_crop_eyes(
     left_iris_px  = _landmarks_to_pixels(face_landmarks, img_w, img_h, LEFT_IRIS_INDICES)
     right_iris_px = _landmarks_to_pixels(face_landmarks, img_w, img_h, RIGHT_IRIS_INDICES)
 
+    # Eye corner (canthus) points for the corner-alignment screening net.
+    left_corners_px  = _landmarks_to_pixels(face_landmarks, img_w, img_h, list(LEFT_EYE_CORNERS))
+    right_corners_px = _landmarks_to_pixels(face_landmarks, img_w, img_h, list(RIGHT_EYE_CORNERS))
+    left_eye_corners  = (left_corners_px[0],  left_corners_px[1])    # (inner, outer)
+    right_eye_corners = (right_corners_px[0], right_corners_px[1])
+
     if debug:
         logger.debug(f"Left iris landmarks (px): {left_iris_px}")
         logger.debug(f"Right iris landmarks (px): {right_iris_px}")
@@ -485,4 +500,6 @@ def detect_and_crop_eyes(
         right_iris_radius_orig=right_iris_radius,
         face_confidence=face_confidence,
         warnings=warnings,
+        left_eye_corners=left_eye_corners,
+        right_eye_corners=right_eye_corners,
     )

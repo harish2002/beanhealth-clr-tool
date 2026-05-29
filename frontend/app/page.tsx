@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
+import BatchScreening from "@/components/BatchScreening";
 
 const SCREENER_ROLES = [
   "Parent / Guardian",
@@ -344,6 +345,49 @@ export default function LandingPage() {
               </div>
             </div>
           </aside>
+
+        </div>
+      </section>
+
+      {/* ════════════════════════════════════════════════════════════
+          BATCH PRE-SCREEN (school / camp)
+      ════════════════════════════════════════════════════════════ */}
+      <section className="bg-slate-50 border-b border-slate-100">
+        <div className="max-w-6xl mx-auto px-6 py-14 md:py-20 grid md:grid-cols-5 gap-10 md:gap-14">
+
+          {/* ── LEFT: copy ───────────────────────────────────────────── */}
+          <div className="md:col-span-2">
+            <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-blue-600 mb-3">
+              Bulk screening
+            </p>
+            <h2 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">
+              Screen a whole class at once
+            </h2>
+            <p className="text-slate-500 text-base mt-3 leading-relaxed">
+              Already have a folder of ID-card or frontal face photos? Upload them
+              together and get a per-child referral list in minutes — no torch
+              capture needed up front.
+            </p>
+            <ul className="mt-5 space-y-3">
+              {[
+                "Hirschberg corneal-reflex measurement wherever a torch reflection is present.",
+                "Torch-free pupil-vs-eye-corner alignment check on every photo.",
+                "Flagged children are re-captured with a torch for a proper measurement.",
+              ].map((t) => (
+                <li key={t} className="flex items-start gap-2.5 text-sm text-slate-600 leading-relaxed">
+                  <svg className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
+                  </svg>
+                  <span>{t}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ── RIGHT: batch uploader ────────────────────────────────── */}
+          <div className="md:col-span-3">
+            <BatchScreening />
+          </div>
 
         </div>
       </section>

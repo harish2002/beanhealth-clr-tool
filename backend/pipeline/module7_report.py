@@ -75,6 +75,7 @@ from pipeline.module3_clr        import CLRResult
 from pipeline.module4_displacement import DisplacementResult
 from pipeline.module5_asymmetry  import AsymmetryResult
 from pipeline.module6_classify   import ClassificationResult
+from pipeline.module8_alignment  import AlignmentResult, compute_corner_alignment
 from utils.constants import (
     URGENCY_URGENT,
     URGENCY_ROUTINE,
@@ -386,6 +387,22 @@ def _timestamp() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _alignment_to_dict(alignment: AlignmentResult) -> Dict[str, Any]:
+    """Serialise the Module 8 corner-alignment result for the JSON report."""
+    return {
+        "available":      alignment.available,
+        "verdict":        alignment.verdict,
+        "referral_flag":  alignment.referral_flag,
+        "left_h_ratio":   alignment.left_h_ratio,
+        "right_h_ratio":  alignment.right_h_ratio,
+        "left_v_ratio":   alignment.left_v_ratio,
+        "right_v_ratio":  alignment.right_v_ratio,
+        "h_asymmetry":    alignment.h_asymmetry,
+        "v_asymmetry":    alignment.v_asymmetry,
+        "interpretation": alignment.interpretation,
+    }
+
+
 def _confidence_label(pupil_result: PupilResult) -> str:
     """
     Derive overall confidence from the two pupil confidence levels.
@@ -497,6 +514,23 @@ def build_success_report(
     # Step 6 — final annotated full image with clinical measurements overlay
     m6_b64 = _generate_result_overlay(annotated_img, asymmetry, classification, displacement)
 
+    # ── Module 8 — CLR-free corner-alignment screening net ───────────────
+    # Computed alongside the Hirschberg result so the single-photo report can
+    # show a second, independent geometric view (pupil position vs eye corners)
+    # that does not depend on the torch reflex.
+    alignment = compute_corner_alignment(
+        left_pupil=pupil_result.left_pupil,
+        right_pupil=pupil_result.right_pupil,
+        left_crop_box=detection.left_crop_box,
+        right_crop_box=detection.right_crop_box,
+        left_eye_corners=detection.left_eye_corners,
+        right_eye_corners=detection.right_eye_corners,
+    )
+    for f in alignment.flags:
+        if f not in seen:
+            seen.add(f)
+            all_flags.append(f)
+
     report = {
         "status": "SUCCESS",
         "patient": {
@@ -531,6 +565,7 @@ def build_success_report(
             "confidence":               _confidence_label(pupil_result),
             "flags":                    all_flags,
         },
+        "alignment": _alignment_to_dict(alignment),
         "intermediate_images": {
             "module1_crops":  m1_b64,
             "module2_clahe":  m2_b64,

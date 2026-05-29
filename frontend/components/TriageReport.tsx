@@ -1,10 +1,34 @@
 "use client";
 
 import { useState } from "react";
-import type { StreamSuccessResponse, UrgencyTier } from "@/lib/types";
+import type { AlignmentResult, AlignmentVerdict, StreamSuccessResponse, UrgencyTier } from "@/lib/types";
 import { URGENCY_CONFIG } from "@/lib/types";
 import AnnotatedEye from "./AnnotatedEye";
 import ProcessingSteps from "./ProcessingSteps";
+
+// ─── Corner-alignment display config ────────────────────────────────────────
+
+const ALIGN_CONFIG: Record<
+  AlignmentVerdict,
+  { label: string; emoji: string; text: string; bg: string; border: string }
+> = {
+  ALIGNED: {
+    label: "Aligned", emoji: "🟢", text: "text-emerald-700",
+    bg: "bg-emerald-50", border: "border-emerald-200",
+  },
+  BORDERLINE: {
+    label: "Borderline", emoji: "🟡", text: "text-amber-700",
+    bg: "bg-amber-50", border: "border-amber-200",
+  },
+  ASYMMETRIC: {
+    label: "Asymmetric — flag", emoji: "🔴", text: "text-red-700",
+    bg: "bg-red-50", border: "border-red-200",
+  },
+  UNAVAILABLE: {
+    label: "Not assessed", emoji: "⚪", text: "text-slate-500",
+    bg: "bg-slate-50", border: "border-slate-200",
+  },
+};
 
 // ─── Prop types ───────────────────────────────────────────────────────────────
 
@@ -86,6 +110,64 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
     <h2 className="text-slate-900 font-semibold text-sm uppercase tracking-wider mb-4">
       {children}
     </h2>
+  );
+}
+
+/** §2B — CLR-free pupil-vs-corner alignment (the second, independent view). */
+function AlignmentSection({ alignment }: { alignment: AlignmentResult }) {
+  const cfg = ALIGN_CONFIG[alignment.verdict] ?? ALIGN_CONFIG.UNAVAILABLE;
+  const pct = (v: number | null) => (v === null ? "–" : `${(v * 100).toFixed(1)}%`);
+
+  return (
+    <section className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-5`}>
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
+            Method B · No torch required
+          </p>
+          <h2 className="text-slate-900 font-semibold text-sm uppercase tracking-wider">
+            Pupil-vs-Corner Alignment
+          </h2>
+        </div>
+        <span className={`text-xs px-3 py-1 rounded-full font-bold border bg-white/70 ${cfg.text} shrink-0`}>
+          {cfg.emoji} {cfg.label}
+        </span>
+      </div>
+
+      <p className="text-slate-500 text-xs leading-relaxed mb-3">
+        This independent check measures where each pupil sits between its own eye
+        corners (inner→outer canthus) and compares the two eyes. It needs no
+        corneal light reflex, so it works on ordinary photos — but it gives a
+        geometric flag only, not a clinical angle.
+      </p>
+
+      {alignment.available ? (
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-3">
+            {(["left", "right"] as const).map((eye) => {
+              const h = eye === "left" ? alignment.left_h_ratio : alignment.right_h_ratio;
+              return (
+                <div key={eye} className="bg-white/70 rounded-xl p-3 border border-white/80">
+                  <p className="text-slate-400 text-xs uppercase tracking-wide font-semibold mb-1">
+                    {eye} eye
+                  </p>
+                  <p className="text-slate-900 font-bold text-base leading-none">{pct(h)}</p>
+                  <p className="text-slate-400 text-xs mt-0.5">inner→outer position</p>
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 mb-3">
+            <span>Horizontal asymmetry: <strong className="text-slate-700">{pct(alignment.h_asymmetry)}</strong></span>
+            <span>Vertical asymmetry: <strong className="text-slate-700">{pct(alignment.v_asymmetry)}</strong></span>
+          </div>
+        </>
+      ) : null}
+
+      <p className={`text-sm leading-relaxed ${alignment.available ? "text-slate-600" : "text-slate-500"}`}>
+        {alignment.interpretation}
+      </p>
+    </section>
   );
 }
 
@@ -306,6 +388,9 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
             §2  CLINICAL INTERPRETATION
         ══════════════════════════════════════════════════════════════ */}
         <section className={`rounded-2xl border ${config.borderColour} ${config.bgColour} p-5 print:bg-slate-50 print:border-slate-300`}>
+          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-1">
+            Method A · Hirschberg (corneal light reflex)
+          </p>
           <div className="flex items-start justify-between gap-3">
             <div className="flex-1 min-w-0">
               <h2 className={`text-xl font-bold ${config.colour} mb-0.5`}>{r.condition_name}</h2>
@@ -368,6 +453,11 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
             </div>
           )}
         </section>
+
+        {/* ══════════════════════════════════════════════════════════════
+            §2B  PUPIL-VS-CORNER ALIGNMENT (CLR-free, second view)
+        ══════════════════════════════════════════════════════════════ */}
+        {result.alignment && <AlignmentSection alignment={result.alignment} />}
 
         {/* ══════════════════════════════════════════════════════════════
             §3  CLINICAL MEASUREMENTS

@@ -21,6 +21,25 @@ LEFT_EYE_BOUNDARY  = [33, 7, 163, 144, 145, 153, 154, 155, 133,
 RIGHT_EYE_BOUNDARY = [362, 382, 381, 380, 374, 373, 390, 249, 263,
                        466, 388, 387, 386, 385, 384, 398]
 
+# Eye corner (canthus) landmarks — used by Module 8 (corner alignment).
+# Pipeline "left"  = subject's LEFT eye  = image-RIGHT half.
+# Pipeline "right" = subject's RIGHT eye = image-LEFT  half.
+# Each tuple is (inner / medial canthus, outer / lateral canthus).
+LEFT_EYE_CORNERS  = (362, 263)   # subject's left eye:  inner=362, outer=263
+RIGHT_EYE_CORNERS = (133, 33)    # subject's right eye: inner=133, outer=33
+
+# ─────────────────────────────────────────────
+# Module 8 — Pupil-vs-corner alignment (CLR-free screening net)
+# ─────────────────────────────────────────────
+# Horizontal asymmetry = |left_h_ratio - right_h_ratio|, where h_ratio is the
+# pupil's fractional position along the inner→outer canthus axis (0=inner/nasal,
+# 1=outer/temporal). Symmetric eyes have near-equal ratios.
+ALIGN_H_ALIGNED_MAX    = 0.05   # < this → ALIGNED
+ALIGN_H_BORDERLINE_MAX = 0.10   # < this → BORDERLINE, else ASYMMETRIC
+# Vertical asymmetry uses the same fractions perpendicular to the canthus axis.
+ALIGN_V_ALIGNED_MAX    = 0.06
+ALIGN_V_BORDERLINE_MAX = 0.12
+
 # Crop padding ratios (fraction of eye bounding box size added as padding)
 CROP_PAD_HORIZONTAL = 0.35   # 35% of eye width added each side
 CROP_PAD_VERTICAL   = 0.50   # 50% of eye height added each side
