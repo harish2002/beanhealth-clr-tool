@@ -211,6 +211,147 @@ def _check_eye_visibility(
 # Module 1 Public Entry Point
 # ─────────────────────────────────────────────────────────────
 
+def _find_one_iris(
+    gray_region: np.ndarray,
+) -> Optional[Tuple[int, int, int]]:
+    """
+    Locate a single iris in a half-image region using Hough circles.
+
+    Picks the candidate circle with the darkest interior (the iris is the
+    dark disc of the eye).  Returns (cx, cy, r) in the region's local pixel
+    coords, or None if no plausible circle is found.
+    """
+    h_r, w_r = gray_region.shape[:2]
+    blur = cv2.medianBlur(gray_region, 5)
+
+    # The iris edge is often partly occluded by eyelids, so the Hough
+    # accumulator vote can be weak.  Try progressively lower thresholds and
+    # accept the first that yields any candidate.
+    circles = None
+    for param2 in (28, 22, 18, 14):
+        circles = cv2.HoughCircles(
+            blur,
+            cv2.HOUGH_GRADIENT,
+            dp=1,
+            minDist=w_r,                  # one eye per region — want few candidates
+            param1=80,
+            param2=param2,
+            minRadius=int(w_r * 0.08),
+            maxRadius=int(w_r * 0.45),
+        )
+        if circles is not None:
+            break
+    if circles is None:
+        return None
+
+    best: Optional[Tuple[int, int, int]] = None
+    best_score = -1.0
+    for cx, cy, r in np.round(circles[0]).astype(int):
+        x1, y1 = max(0, cx - r), max(0, cy - r)
+        x2, y2 = min(w_r, cx + r), min(h_r, cy + r)
+        patch = gray_region[y1:y2, x1:x2]
+        if patch.size == 0:
+            continue
+        # Darker interior → more likely a real iris (255 - mean grey).
+        score = 255.0 - float(np.mean(patch))
+        if score > best_score:
+            best_score = score
+            best = (int(cx), int(cy), int(r))
+    return best
+
+
+def _synthetic_iris_landmarks(
+    cx: float, cy: float, r: float,
+) -> List[Tuple[float, float]]:
+    """
+    Build 5 iris landmarks in MediaPipe order [centre, top, right, bottom, left]
+    from a circle, so downstream modules see the same shape they expect.
+    """
+    return [
+        (cx, cy),          # centre
+        (cx, cy - r),      # top
+        (cx + r, cy),      # right
+        (cx, cy + r),      # bottom
+        (cx - r, cy),      # left
+    ]
+
+
+def detect_eyes_only_fallback(
+    image_rgb: np.ndarray,
+) -> EyeDetectionResult:
+    """
+    DEV/RESEARCH fallback for when MediaPipe FaceMesh cannot find a face —
+    typically because the input is a tightly-cropped eyes-only photo (common
+    in published strabismus reference images) with no nose/mouth/chin context.
+
+    Splits the image into left and right halves, locates one iris in each via
+    Hough circles, and synthesises the EyeDetectionResult that the rest of the
+    pipeline consumes.  This path is LESS accurate than FaceMesh (no landmark
+    cross-validation) and must only be used in test mode.
+
+    Image-left eye  → the subject's RIGHT eye  → "right" in pipeline convention.
+    Image-right eye → the subject's LEFT eye   → "left"  in pipeline convention.
+
+    Raises:
+        DetectionError("eyes_not_visible") if an iris cannot be found in either half.
+    """
+    image_rgb = downscale_if_needed(image_rgb)
+    img_h, img_w = image_rgb.shape[:2]
+    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+
+    mid = img_w // 2
+    left_region  = gray[:, :mid]   # image-left  half
+    right_region = gray[:, mid:]   # image-right half
+
+    img_left_iris  = _find_one_iris(left_region)
+    img_right_iris = _find_one_iris(right_region)
+
+    if img_left_iris is None or img_right_iris is None:
+        logger.warning("Module 1 (eye-only fallback): could not locate both irises.")
+        raise DetectionError("eyes_not_visible")
+
+    # Map half-local coords back to full-image coords.
+    # image-left half iris  → subject's RIGHT eye
+    r_cx, r_cy, r_r = img_left_iris
+    # image-right half iris → subject's LEFT eye (offset x by `mid`)
+    l_cx, l_cy, l_r = img_right_iris
+    l_cx += mid
+
+    left_iris_px  = _synthetic_iris_landmarks(l_cx, l_cy, l_r)
+    right_iris_px = _synthetic_iris_landmarks(r_cx, r_cy, r_r)
+
+    left_crop,  left_box  = crop_region(
+        image_rgb, l_cx - l_r, l_cy - l_r, l_cx + l_r, l_cy + l_r,
+        pad_h=CROP_PAD_HORIZONTAL, pad_v=CROP_PAD_VERTICAL,
+    )
+    right_crop, right_box = crop_region(
+        image_rgb, r_cx - r_r, r_cy - r_r, r_cx + r_r, r_cy + r_r,
+        pad_h=CROP_PAD_HORIZONTAL, pad_v=CROP_PAD_VERTICAL,
+    )
+
+    if (left_crop.shape[1]  < MIN_CROP_WIDTH or left_crop.shape[0]  < MIN_CROP_HEIGHT or
+        right_crop.shape[1] < MIN_CROP_WIDTH or right_crop.shape[0] < MIN_CROP_HEIGHT):
+        raise DetectionError("crop_too_small")
+
+    logger.info(
+        f"Module 1 (eye-only fallback): irises L=({l_cx},{l_cy},r{l_r}) "
+        f"R=({r_cx},{r_cy},r{r_r})"
+    )
+
+    return EyeDetectionResult(
+        left_crop=left_crop,
+        right_crop=right_crop,
+        left_crop_box=left_box,
+        right_crop_box=right_box,
+        left_iris_landmarks=left_iris_px,
+        right_iris_landmarks=right_iris_px,
+        left_iris_radius_orig=float(l_r),
+        right_iris_radius_orig=float(r_r),
+        face_confidence=0.5,                       # heuristic — no FaceMesh score
+        warnings=["eye_only_fallback"],
+    )
+
+
 def detect_and_crop_eyes(
     image_rgb: np.ndarray,
     debug: bool = False,

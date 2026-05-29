@@ -45,7 +45,7 @@ from pipeline.module_calibrate  import (
     SessionCalibration,
     calibrate_from_measurements,
 )
-from pipeline.module1_detection    import detect_and_crop_eyes
+from pipeline.module1_detection    import detect_and_crop_eyes, detect_eyes_only_fallback
 from pipeline.module2_pupil        import localise_pupils
 from pipeline.module3_clr          import CLRResult, detect_clr
 from pipeline.module4_displacement import compute_displacement
@@ -334,6 +334,7 @@ async def _run_single_frame_pipeline(
     patient_name: str,
     patient_age:  int,
     calibration:  Optional[SessionCalibration] = None,
+    allow_eye_only_fallback: bool = False,
 ) -> tuple[dict, Optional[CLRResult]]:
     """
     Run the full 7-module pipeline on one frame.
@@ -352,7 +353,20 @@ async def _run_single_frame_pipeline(
     """
     clr_result_out: Optional[CLRResult] = None
     try:
-        detection    = detect_and_crop_eyes(img_rgb)
+        try:
+            detection = detect_and_crop_eyes(img_rgb)
+        except DetectionError as de:
+            # In test mode, fall back to Hough-based eyes-only detection when
+            # FaceMesh can't find a face (e.g. tightly-cropped research photos).
+            if allow_eye_only_fallback and de.code in {
+                "no_face", "eyes_not_visible", "not_frontal", "crop_too_small",
+            }:
+                logger.info(
+                    f"[API] FaceMesh failed ({de.code}); trying eyes-only fallback"
+                )
+                detection = detect_eyes_only_fallback(img_rgb)
+            else:
+                raise
         pupil_result = localise_pupils(
             left_crop=detection.left_crop,
             right_crop=detection.right_crop,
@@ -629,14 +643,16 @@ async def analyse_test(
         peak_brightness_avg=0.0,
     )
 
+    # First pass: FaceMesh, then (if it fails) a Hough-based eyes-only fallback
+    # for tightly-cropped research photos that have no full face to detect.
     report, _ = await _run_single_frame_pipeline(
-        img_rgb, patient_name, patient_age, calibration=test_calibration,
+        img_rgb, patient_name, patient_age,
+        calibration=test_calibration, allow_eye_only_fallback=True,
     )
 
-    # ── Padding-retry fallback for tight crops ──
-    # MediaPipe FaceMesh fails ("no_face"/"eyes_not_visible") when the face
-    # fills the frame, which is the norm for cropped research/reference photos.
-    # Re-run once on a border-padded copy that gives the detector margin.
+    # Second pass: for near-full-face crops where the face fills the frame,
+    # border-padding gives FaceMesh the margin it needs. Re-run the whole
+    # pipeline on the padded image (so annotation coords stay consistent).
     detection_failures = {"no_face", "eyes_not_visible", "not_frontal", "crop_too_small"}
     if report.get("status") != "SUCCESS" and report.get("reason") in detection_failures:
         logger.info(
@@ -645,7 +661,8 @@ async def analyse_test(
         )
         padded = _pad_for_detection(img_rgb)
         retry_report, _ = await _run_single_frame_pipeline(
-            padded, patient_name, patient_age, calibration=test_calibration,
+            padded, patient_name, patient_age,
+            calibration=test_calibration, allow_eye_only_fallback=True,
         )
         # Only adopt the retry if it got further than the original attempt.
         if retry_report.get("status") == "SUCCESS" or retry_report.get("reason") not in detection_failures:
