@@ -114,7 +114,7 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 }
 
 /** §2B — CLR-free pupil-vs-corner alignment (the second, independent view). */
-function AlignmentSection({ alignment }: { alignment: AlignmentResult }) {
+export function AlignmentSection({ alignment }: { alignment: AlignmentResult }) {
   const cfg = ALIGN_CONFIG[alignment.verdict] ?? ALIGN_CONFIG.UNAVAILABLE;
   const pct = (v: number | null) => (v === null ? "–" : `${(v * 100).toFixed(1)}%`);
 

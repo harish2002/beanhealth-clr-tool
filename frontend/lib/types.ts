@@ -102,6 +102,9 @@ export interface InconclusiveResponse {
   flags:              string[];
   patient?:           PatientInfo;
   timestamp:          string;
+  // Torch-free corner-alignment net — present when eye detection + pupil
+  // localisation succeeded before the halt (e.g. a no-flash CLR failure).
+  alignment?:         AlignmentResult;
   // Present when reason = "high_variance_asymmetry" or "insufficient_frames"
   frames_total?:      number;
   frames_accepted?:   number;
@@ -172,6 +175,9 @@ export interface StreamInconclusiveResponse {
   asymmetry_std_deg?: number;
   deviation_avg_deg?: number;
   deviation_std_deg?: number;
+  // Torch-free corner-alignment net — present when detection + pupil
+  // localisation succeeded before the halt (e.g. a no-flash CLR failure).
+  alignment?:         AlignmentResult;
 }
 
 export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;

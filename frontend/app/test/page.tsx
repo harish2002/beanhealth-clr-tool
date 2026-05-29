@@ -83,6 +83,8 @@ export default function TestUploadPage() {
           flags:              inc.flags,
           patient:            inc.patient,
           timestamp:          inc.timestamp,
+          // Torch-free corner-alignment still runs even when no CLR is found
+          alignment:          inc.alignment,
         });
       } else {
         const ok = result as StreamSuccessResponse;

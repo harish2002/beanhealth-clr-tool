@@ -181,6 +181,8 @@ async def analyse(
     )
 
     # ── Run pipeline ─────────────────────────────────────────
+    detection    = None   # captured for alignment even if a later module halts
+    pupil_result = None
     try:
         # Module 1 — Eye detection & crop
         detection = detect_and_crop_eyes(img_rgb)
@@ -280,6 +282,8 @@ async def analyse(
             patient_name=patient_name,
             patient_age=patient_age,
             original_img=None,
+            detection=detection,        # enables Module 8 alignment on no-CLR halts
+            pupil_result=pupil_result,
             error=e,
         )
         logger.warning(f"[API] INCONCLUSIVE — {e.code}: {e.human_message}")
@@ -353,6 +357,8 @@ async def _run_single_frame_pipeline(
         (used by the caller to collect calibration measurements).
     """
     clr_result_out: Optional[CLRResult] = None
+    detection    = None   # captured for alignment even if a later module halts
+    pupil_result = None
     try:
         try:
             detection = detect_and_crop_eyes(img_rgb)
@@ -443,6 +449,8 @@ async def _run_single_frame_pipeline(
                 patient_name=patient_name,
                 patient_age=patient_age,
                 original_img=None,
+                detection=detection,        # enables Module 8 alignment on no-CLR halts
+                pupil_result=pupil_result,
                 error=e,
             ),
             clr_result_out,  # may be None if Module 3 never completed

@@ -594,18 +594,27 @@ def build_inconclusive_report(
     patient_name: Optional[str] = None,
     patient_age:  Optional[int] = None,
     extra_flags:  Optional[List[str]] = None,
+    detection:    Optional[EyeDetectionResult] = None,
+    pupil_result: Optional[PupilResult]        = None,
 ) -> Dict[str, Any]:
     """
     Assemble an INCONCLUSIVE report from a pipeline error.
 
     This is returned when a DetectionError or CLRError halts the pipeline.
-    No triage result is included — only the reason and human explanation.
+    No Hirschberg triage result is included — only the reason and human
+    explanation.  However, when eye detection (Module 1) and pupil
+    localisation (Module 2) DID succeed before the halt — e.g. a no-flash /
+    no-reflex CLRError on an ID-style photo — the torch-free Module 8
+    corner-alignment net is still run and attached.  That signal does not
+    depend on a corneal light reflex, so it remains valid here.
 
     Args:
         error:        The exception that caused the halt.
         patient_name: From the API request (may be None in early failure).
         patient_age:  From the API request (may be None in early failure).
         extra_flags:  Any flags accumulated before the halt.
+        detection:    Module 1 output, if it completed (for alignment).
+        pupil_result: Module 2 output, if it completed (for alignment).
 
     Returns:
         dict with status=INCONCLUSIVE.
@@ -621,6 +630,25 @@ def build_inconclusive_report(
         "flags":        flags,
         "timestamp":    _timestamp(),
     }
+
+    # ── Module 8 — CLR-free corner-alignment net (runs regardless of CLR) ──
+    # Only possible if detection + pupil localisation completed upstream.
+    if detection is not None and pupil_result is not None:
+        try:
+            alignment = compute_corner_alignment(
+                left_pupil=pupil_result.left_pupil,
+                right_pupil=pupil_result.right_pupil,
+                left_crop_box=detection.left_crop_box,
+                right_crop_box=detection.right_crop_box,
+                left_eye_corners=detection.left_eye_corners,
+                right_eye_corners=detection.right_eye_corners,
+            )
+            for f in alignment.flags:
+                if f not in report["flags"]:
+                    report["flags"].append(f)
+            report["alignment"] = _alignment_to_dict(alignment)
+        except Exception as exc:                 # noqa: BLE001 — never block report
+            logger.warning(f"[M7] alignment skipped on INCONCLUSIVE: {exc}")
 
     if patient_name is not None:
         report["patient"] = {"name": patient_name, "age": patient_age}
@@ -703,13 +731,10 @@ def generate_report(
     """
     try:
         if error is not None:
-            if isinstance(error, (DetectionError, CLRError)):
+            if isinstance(error, (DetectionError, CLRError, CLRPipelineError)):
                 return build_inconclusive_report(
                     error, patient_name, patient_age,
-                )
-            if isinstance(error, CLRPipelineError):
-                return build_inconclusive_report(
-                    error, patient_name, patient_age,
+                    detection=detection, pupil_result=pupil_result,
                 )
             return build_error_report(error, patient_name, patient_age)
 
@@ -729,6 +754,9 @@ def generate_report(
         )
 
     except (DetectionError, CLRError, CLRPipelineError) as e:
-        return build_inconclusive_report(e, patient_name, patient_age)
+        return build_inconclusive_report(
+            e, patient_name, patient_age,
+            detection=detection, pupil_result=pupil_result,
+        )
     except Exception as e:
         return build_error_report(e, patient_name, patient_age)

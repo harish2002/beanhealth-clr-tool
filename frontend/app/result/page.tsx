@@ -3,7 +3,7 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
-import TriageReport from "@/components/TriageReport";
+import TriageReport, { AlignmentSection } from "@/components/TriageReport";
 import type { PatientMeta } from "@/components/TriageReport";
 import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
 
@@ -96,6 +96,14 @@ function InconclusiveScreen({
         </h2>
         <p className="text-slate-600 text-sm leading-relaxed">{result.reason_human}</p>
       </div>
+
+      {/* Torch-free corner-alignment result — still valid without a CLR.
+          Shown whenever eye detection + pupil localisation succeeded. */}
+      {result.alignment && (
+        <div className="max-w-sm w-full text-left">
+          <AlignmentSection alignment={result.alignment} />
+        </div>
+      )}
 
       {/* Per-frame reading strip (for both variance and insufficient cases) */}
       {result.per_frame_readings && result.per_frame_readings.length > 0 && (
