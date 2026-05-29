@@ -131,7 +131,8 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
     result.asymmetry_avg_deg !== undefined && result.asymmetry_std_deg !== undefined
       ? result.asymmetry_avg_deg / Math.max(result.asymmetry_std_deg, 0.5)
       : null;
-  const lowSNR = technical.flags.includes("low_snr_noise_dominated");
+  const lowSNR     = technical.flags.includes("low_snr_noise_dominated");
+  const testMode   = technical.flags.includes("test_capture");
 
   return (
     <div className="min-h-screen bg-slate-50 pb-16 print:bg-white print:pb-0">
@@ -217,6 +218,24 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
           </div>
         </div>
       </header>
+
+      {/* TEST CAPTURE banner — shown when /analyse-test produced this report */}
+      {testMode && (
+        <div className="bg-amber-100 border-b-2 border-amber-400 print:bg-amber-50 print:border-amber-500">
+          <div className="max-w-2xl mx-auto px-5 py-2.5 flex items-center gap-2.5">
+            <svg className="w-4 h-4 text-amber-700 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z" />
+            </svg>
+            <p className="text-amber-800 text-xs font-bold tracking-wider uppercase">
+              Test capture
+            </p>
+            <p className="text-amber-700 text-[11px] leading-tight">
+              Single-image upload · flash guard relaxed · NOT a clinical screening
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Tier band */}
       <div className={`${config.bgColour} border-b ${config.borderColour} print:hidden`}>

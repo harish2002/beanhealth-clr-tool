@@ -538,3 +538,127 @@ async def analyse_stream(
     )
 
     return JSONResponse(content=aggregated, status_code=200)
+
+
+# ─────────────────────────────────────────────────────────────
+# POST /analyse-test — development single-image analysis
+#
+# Bypasses the live-torch flash check so that the pipeline can be
+# validated against saved research/clinical strabismus images that
+# did not originate from a live phone-torch capture.
+#
+# THIS ENDPOINT MUST NOT BE USED FOR CLINICAL DECISIONS.
+# ─────────────────────────────────────────────────────────────
+
+@app.post(
+    "/analyse-test",
+    tags=["Analysis"],
+    summary="DEV ONLY — single-image analysis with relaxed flash threshold",
+    response_description="Single-frame report wrapped in StreamSuccessResponse shape",
+)
+async def analyse_test(
+    image:        UploadFile = File(..., description="JPEG/PNG strabismus image (research dataset, case study, etc.)"),
+    patient_name: str        = Form(..., min_length=1, max_length=100),
+    patient_age:  int        = Form(..., ge=1, le=120),
+) -> JSONResponse:
+    """
+    Development/research endpoint for validating the CLR pipeline against
+    saved strabismus images that were NOT captured by a live phone torch.
+
+    Differences from /analyse and /analyse-stream:
+      • CLR_MIN_PEAK_BRIGHTNESS lowered from 235 → 180 — saved JPEGs and
+        screen-rendered images cannot reproduce sensor-saturated highlights,
+        so the standard flash check would reject every input.
+      • Single-frame mode — one image goes through one pass of the pipeline.
+        Inter-frame variance gating is bypassed (frames_total=1, std=0).
+      • Response is wrapped in the StreamSuccessResponse shape so the
+        existing TriageReport component renders it without modification.
+      • Adds "test_capture" to technical.flags so the report shows a clear
+        TEST CAPTURE banner — this result cannot be confused with a
+        production screening.
+    """
+    patient_name = patient_name.strip()
+    img_rgb      = await _load_image(image)
+
+    logger.info(
+        f"[API] /analyse-test — patient='{patient_name}' age={patient_age} "
+        f"image={img_rgb.shape[1]}×{img_rgb.shape[0]}px (TEST MODE, no live torch)"
+    )
+
+    # Synthetic calibration: only override the flash threshold.  Area ratios
+    # stay at the production defaults — a real CLR in the source image will
+    # still be in the same relative-size range as a live capture.
+    test_calibration = SessionCalibration(
+        device_model="test-mode-upload",
+        calibrated=True,
+        calibration_frames=0,
+        session_min_area_ratio=0.004,        # production CLR_MIN_AREA_RATIO
+        session_max_area_ratio=0.25,         # production CLR_MAX_AREA_RATIO
+        session_min_peak_brightness=180.0,   # ← the key relaxation
+        bloom_factor=1.0,
+        peak_brightness_avg=0.0,
+    )
+
+    report, _ = await _run_single_frame_pipeline(
+        img_rgb, patient_name, patient_age, calibration=test_calibration,
+    )
+
+    timestamp = datetime.now(timezone.utc).isoformat()
+
+    # ── INCONCLUSIVE / ERROR — return as-is with test_capture flag ──
+    if report.get("status") != "SUCCESS":
+        existing_flags = report.get("flags", []) or []
+        report["flags"] = list(set(existing_flags + ["test_capture"]))
+        report["patient"]   = {"name": patient_name, "age": patient_age}
+        report["timestamp"] = timestamp
+        # Provide the minimum multi-frame shape so the frontend INCONCLUSIVE
+        # screen has something to render.
+        report.setdefault("frames_total",       1)
+        report.setdefault("frames_accepted",    0)
+        report.setdefault("frames_rejected",    1)
+        report.setdefault("per_frame_readings", [None])
+        logger.warning(f"[API] /analyse-test INCONCLUSIVE — reason={report.get('reason', '?')}")
+        return JSONResponse(content=report, status_code=200)
+
+    # ── SUCCESS — wrap single-frame result in StreamSuccessResponse shape ──
+    dev_deg  = report["result"]["deviation_degrees"]
+    asym_deg = report["result"].get("asymmetry_degrees", 0.0)
+    asym_score = report["result"]["asymmetry_score"]
+
+    # Mark the technical flags so the frontend can show a TEST CAPTURE banner
+    tech_flags = list(report.get("technical", {}).get("flags", []))
+    if "test_capture" not in tech_flags:
+        tech_flags.append("test_capture")
+    report["technical"]["flags"] = tech_flags
+
+    wrapped = {
+        **report,
+        "patient":              {"name": patient_name, "age": patient_age},
+        "timestamp":            timestamp,
+        # Multi-frame envelope (degenerate — N=1)
+        "frames_total":         1,
+        "frames_accepted":      1,
+        "frames_rejected":      0,
+        "per_frame_readings":   [dev_deg],
+        "per_frame_rejections": [None],
+        "deviation_avg_deg":    dev_deg,
+        "deviation_std_deg":    0.0,
+        "deviation_min_deg":    dev_deg,
+        "deviation_max_deg":    dev_deg,
+        "asymmetry_avg":        asym_score,
+        "asymmetry_avg_deg":    asym_deg,
+        "asymmetry_std_deg":    0.0,
+        # Confidence is intentionally MEDIUM, not HIGH — single-frame analysis
+        # has no inter-frame variance evidence, so confidence is bounded.
+        "aggregate_confidence": "MEDIUM",
+        # Extend result with deviation_std_deg for StreamClinicalResult shape
+        "result": {**report["result"], "deviation_std_deg": 0.0},
+    }
+
+    logger.info(
+        f"[API] /analyse-test DONE — urgency={wrapped['result']['urgency_tier']} "
+        f"condition={wrapped['result']['condition_name']} "
+        f"asym={asym_deg}° dev={dev_deg}°"
+    )
+
+    return JSONResponse(content=wrapped, status_code=200)

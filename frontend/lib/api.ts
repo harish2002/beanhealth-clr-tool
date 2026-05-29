@@ -147,6 +147,46 @@ export async function analyseStream(
   }
 }
 
+// ─── Test-mode single-image analysis ───────────────────────────────────────
+//
+// Calls /analyse-test which bypasses the live-torch flash check so that the
+// pipeline can be validated against research/case-study images that were
+// not captured by a live phone torch. Returns the result in the same shape
+// as analyseStream so the existing TriageReport component renders it.
+
+export async function analyseTest(
+  image:       File,
+  patientName: string,
+  patientAge:  number,
+): Promise<StreamAnalyseResponse> {
+  const form = new FormData();
+  form.append("image",        image);
+  form.append("patient_name", patientName);
+  form.append("patient_age",  String(patientAge));
+
+  try {
+    const response = await axios.post<StreamAnalyseResponse>(
+      `${API_URL}/analyse-test`,
+      form,
+      {
+        headers: { "Content-Type": "multipart/form-data" },
+        timeout: 60_000,
+      },
+    );
+    return response.data;
+  } catch (err) {
+    const axiosErr = err as AxiosError;
+    if (axiosErr.response) {
+      const data = axiosErr.response.data as StreamAnalyseResponse;
+      if (data?.status) return data;
+    }
+    if (axiosErr.code === "ECONNABORTED" || axiosErr.message.toLowerCase().includes("timeout")) {
+      throw new Error("TIMEOUT");
+    }
+    throw new Error("NETWORK_ERROR");
+  }
+}
+
 export async function checkHealth(): Promise<boolean> {
   try {
     const r = await axios.get(`${API_URL}/health`, { timeout: 5_000 });

@@ -430,10 +430,20 @@ export default function LandingPage() {
             </div>
           </div>
 
-          <p className="text-[11px] text-slate-400 leading-relaxed md:text-right max-w-md">
-            Screening aid only. Not a diagnostic device. Results must be confirmed
-            by a qualified ophthalmologist before any clinical action is taken.
-          </p>
+          <div className="text-[11px] text-slate-400 leading-relaxed md:text-right max-w-md space-y-1">
+            <p>
+              Screening aid only. Not a diagnostic device. Results must be confirmed
+              by a qualified ophthalmologist before any clinical action is taken.
+            </p>
+            <p>
+              <a
+                href="/test"
+                className="text-slate-500 hover:text-slate-700 underline underline-offset-2 font-medium"
+              >
+                Dev: upload a saved image →
+              </a>
+            </p>
+          </div>
         </div>
       </footer>
     </main>
