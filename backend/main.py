@@ -636,9 +636,13 @@ async def analyse_test(
         device_model="test-mode-upload",
         calibrated=True,
         calibration_frames=0,
-        session_min_area_ratio=0.004,        # production CLR_MIN_AREA_RATIO
+        # Saved/screen-rendered photos show a much smaller specular reflex than
+        # a live torch bloom — often <0.1% of iris area.  Drop the area floor so
+        # these small but real reflexes survive Filter ②; the upper bound stays
+        # put to keep rejecting large scleral/skin highlights.
+        session_min_area_ratio=0.0003,       # was 0.004 (production floor)
         session_max_area_ratio=0.25,         # production CLR_MAX_AREA_RATIO
-        session_min_peak_brightness=180.0,   # ← the key relaxation
+        session_min_peak_brightness=180.0,   # ← relaxed flash check
         bloom_factor=1.0,
         peak_brightness_avg=0.0,
     )
