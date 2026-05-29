@@ -254,6 +254,133 @@ def _hough_estimate(
 
 
 # ─────────────────────────────────────────────────────────────
+# Internal: Direct pupil localisation (dark-blob, occlusion-robust)
+# ─────────────────────────────────────────────────────────────
+
+def _dark_pupil_centre(
+    crop_rgb:     np.ndarray,
+    iris_centre:  Tuple[float, float],
+    iris_radius:  float,
+    eye_label:    str,
+) -> Optional[Tuple[float, float]]:
+    """
+    Locate the pupil centre directly as the dark pupil disc, rather than
+    inferring it from an iris circle.
+
+    Why: the iris-circle methods (landmark mean, Hough) need a mostly-complete
+    circular iris edge.  On a deviated / partially-occluded eye (esotropia,
+    exotropia, eyelid coverage) the visible iris is only a partial arc, so a
+    circle fit lands off-centre.  The pupil, by contrast, is the darkest,
+    highest-contrast feature and is usually still fully visible — and the
+    Hirschberg test is defined as reflex-vs-pupil, so this is also the more
+    clinically correct target.
+
+    Method:
+      1. Restrict the search to a disc (1.2 × iris_radius) around the iris
+         centre estimate, so eyebrows / lash lines at the crop edges are excluded.
+      2. Threshold the darkest ~25% of pixels inside that disc.
+      3. Morphological open/close to drop thin eyelash structures.
+      4. Pick the connected component that is large enough to be a pupil and
+         closest to the iris centre.
+      5. Fit an ellipse to its contour (recovers the centre from a partial
+         boundary, which a circle fit cannot) and use that centre.
+
+    Returns:
+        (cx, cy) in crop pixels, or None if no plausible pupil blob was found
+        (caller then falls back to the iris-circle estimate).
+    """
+    if iris_radius < 4.0:
+        return None
+
+    h, w = crop_rgb.shape[:2]
+    gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
+    gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
+    cx0, cy0 = iris_centre
+    search_r = iris_radius * 1.2
+
+    # Disc mask around the iris centre estimate
+    yy, xx = np.ogrid[:h, :w]
+    disc = (xx - cx0) ** 2 + (yy - cy0) ** 2 <= search_r ** 2
+    if int(disc.sum()) < 20:
+        return None
+
+    # Two-stage Otsu so we isolate the *pupil*, not the whole (often brown,
+    # hence dark) iris:
+    #   t1 separates the eye (iris+pupil) from bright skin/sclera
+    #   t2, computed only over the eye pixels, separates the dark pupil from
+    #      the lighter iris.  This works even on low-contrast brown eyes where
+    #      a fixed dark-percentile would grab the entire iris.
+    disc_vals = gray[disc].astype(np.uint8).reshape(-1, 1)
+    t1, _ = cv2.threshold(disc_vals, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    eye_vals = disc_vals[disc_vals < t1]
+    if eye_vals.size >= 20:
+        t2, _ = cv2.threshold(
+            eye_vals.reshape(-1, 1), 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        pupil_thresh = float(t2)
+    else:
+        # Disc was almost all "eye" (little skin) — fall back to a low percentile
+        pupil_thresh = float(np.percentile(disc_vals, 12))
+
+    dark = np.zeros((h, w), dtype=np.uint8)
+    dark[(gray <= pupil_thresh) & disc] = 255
+
+    # Remove thin lashes, then close gaps inside the pupil
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    dark = cv2.morphologyEx(dark, cv2.MORPH_OPEN,  kernel, iterations=1)
+    dark = cv2.morphologyEx(dark, cv2.MORPH_CLOSE, kernel, iterations=2)
+
+    num, labels, stats, centroids = cv2.connectedComponentsWithStats(dark, connectivity=8)
+    if num <= 1:
+        return None
+
+    iris_area = float(np.pi * iris_radius ** 2)
+    best_lbl: Optional[int] = None
+    best_score = None
+    for lbl in range(1, num):
+        area = float(stats[lbl, cv2.CC_STAT_AREA])
+        # A plausible pupil is a meaningful fraction of the iris, not a speck
+        # and not the whole dark iris of a brown eye.
+        if area < 0.02 * iris_area or area > 0.90 * iris_area:
+            continue
+        ccx, ccy = centroids[lbl]
+        dist = float(np.hypot(ccx - cx0, ccy - cy0))
+        # Prefer blobs close to the iris centre, lightly favouring larger ones
+        score = dist - 0.02 * float(np.sqrt(area))
+        if best_score is None or score < best_score:
+            best_score = score
+            best_lbl = lbl
+
+    if best_lbl is None:
+        return None
+
+    ccx, ccy = centroids[best_lbl]
+
+    # Refine with an ellipse fit — robust to partial occlusion of the pupil
+    comp = (labels == best_lbl).astype(np.uint8) * 255
+    contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if contours and len(contours[0]) >= 5:
+        try:
+            (ecx, ecy), _, _ = cv2.fitEllipse(contours[0])
+            # Only adopt the ellipse centre if it's sane (near the blob centroid)
+            if np.hypot(ecx - ccx, ecy - ccy) <= iris_radius * 0.5:
+                ccx, ccy = ecx, ecy
+        except cv2.error:
+            pass
+
+    # Final sanity: centre must be inside the crop
+    if not (0 <= ccx <= w and 0 <= ccy <= h):
+        return None
+
+    logger.debug(
+        f"Module 2 [{eye_label}]: dark-pupil centre = ({ccx:.1f},{ccy:.1f}) "
+        f"(iris centre was ({cx0:.1f},{cy0:.1f}))"
+    )
+    return float(ccx), float(ccy)
+
+
+# ─────────────────────────────────────────────────────────────
 # Internal: Agreement check → final centre + confidence
 # ─────────────────────────────────────────────────────────────
 
@@ -393,10 +520,41 @@ def _localise_one_eye(
     if f"landmark_outside_crop_{eye_label}" in flags and hough_result is None:
         raise PupilError(f"pupil_not_found_{eye_label}")
 
-    # ── Step 6: Agree and fuse ──
-    final_centre, confidence, hough_centre, hough_radius = _agree_and_fuse(
-        lm_centre, hough_result, eye_label, flags
-    )
+    # ── Step 6: Direct dark-pupil localisation (primary, occlusion-robust) ──
+    # The iris-circle estimates above are used only as a search seed.  When a
+    # real dark pupil is found we trust it over the iris circle, because the
+    # pupil stays visible (and is the correct Hirschberg target) even when the
+    # iris is partially occluded by the eyelid on a deviated eye.
+    hough_centre  = (hough_result[0], hough_result[1]) if hough_result else None
+    hough_radius  = hough_result[2] if hough_result else None
+    seed_centre   = hough_centre if hough_centre is not None else lm_centre
+
+    dark_pupil = _dark_pupil_centre(crop_rgb, seed_centre, iris_radius, eye_label)
+
+    if dark_pupil is not None:
+        final_centre = dark_pupil
+        flags.append(f"pupil_from_darkblob_{eye_label}")
+        # Confidence reflects how far the dark pupil sits from the iris estimate.
+        dist = float(np.linalg.norm(np.array(dark_pupil) - np.array(lm_centre)))
+        if dist < PUPIL_AGREEMENT_HIGH_PX:
+            confidence = CONFIDENCE_HIGH
+        elif dist < PUPIL_AGREEMENT_MEDIUM_PX:
+            confidence = CONFIDENCE_MEDIUM
+        else:
+            # Large gap = the iris circle was off (the case we're fixing).
+            # Trust the dark pupil but flag the disagreement for the report.
+            confidence = CONFIDENCE_MEDIUM
+            flags.append(f"pupil_disagreement_{eye_label}")
+        logger.debug(
+            f"Module 2 [{eye_label}]: using dark-pupil centre, "
+            f"iris-gap={dist:.1f}px, confidence={confidence}"
+        )
+    else:
+        # ── Fallback: fuse the iris-circle estimates as before ──
+        flags.append(f"pupil_darkblob_failed_{eye_label}")
+        final_centre, confidence, hough_centre, hough_radius = _agree_and_fuse(
+            lm_centre, hough_result, eye_label, flags
+        )
 
     logger.debug(
         f"Module 2 [{eye_label}]: final=({final_centre[0]:.1f},{final_centre[1]:.1f}) "
