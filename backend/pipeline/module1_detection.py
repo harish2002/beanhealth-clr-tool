@@ -86,6 +86,12 @@ class EyeDetectionResult:
     left_eye_corners:  Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
     right_eye_corners: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
 
+    # True when the eye corners were ESTIMATED from sclera extent (eyes-only
+    # fallback) rather than taken from real FaceMesh canthus landmarks.  In
+    # that case both corners are pinned to the iris-centre height, so the
+    # vertical alignment axis carries no signal — Module 8 must ignore it.
+    corners_estimated: bool = False
+
 
 # ─────────────────────────────────────────────────────────────
 # MediaPipe setup — created once at module load, reused per call
@@ -285,6 +291,101 @@ def _synthetic_iris_landmarks(
     ]
 
 
+def _estimate_corners_from_region(
+    full_rgb:     np.ndarray,
+    iris_cx_full: float,
+    iris_cy_full: float,
+    iris_r:       float,
+    x_lo:         int,                      # left bound of this eye's search window
+    x_hi:         int,                      # right bound (exclusive) of search window
+    eye_side:     str,                      # "left" or "right" (pipeline convention)
+) -> Optional[Tuple[Tuple[float, float], Tuple[float, float]]]:
+    """
+    Estimate (inner, outer) canthus points for the eyes-only fallback, where no
+    FaceMesh landmarks exist.  Uses the horizontal extent of the bright sclera
+    in a thin band around the iris centre — a signal independent of the pupil —
+    so the Module 8 corner-alignment net can still produce a geometric flag.
+
+    Critically, the search runs on the FULL image within a window bounded to
+    this eye's half ([x_lo, x_hi)) and capped to ±~4 iris radii of the pupil.
+    The eye corners sit ~2.5 iris radii from the pupil — well outside the tight
+    iris crop — so searching the wider region is what makes the estimate land
+    on the real canthi instead of the crop boundary.
+
+    Returns the two corner points in FULL-image coords as (inner, outer), or
+    None when the eye opening cannot be measured confidently (the caller then
+    leaves corners None → alignment reports UNAVAILABLE rather than guessing).
+
+    Convention:
+      • subject's LEFT eye  (image-right) → nasal/inner canthus = smaller x
+      • subject's RIGHT eye (image-left)  → nasal/inner canthus = larger  x
+    """
+    if iris_r <= 0:
+        return None
+
+    img_h, img_w = full_rgb.shape[:2]
+    cx = int(round(iris_cx_full))
+    cy = int(round(iris_cy_full))
+
+    # Horizontal search window: this eye's half, capped to ±4 iris radii so
+    # far-away bright skin/background on the other side cannot extend the span.
+    win_lo = max(0,     x_lo, cx - int(round(iris_r * 4.0)))
+    win_hi = min(img_w, x_hi, cx + int(round(iris_r * 4.0)) + 1)
+    if win_hi - win_lo < int(iris_r * 2.0):
+        return None
+
+    gray_raw = cv2.cvtColor(full_rgb, cv2.COLOR_RGB2GRAY)
+
+    band_half = max(2, int(round(iris_r * 0.4)))
+    y0, y1    = max(0, cy - band_half), min(img_h, cy + band_half + 1)
+    raw_band  = gray_raw[y0:y1, win_lo:win_hi]
+    if raw_band.size == 0:
+        return None
+
+    # Require real contrast in the RAW band (before CLAHE, which would amplify
+    # noise) — a near-uniform window has no sclera-vs-iris separation, so bail
+    # rather than fabricate corners.
+    if int(raw_band.max()) - int(raw_band.min()) < 40:
+        return None
+
+    # Sclera = the brightest pixels in the band; count bright votes per column.
+    clahe      = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+    band       = clahe.apply(gray_raw)[y0:y1, win_lo:win_hi]
+    thr        = np.percentile(band, 70)
+    col_votes  = (band >= thr).sum(axis=0)
+    min_votes  = max(1, (y1 - y0) // 3)
+    cols       = np.where(col_votes >= min_votes)[0]   # window-local indices
+    if cols.size == 0:
+        return None
+
+    # Take the bright run that actually brackets the iris: the sclera shows as
+    # two bright lobes either side of the (dark) iris, so the outermost bright
+    # columns on each side of the pupil are the canthi.
+    local_cx   = cx - win_lo
+    left_cols  = cols[cols <  local_cx]
+    right_cols = cols[cols >= local_cx]
+    if left_cols.size == 0 or right_cols.size == 0:
+        return None   # sclera not visible on both sides → can't span inner→outer
+
+    min_x = int(left_cols.min())  + win_lo
+    max_x = int(right_cols.max()) + win_lo
+    width = max_x - min_x
+
+    # Require a plausible eye opening: wide enough, and bright sclera bracketing
+    # the iris on BOTH sides (so we actually span inner→outer, not just skin).
+    if width < iris_r * 2.0:
+        return None
+    if not (min_x < cx - iris_r * 0.3 and max_x > cx + iris_r * 0.3):
+        return None
+
+    left_pt  = (float(min_x), float(iris_cy_full))   # smaller-x corner
+    right_pt = (float(max_x), float(iris_cy_full))   # larger-x corner
+
+    if eye_side == "left":
+        return (left_pt, right_pt)    # (inner=nasal/smaller-x, outer)
+    return (right_pt, left_pt)        # right eye: (inner=nasal/larger-x, outer)
+
+
 def detect_eyes_only_fallback(
     image_rgb: np.ndarray,
 ) -> EyeDetectionResult:
@@ -342,9 +443,23 @@ def detect_eyes_only_fallback(
         right_crop.shape[1] < MIN_CROP_WIDTH or right_crop.shape[0] < MIN_CROP_HEIGHT):
         raise DetectionError("crop_too_small")
 
+    # Estimate canthi from the eye-opening (sclera) extent so the Module 8
+    # corner-alignment net can run even without FaceMesh landmarks.  Search the
+    # FULL image within each eye's half (the canthi lie outside the tight iris
+    # crop, so a crop-local search would miss them).
+    # subject's LEFT eye  = image-right half → x in [mid, img_w)
+    left_eye_corners  = _estimate_corners_from_region(
+        image_rgb, l_cx, l_cy, l_r, mid, img_w, "left",
+    )
+    # subject's RIGHT eye = image-left half → x in [0, mid)
+    right_eye_corners = _estimate_corners_from_region(
+        image_rgb, r_cx, r_cy, r_r, 0, mid, "right",
+    )
+
     logger.info(
         f"Module 1 (eye-only fallback): irises L=({l_cx},{l_cy},r{l_r}) "
-        f"R=({r_cx},{r_cy},r{r_r})"
+        f"R=({r_cx},{r_cy},r{r_r}) "
+        f"corners={'est' if (left_eye_corners and right_eye_corners) else 'none'}"
     )
 
     return EyeDetectionResult(
@@ -358,6 +473,9 @@ def detect_eyes_only_fallback(
         right_iris_radius_orig=float(r_r),
         face_confidence=0.5,                       # heuristic — no FaceMesh score
         warnings=["eye_only_fallback"],
+        left_eye_corners=left_eye_corners,
+        right_eye_corners=right_eye_corners,
+        corners_estimated=bool(left_eye_corners and right_eye_corners),
     )
 
 

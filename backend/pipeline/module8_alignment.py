@@ -117,6 +117,7 @@ def compute_corner_alignment(
     right_crop_box: Tuple[int, int, int, int],
     left_eye_corners:  Corners,
     right_eye_corners: Corners,
+    vertical_reliable: bool = True,
 ) -> AlignmentResult:
     """
     Compute the CLR-free corner-alignment screening verdict.
@@ -126,6 +127,10 @@ def compute_corner_alignment(
         left_crop_box / right_crop_box: (x1,y1,x2,y2) crop origins in full image.
         left_eye_corners / right_eye_corners: (inner, outer) canthi in full-image
             coords (Module 1).  None when unavailable (eyes-only fallback).
+        vertical_reliable: False when the canthi were estimated from the sclera
+            extent (eyes-only fallback) — those corners are pinned to the iris
+            centre height, so the vertical axis carries no real signal and must
+            not drive the verdict.  The horizontal axis stays valid either way.
 
     Returns:
         AlignmentResult (never raises).
@@ -162,18 +167,25 @@ def compute_corner_alignment(
     h_asym = abs(l_h - r_h)
     v_asym = abs(l_v - r_v)
 
+    # When the canthi were estimated from sclera extent (eyes-only fallback),
+    # both corners are pinned to the iris-centre height, so the vertical axis
+    # carries no real signal — drop it from the verdict to avoid false flags.
+    v_for_verdict = v_asym if vertical_reliable else 0.0
+
     # Verdict — worse of the two axes wins
-    if h_asym >= ALIGN_H_BORDERLINE_MAX or v_asym >= ALIGN_V_BORDERLINE_MAX:
+    if h_asym >= ALIGN_H_BORDERLINE_MAX or v_for_verdict >= ALIGN_V_BORDERLINE_MAX:
         verdict = ALIGN_ASYMMETRIC
         referral = True
-    elif h_asym >= ALIGN_H_ALIGNED_MAX or v_asym >= ALIGN_V_ALIGNED_MAX:
+    elif h_asym >= ALIGN_H_ALIGNED_MAX or v_for_verdict >= ALIGN_V_ALIGNED_MAX:
         verdict = ALIGN_BORDERLINE
         referral = False
     else:
         verdict = ALIGN_ALIGNED
         referral = False
 
-    interpretation = _interpret(verdict, l_h, r_h, l_v, r_v, h_asym, v_asym)
+    interpretation = _interpret(
+        verdict, l_h, r_h, l_v, r_v, h_asym, v_asym, vertical_reliable
+    )
 
     logger.info(
         f"[M8] alignment verdict={verdict} h_asym={h_asym:.3f} v_asym={v_asym:.3f} "
@@ -199,19 +211,30 @@ def _interpret(
     l_h: float, r_h: float,
     l_v: float, r_v: float,
     h_asym: float, v_asym: float,
+    vertical_reliable: bool = True,
 ) -> str:
     """Plain-English summary of the corner-alignment finding."""
     if verdict == ALIGN_ALIGNED:
+        if vertical_reliable:
+            return (
+                "Both pupils sit at near-identical positions relative to their own "
+                "eye corners. No gross horizontal or vertical misalignment is visible "
+                "in this photo. (Geometric check only — does not rule out small-angle "
+                "or intermittent deviations.)"
+            )
         return (
-            "Both pupils sit at near-identical positions relative to their own "
-            "eye corners. No gross horizontal or vertical misalignment is visible "
-            "in this photo. (Geometric check only — does not rule out small-angle "
-            "or intermittent deviations.)"
+            "Both pupils sit at near-identical horizontal positions relative to "
+            "their own eye corners. No gross horizontal misalignment is visible in "
+            "this photo. (Geometric check only, horizontal axis only — vertical "
+            "alignment could not be assessed for this image, and small-angle or "
+            "intermittent deviations are not ruled out.)"
         )
 
-    # Identify which eye looks displaced and roughly which direction
+    # Identify which eye looks displaced and roughly which direction.
+    # When the vertical axis is unreliable (estimated corners), force the
+    # horizontal narrative regardless of which raw asymmetry is larger.
     parts: List[str] = []
-    if h_asym >= v_asym:
+    if not vertical_reliable or h_asym >= v_asym:
         # Horizontal divergence dominates
         if l_h < r_h:
             shifted, corner = "left", "nasally (inward)" if l_h < 0.5 else "temporally (outward)"

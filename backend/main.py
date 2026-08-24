@@ -781,14 +781,21 @@ def _detect_with_retry(img_rgb: np.ndarray) -> "EyeDetectionResult":  # type: ig
     except DetectionError as de:
         if de.code not in detection_failures:
             raise
-        # Try eyes-only Hough fallback
+        # Border-padded FaceMesh FIRST: most Kaggle / reference strabismus images
+        # are tight face close-ups where the face touches the frame edge, so the
+        # detector just needs margin.  This recovers REAL canthus landmarks and a
+        # reliable vertical alignment axis — strictly better than the estimator.
+        # Try a couple of padding amounts before giving up.
+        for pad_ratio in (0.6, 1.0):
+            try:
+                return detect_and_crop_eyes(_pad_for_detection(img_rgb, pad_ratio))
+            except DetectionError:
+                continue
+        # Last resort: eyes-only Hough fallback (estimated corners, horizontal-only
+        # alignment).  Used only when no face can be recovered even with padding —
+        # e.g. a crop containing nothing but the eye strip.
         try:
             return detect_eyes_only_fallback(img_rgb)
-        except DetectionError:
-            pass
-        # Try border-padded FaceMesh (face fills the frame)
-        try:
-            return detect_and_crop_eyes(_pad_for_detection(img_rgb))
         except DetectionError:
             raise de
 
@@ -861,6 +868,7 @@ def _process_batch_item(
         right_crop_box=detection.right_crop_box,
         left_eye_corners=detection.left_eye_corners,
         right_eye_corners=detection.right_eye_corners,
+        vertical_reliable=not detection.corners_estimated,
     )
     record["alignment"] = {
         "available":      alignment.available,

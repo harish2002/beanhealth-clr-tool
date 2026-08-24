@@ -525,6 +525,7 @@ def build_success_report(
         right_crop_box=detection.right_crop_box,
         left_eye_corners=detection.left_eye_corners,
         right_eye_corners=detection.right_eye_corners,
+        vertical_reliable=not detection.corners_estimated,
     )
     for f in alignment.flags:
         if f not in seen:
@@ -642,6 +643,7 @@ def build_inconclusive_report(
                 right_crop_box=detection.right_crop_box,
                 left_eye_corners=detection.left_eye_corners,
                 right_eye_corners=detection.right_eye_corners,
+                vertical_reliable=not detection.corners_estimated,
             )
             for f in alignment.flags:
                 if f not in report["flags"]:
