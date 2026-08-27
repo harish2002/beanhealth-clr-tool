@@ -33,6 +33,8 @@ export interface ClinicalResult {
   asymmetry_score:         number;
   /** Inter-ocular asymmetry in clinical degrees — the primary classification signal */
   asymmetry_degrees:       number;
+  /** Inter-ocular asymmetry in prism dioptres (asymmetry_degrees × 15/7) */
+  asymmetry_pd:            number;
   severity:                SeverityTier;
   referral_recommendation: string;
   timeframe:               string;
@@ -82,6 +84,8 @@ export interface IntermediateImages {
   module4_clr:    string;  // CLR bright spot (amber dot)
   module5_vector: string;  // Displacement vector + measurement
   module6_result: string;  // Final annotated image with clinical overlay
+  /** Method B — canthus axis + pupil projection. Null when corners unavailable. */
+  module8_alignment?: string | null;
 }
 
 export interface SuccessResponse {
@@ -278,10 +282,10 @@ export const URGENCY_CONFIG: Record<
   },
   NORMAL: {
     label:        "NORMAL",
-    colour:       "text-green-600",
-    bgColour:     "bg-green-50",
-    borderColour: "border-green-200",
-    badgeColour:  "bg-green-600",
-    dotColour:    "bg-green-500",
+    colour:       "text-emerald-600",
+    bgColour:     "bg-emerald-50",
+    borderColour: "border-emerald-200",
+    badgeColour:  "bg-emerald-600",
+    dotColour:    "bg-emerald-500",
   },
 };

@@ -11,7 +11,7 @@ const STEPS = [
     title:       'Eye Detection',
     description: 'MediaPipe Face Mesh locates both eyes and extracts tight crops. Iris landmarks (5 pts per eye) are stored for Module 3.',
     tag:         'Module 1',
-    tagColour:   'bg-slate-200 text-slate-600',
+    tagColour:   'bg-ink-200 text-ink-600',
   },
   {
     key:         'module2_clahe'  as const,
@@ -19,7 +19,7 @@ const STEPS = [
     title:       'Grayscale + CLAHE',
     description: 'Crops converted to grayscale then enhanced with CLAHE (Contrast Limited Adaptive Histogram Equalisation) — this boosts the bright CLR spot against the iris so the percentile threshold can isolate it.',
     tag:         'Module 2 pre-step',
-    tagColour:   'bg-slate-200 text-slate-600',
+    tagColour:   'bg-ink-200 text-ink-600',
   },
   {
     key:         'module3_pupil'  as const,
@@ -27,7 +27,7 @@ const STEPS = [
     title:       'Pupil Localisation',
     description: 'Two independent methods — MediaPipe iris landmark mean (blue dot) and Hough Circle Transform — are cross-validated. Agreement < 5 px → HIGH confidence; 5–15 px → MEDIUM; > 15 px → LOW.',
     tag:         'Module 2',
-    tagColour:   'bg-blue-100 text-blue-700',
+    tagColour:   'bg-clinical-100 text-clinical-700',
   },
   {
     key:         'module4_clr'    as const,
@@ -51,22 +51,22 @@ const STEPS = [
     title:       'Hirschberg Angle + Result',
     description: 'Asymmetry score = |L norm − R norm|. Deviation converted via Hirschberg formula: disp_mm × 7°/mm. Banner shows deviation (deg), asymmetry score, condition, ICD-10, and per-eye displacement in iris radii.',
     tag:         'Modules 5 – 7',
-    tagColour:   'bg-green-100 text-green-700',
+    tagColour:   'bg-emerald-100 text-emerald-700',
   },
 ] as const;
 
 export default function ProcessingSteps({ intermediateImages }: ProcessingStepsProps) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 mt-5 print:hidden">
+    <div className="bg-white rounded-card border border-ink-100 shadow-sm p-5 mt-5 print:hidden">
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-slate-900 font-semibold text-base">How the AI Calculates This</h2>
-          <p className="text-slate-500 text-xs mt-0.5">
+          <h2 className="text-ink-900 font-semibold text-base">How the AI Calculates This</h2>
+          <p className="text-ink-500 text-xs mt-0.5">
             6-step Corneal Light Reflex pipeline — from raw photo to clinical angle
           </p>
         </div>
-        <span className="text-xs bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-medium">
+        <span className="text-xs bg-ink-100 text-ink-500 px-2.5 py-1 rounded-full font-medium">
           Hirschberg Method
         </span>
       </div>
@@ -80,7 +80,7 @@ export default function ProcessingSteps({ intermediateImages }: ProcessingStepsP
           return (
             <div
               key={step.key}
-              className={`flex flex-col bg-slate-50 rounded-xl border border-slate-100 overflow-hidden${isWide ? ' sm:col-span-2' : ''}`}
+              className={`flex flex-col bg-ink-50 rounded-xl border border-ink-100 overflow-hidden${isWide ? ' sm:col-span-2' : ''}`}
             >
               {/* Image */}
               <div className={`w-full bg-black overflow-hidden flex items-center justify-center${isWide ? ' aspect-[3/1]' : ' aspect-[2/1]'}`}>
@@ -95,13 +95,13 @@ export default function ProcessingSteps({ intermediateImages }: ProcessingStepsP
               {/* Caption */}
               <div className="px-3 py-2.5">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-slate-400 text-xs font-mono font-medium">{step.step}</span>
+                  <span className="text-ink-400 text-xs font-mono font-medium">{step.step}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${step.tagColour}`}>
                     {step.tag}
                   </span>
                 </div>
-                <h3 className="text-slate-800 text-sm font-semibold mb-0.5">{step.title}</h3>
-                <p className="text-slate-500 text-xs leading-relaxed">{step.description}</p>
+                <h3 className="text-ink-800 text-sm font-semibold mb-0.5">{step.title}</h3>
+                <p className="text-ink-500 text-xs leading-relaxed">{step.description}</p>
               </div>
             </div>
           );
@@ -109,16 +109,16 @@ export default function ProcessingSteps({ intermediateImages }: ProcessingStepsP
       </div>
 
       {/* Legend */}
-      <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap gap-x-5 gap-y-1.5">
+      <div className="mt-4 pt-4 border-t border-ink-100 flex flex-wrap gap-x-5 gap-y-1.5">
         {[
-          { colour: 'bg-blue-500',   label: 'Pupil centre' },
+          { colour: 'bg-clinical-500',   label: 'Pupil centre' },
           { colour: 'bg-amber-400',  label: 'Corneal light reflex' },
           { colour: 'bg-green-400',  label: 'Iris radius ring' },
-          { colour: 'bg-white border border-slate-300', label: 'Displacement vector' },
+          { colour: 'bg-white border border-ink-200', label: 'Displacement vector' },
         ].map(({ colour, label }) => (
           <div key={label} className="flex items-center gap-1.5">
             <span className={`w-2.5 h-2.5 rounded-full inline-block flex-shrink-0 ${colour}`} />
-            <span className="text-slate-500 text-xs">{label}</span>
+            <span className="text-ink-500 text-xs">{label}</span>
           </div>
         ))}
       </div>

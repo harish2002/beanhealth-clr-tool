@@ -25,8 +25,8 @@ const ALIGN_CONFIG: Record<
     bg: "bg-red-50", border: "border-red-200",
   },
   UNAVAILABLE: {
-    label: "Not assessed", emoji: "⚪", text: "text-slate-500",
-    bg: "bg-slate-50", border: "border-slate-200",
+    label: "Not assessed", emoji: "⚪", text: "text-ink-500",
+    bg: "bg-ink-50", border: "border-ink-100",
   },
 };
 
@@ -49,13 +49,6 @@ interface TriageReportProps {
 
 const TIER_ORDER: UrgencyTier[] = ["NORMAL", "MONITOR", "ROUTINE", "URGENT"];
 
-const TIER_EMOJI: Record<UrgencyTier, string> = {
-  NORMAL:  "🟢",
-  MONITOR: "🟡",
-  ROUTINE: "🟠",
-  URGENT:  "🔴",
-};
-
 /** Human-readable labels for per-frame rejection reasons */
 const REJECTION_LABEL: Record<string, string> = {
   statistical_outlier:    "Outlier",
@@ -76,9 +69,15 @@ const CONF_COLOUR: Record<string, string> = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Convert degrees to prism dioptres: 1mm = 7° = 22 PD → 1° = 22/7 PD */
+/**
+ * Convert degrees to prism dioptres. A prism dioptre is defined as
+ * 100 × tan(angle), so the relationship is trigonometric — the linear
+ * "PD per degree" shortcuts (15/7, 22/7) overstate larger angles.
+ * Fallback only — prefer the backend's `asymmetry_pd` field, which is the
+ * single source of truth for this conversion.
+ */
 function toPD(degrees: number): number {
-  return Math.round(degrees * 22 / 7);
+  return Math.round(100 * Math.tan((degrees * Math.PI) / 180));
 }
 
 function rejLabel(reason: string | null | undefined): string {
@@ -90,16 +89,16 @@ function rejLabel(reason: string | null | undefined): string {
 
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between items-baseline py-2 border-b border-slate-100 last:border-0 gap-4">
-      <span className="text-slate-500 text-sm shrink-0">{label}</span>
-      <span className="text-slate-900 text-sm font-semibold text-right">{value}</span>
+    <div className="flex justify-between items-baseline py-2.5 border-b border-ink-100 last:border-0 gap-4">
+      <span className="text-ink-500 text-[13.5px] shrink-0">{label}</span>
+      <span className="text-ink-900 text-[13.5px] font-semibold text-right tabular">{value}</span>
     </div>
   );
 }
 
 function SectionCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
-    <section className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-5 ${className}`}>
+    <section className={`bg-white rounded-card border border-ink-100 shadow-card p-6 print:shadow-none ${className}`}>
       {children}
     </section>
   );
@@ -107,39 +106,76 @@ function SectionCard({ children, className = "" }: { children: React.ReactNode; 
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <h2 className="text-slate-900 font-semibold text-sm uppercase tracking-wider mb-4">
-      {children}
-    </h2>
+    <h2 className="eyebrow-muted mb-5">{children}</h2>
+  );
+}
+
+/** A boxed statistic — the report's basic quantitative unit. */
+function StatBox({ label, value, tone = "text-ink-900" }: { label: string; value: string; tone?: string }) {
+  return (
+    <div className="bg-ink-50 rounded-field px-3 py-3.5 border border-ink-100 text-center">
+      <p className="text-ink-400 text-[10.5px] font-semibold uppercase tracking-eyebrow mb-1.5">{label}</p>
+      <p className={`font-display text-[24px] leading-none tabular ${tone}`}>{value}</p>
+    </div>
   );
 }
 
 /** §2B — CLR-free pupil-vs-corner alignment (the second, independent view). */
-export function AlignmentSection({ alignment }: { alignment: AlignmentResult }) {
+export function AlignmentSection(
+  { alignment, imageB64 }: { alignment: AlignmentResult; imageB64?: string | null },
+) {
   const cfg = ALIGN_CONFIG[alignment.verdict] ?? ALIGN_CONFIG.UNAVAILABLE;
   const pct = (v: number | null) => (v === null ? "–" : `${(v * 100).toFixed(1)}%`);
 
   return (
-    <section className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-5`}>
-      <div className="flex items-center justify-between gap-3 mb-1">
+    <section className={`rounded-card border ${cfg.border} ${cfg.bg} p-6`}>
+      <div className="flex items-start justify-between gap-3 mb-3">
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">
-            Method B · No torch required
-          </p>
-          <h2 className="text-slate-900 font-semibold text-sm uppercase tracking-wider">
-            Pupil-vs-Corner Alignment
+          <p className="eyebrow-muted">Method B · No torch required</p>
+          <h2 className="font-display text-[20px] text-ink-900 leading-snug mt-1">
+            Pupil-versus-corner alignment
           </h2>
         </div>
-        <span className={`text-xs px-3 py-1 rounded-full font-bold border bg-white/70 ${cfg.text} shrink-0`}>
-          {cfg.emoji} {cfg.label}
+        <span className={`font-mono text-[11px] px-3 py-1.5 rounded-full font-semibold border
+                          bg-white/80 ${cfg.text} ${cfg.border} shrink-0`}>
+          {cfg.label}
         </span>
       </div>
 
-      <p className="text-slate-500 text-xs leading-relaxed mb-3">
+      <p className="text-ink-500 text-[12.5px] leading-relaxed mb-4">
         This independent check measures where each pupil sits between its own eye
         corners (inner→outer canthus) and compares the two eyes. It needs no
         corneal light reflex, so it works on ordinary photos — but it gives a
         geometric flag only, not a clinical angle.
       </p>
+
+      {imageB64 && (
+        <figure className="mb-4">
+          <img
+            src={`data:image/jpeg;base64,${imageB64}`}
+            alt="Each pupil projected onto its own inner-to-outer eye-corner axis"
+            className="w-full rounded-field border border-black/10 block"
+          />
+          <figcaption className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] text-ink-500">
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ background: "#ff78c8" }} />
+              Eye corners
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3 h-px" style={{ background: "#c8c8c8" }} />
+              Corner-to-corner axis
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ background: "#1464eb" }} />
+              Pupil
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ background: "#ffc878" }} />
+              Projection onto axis
+            </span>
+          </figcaption>
+        </figure>
+      )}
 
       {alignment.available ? (
         <>
@@ -147,24 +183,24 @@ export function AlignmentSection({ alignment }: { alignment: AlignmentResult }) 
             {(["left", "right"] as const).map((eye) => {
               const h = eye === "left" ? alignment.left_h_ratio : alignment.right_h_ratio;
               return (
-                <div key={eye} className="bg-white/70 rounded-xl p-3 border border-white/80">
-                  <p className="text-slate-400 text-xs uppercase tracking-wide font-semibold mb-1">
+                <div key={eye} className="bg-white/70 rounded-field p-3.5 border border-black/5">
+                  <p className="text-ink-400 text-[11px] uppercase tracking-eyebrow font-semibold mb-1.5">
                     {eye} eye
                   </p>
-                  <p className="text-slate-900 font-bold text-base leading-none">{pct(h)}</p>
-                  <p className="text-slate-400 text-xs mt-0.5">inner→outer position</p>
+                  <p className="font-display text-ink-900 text-[20px] leading-none tabular">{pct(h)}</p>
+                  <p className="text-ink-400 text-xs mt-0.5">inner→outer position</p>
                 </div>
               );
             })}
           </div>
-          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-slate-500 mb-3">
-            <span>Horizontal asymmetry: <strong className="text-slate-700">{pct(alignment.h_asymmetry)}</strong></span>
-            <span>Vertical asymmetry: <strong className="text-slate-700">{pct(alignment.v_asymmetry)}</strong></span>
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-ink-500 mb-3">
+            <span>Horizontal asymmetry: <strong className="text-ink-700">{pct(alignment.h_asymmetry)}</strong></span>
+            <span>Vertical asymmetry: <strong className="text-ink-700">{pct(alignment.v_asymmetry)}</strong></span>
           </div>
         </>
       ) : null}
 
-      <p className={`text-sm leading-relaxed ${alignment.available ? "text-slate-600" : "text-slate-500"}`}>
+      <p className={`text-sm leading-relaxed ${alignment.available ? "text-ink-600" : "text-ink-500"}`}>
         {alignment.interpretation}
       </p>
     </section>
@@ -186,17 +222,22 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
   const config = displayTier ? URGENCY_CONFIG[displayTier] : URGENCY_CONFIG.NORMAL;
 
-  // Clinical angle values
+  // Clinical angle values. Prefer the backend's authoritative prism-dioptre
+  // value; fall back to local conversion only for older responses.
   const asymDeg = r.asymmetry_degrees ?? r.deviation_degrees;
-  const asymPD  = toPD(asymDeg);
+  const asymPD  = r.asymmetry_pd ?? toPD(asymDeg);
 
   // Dates
-  const printDate = new Date().toLocaleDateString("en-GB", {
-    day: "2-digit", month: "long", year: "numeric",
+  // Derived from the analysis timestamp, formatted in UTC so the server and the
+  // client always render the same string (no hydration mismatch, no midnight
+  // timezone drift) and so the printed report agrees with the UTC stamp below.
+  const capturedAt = new Date(result.timestamp);
+  const printDate  = capturedAt.toLocaleDateString("en-GB", {
+    day: "2-digit", month: "long", year: "numeric", timeZone: "UTC",
   });
-  const printTime = new Date().toLocaleTimeString("en-GB", {
-    hour: "2-digit", minute: "2-digit",
-  });
+  const printTime  = capturedAt.toLocaleTimeString("en-GB", {
+    hour: "2-digit", minute: "2-digit", timeZone: "UTC",
+  }) + " UTC";
 
   const sessionId   = patientMeta?.sessionId ?? "–";
   const screenerCtx = [patientMeta?.screenerRole, patientMeta?.screeningLocation]
@@ -217,58 +258,58 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
   const testMode   = technical.flags.includes("test_capture");
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-16 print:bg-white print:pb-0">
+    <div className="min-h-screen bg-white pb-16 print:pb-0">
 
       {/* ══════════════════════════════════════════════════════════════════
           PRINT-ONLY HEADER
       ══════════════════════════════════════════════════════════════════ */}
-      <div className="hidden print:block px-6 pt-5 pb-4 border-b-2 border-slate-800 mb-6">
+      <div className="hidden print:block px-6 pt-5 pb-4 border-b-2 border-ink-900 mb-6">
         <div className="flex items-start justify-between">
           <div>
-            <p className="text-[7.5pt] font-black tracking-[0.25em] text-slate-400 uppercase mb-0.5">BeanHealth</p>
-            <h1 className="text-[18pt] font-bold text-slate-900 leading-tight">CLR Triage Report</h1>
-            <p className="text-[8.5pt] text-slate-500 mt-0.5">Corneal Light Reflex Asymmetry · Hirschberg Method · 10-Frame Analysis</p>
+            <p className="text-[7.5pt] font-black tracking-[0.25em] text-ink-400 uppercase mb-0.5">BeanHealth</p>
+            <h1 className="text-[18pt] font-bold text-ink-900 leading-tight">CLR Triage Report</h1>
+            <p className="text-[8.5pt] text-ink-500 mt-0.5">Corneal Light Reflex Asymmetry · Hirschberg Method · 10-Frame Analysis</p>
           </div>
-          <div className="text-right text-[8.5pt] text-slate-500 leading-relaxed">
-            <p className="font-semibold text-slate-700">{printDate}</p>
+          <div className="text-right text-[8.5pt] text-ink-500 leading-relaxed">
+            <p className="font-semibold text-ink-700">{printDate}</p>
             <p>{printTime}</p>
-            <p className="mt-1 text-slate-400">Session: {sessionId}</p>
+            <p className="mt-1 text-ink-400">Session: {sessionId}</p>
           </div>
         </div>
-        <div className="mt-3 pt-2 border-t border-slate-200 flex flex-wrap gap-x-8 gap-y-0.5 text-[9pt]">
+        <div className="mt-3 pt-2 border-t border-ink-100 flex flex-wrap gap-x-8 gap-y-0.5 text-[9pt]">
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Patient</span>
-            <span className="font-semibold text-slate-800">{patient.name}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Patient</span>
+            <span className="font-semibold text-ink-800">{patient.name}</span>
           </span>
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Age</span>
-            <span className="font-semibold text-slate-800">{patient.age}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Age</span>
+            <span className="font-semibold text-ink-800">{patient.age}</span>
           </span>
           {patientMeta?.gender && (
             <span>
-              <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Gender</span>
-              <span className="font-semibold text-slate-800">{patientMeta.gender}</span>
+              <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Gender</span>
+              <span className="font-semibold text-ink-800">{patientMeta.gender}</span>
             </span>
           )}
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Tier</span>
-            <span className="font-bold text-slate-800">{r.urgency_tier}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Tier</span>
+            <span className="font-bold text-ink-800">{r.urgency_tier}</span>
           </span>
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Condition</span>
-            <span className="font-semibold text-slate-800">{r.condition_name}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Condition</span>
+            <span className="font-semibold text-ink-800">{r.condition_name}</span>
           </span>
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">ICD-10</span>
-            <span className="font-semibold text-slate-800">{r.icd10_code}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">ICD-10</span>
+            <span className="font-semibold text-ink-800">{r.icd10_code}</span>
           </span>
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Asymmetry</span>
-            <span className="font-semibold text-slate-800">{asymDeg.toFixed(1)}° ({asymPD} PD)</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Asymmetry</span>
+            <span className="font-semibold text-ink-800">{asymDeg.toFixed(1)}° ({asymPD} PD)</span>
           </span>
           <span>
-            <span className="text-slate-400 uppercase tracking-wide text-[7.5pt] mr-1">Screener</span>
-            <span className="font-semibold text-slate-800">{screenerCtx}</span>
+            <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Screener</span>
+            <span className="font-semibold text-ink-800">{screenerCtx}</span>
           </span>
         </div>
       </div>
@@ -278,25 +319,27 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
       ══════════════════════════════════════════════════════════════════ */}
 
       {/* App bar */}
-      <header className="bg-white border-b border-slate-100 print:hidden">
-        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between">
+      <header className="bg-white border-b border-ink-100 sticky top-0 z-30 print:hidden">
+        <div className="max-w-2xl mx-auto px-5 py-3.5 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+            <span className="w-9 h-9 rounded-[10px] bg-ink-900 flex items-center justify-center shrink-0">
+              <svg className="w-[18px] h-[18px] text-white" fill="none" viewBox="0 0 24 24" strokeWidth={1.6} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round"
                   d="M2.036 12.322a1.012 1.012 0 0 1 0-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178Z" />
                 <path strokeLinecap="round" strokeLinejoin="round"
                   d="M15 12a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
               </svg>
-            </div>
-            <div>
-              <p className="text-sm font-bold text-slate-900 leading-none">BeanHealth</p>
-              <p className="text-xs text-slate-400 mt-0.5">CLR Triage Report</p>
+            </span>
+            <div className="leading-none">
+              <p className="text-[14px] font-semibold text-ink-900">
+                BeanHealth <span className="text-ink-400 font-normal">CLR</span>
+              </p>
+              <p className="text-[10.5px] text-ink-400 mt-1">Triage report</p>
             </div>
           </div>
-          <div className="text-right">
-            <p className="text-xs text-slate-400 font-mono">{sessionId}</p>
-            <p className="text-xs text-slate-400">{printDate}</p>
+          <div className="text-right leading-none">
+            <p className="font-mono text-[11px] text-ink-800 tabular">{sessionId}</p>
+            <p className="text-[10.5px] text-ink-400 mt-1">{printDate}</p>
           </div>
         </div>
       </header>
@@ -320,60 +363,58 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
       )}
 
       {/* Tier band */}
-      <div className={`${config.bgColour} border-b ${config.borderColour} print:hidden`}>
-        <div className="max-w-2xl mx-auto px-5 py-4">
+      <div className="bg-white border-b border-ink-100 print:hidden">
+        <div className="max-w-2xl mx-auto px-5 py-5">
 
           {/* Patient info row */}
-          <div className="flex items-start justify-between mb-3 gap-3">
-            <div>
-              <p className="text-slate-800 font-semibold">{patient.name}</p>
-              <p className="text-slate-500 text-xs mt-0.5">
+          <div className="flex items-start justify-between mb-4 gap-3">
+            <div className="min-w-0">
+              <p className="font-display text-[22px] text-ink-900 leading-tight truncate">{patient.name}</p>
+              <p className="text-ink-400 text-[12px] mt-1">
                 Age {patient.age}
-                {patientMeta?.gender           && ` · ${patientMeta.gender}`}
-                {patientMeta?.screenerRole     && ` · ${patientMeta.screenerRole}`}
+                {patientMeta?.gender            && ` · ${patientMeta.gender}`}
+                {patientMeta?.screenerRole      && ` · ${patientMeta.screenerRole}`}
                 {patientMeta?.screeningLocation && ` · ${patientMeta.screeningLocation}`}
               </p>
             </div>
-            {/* Confidence badge */}
-            <span className={`text-xs px-2.5 py-1 rounded-full font-semibold border shrink-0 ${CONF_COLOUR[aggConf] ?? ""}`}>
+            <span className={`text-[11px] px-2.5 py-1 rounded-full font-semibold border shrink-0 ${CONF_COLOUR[aggConf] ?? ""}`}>
               {aggConf} confidence
             </span>
           </div>
 
-          {/* 5-tier pill row */}
+          {/* Tier rail — the active tier is filled, the rest are hairline ghosts */}
           <div className="flex gap-1.5 flex-wrap">
             {TIER_ORDER.map((tier) => {
               const tc       = URGENCY_CONFIG[tier];
               const isActive = displayTier === tier;
               return (
-                <div
+                <span
                   key={tier}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                    border transition-all ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[11px] font-semibold
+                              border transition-all duration-200 ${
                     isActive
-                      ? `${tc.badgeColour} text-white border-transparent shadow-sm`
-                      : "bg-white/50 text-slate-400 border-slate-200"
+                      ? `${tc.badgeColour} text-white border-transparent shadow-card`
+                      : "bg-white text-ink-300 border-ink-100"
                   }`}
                 >
-                  <span>{TIER_EMOJI[tier]}</span>
-                  <span>{tier}</span>
-                </div>
+                  <span className={`w-1.5 h-1.5 rounded-full ${isActive ? "bg-white" : tc.dotColour + " opacity-30"}`} />
+                  {tier}
+                </span>
               );
             })}
-            {/* Show "REVIEW" pill when confidence is LOW on non-NORMAL */}
             {displayTier === null && (
-              <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold
-                border bg-slate-500 text-white border-transparent shadow-sm">
-                <span>⚪</span>
-                <span>REVIEW</span>
-              </div>
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-full font-mono text-[11px] font-semibold
+                               border bg-ink-500 text-white border-transparent shadow-card">
+                <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                REVIEW
+              </span>
             )}
           </div>
 
           {/* LOW confidence warning */}
           {aggConf === "LOW" && (
-            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 mt-2">
-              ⚠ Low detection confidence — re-screen with better fixation before acting on this result.
+            <p className="text-[12.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-field px-3.5 py-2.5 mt-3 leading-relaxed">
+              Low detection confidence — re-screen with better fixation before acting on this result.
             </p>
           )}
         </div>
@@ -387,77 +428,88 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
         {/* ══════════════════════════════════════════════════════════════
             §2  CLINICAL INTERPRETATION
         ══════════════════════════════════════════════════════════════ */}
-        <section className={`rounded-2xl border ${config.borderColour} ${config.bgColour} p-5 print:bg-slate-50 print:border-slate-300`}>
-          <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400 mb-1">
-            Method A · Hirschberg (corneal light reflex)
-          </p>
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex-1 min-w-0">
-              <h2 className={`text-xl font-bold ${config.colour} mb-0.5`}>{r.condition_name}</h2>
-              <span className="inline-block text-xs font-mono font-semibold bg-white/60 border border-current/20
-                               px-2 py-0.5 rounded-md text-slate-500 mb-3">
+        <section className={`rounded-card border ${config.borderColour} ${config.bgColour} overflow-hidden print:bg-white print:border-ink-100`}>
+
+          {/* Verdict header — condition on the left, tier block on the right */}
+          <div className="flex items-stretch">
+            <div className="flex-1 min-w-0 p-6">
+              <p className="eyebrow-muted mb-2">Method A · Hirschberg corneal light reflex</p>
+              <h2 className={`font-display text-[28px] leading-tight ${config.colour}`}>
+                {r.condition_name}
+              </h2>
+              <span className="inline-block font-mono text-[11px] font-medium bg-white/70 border border-black/5
+                               px-2 py-0.5 rounded mt-2 text-ink-600">
                 {r.icd10_code}
               </span>
-
-              {/* Corneal reflex asymmetry — the clinical headline */}
-              <div className="mb-3">
-                <p className="text-slate-500 text-xs font-semibold uppercase tracking-wide mb-0.5">
-                  Corneal Reflex Asymmetry
-                </p>
-                <p className={`text-3xl font-black ${config.colour} leading-none`}>
-                  {asymDeg.toFixed(1)}°
-                </p>
-                <p className="text-slate-500 text-sm font-semibold mt-0.5">
-                  ≈ {asymPD} prism dioptres (PD)
-                </p>
-              </div>
-
-              {/* Referral action */}
-              <div className="bg-white/60 rounded-xl border border-white/80 px-4 py-3 mt-3">
-                <p className="text-xs text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Referral Action</p>
-                <p className={`text-sm font-bold ${config.colour}`}>{r.referral_recommendation}</p>
-                <p className="text-slate-500 text-xs mt-0.5">Timeframe: {r.timeframe}</p>
-              </div>
             </div>
 
-            {/* Large tier badge */}
-            <div className={`${config.badgeColour} rounded-2xl px-4 py-4 text-white text-center shrink-0 shadow-sm`}>
-              <p className="text-3xl leading-none">{displayTier ? TIER_EMOJI[displayTier] : "⚪"}</p>
-              <p className="text-[10px] font-bold tracking-widest mt-1.5">
-                {displayTier ?? "REVIEW"}
+            <div className={`${config.badgeColour} px-6 py-6 text-white text-center shrink-0
+                             flex flex-col justify-center min-w-[128px]`}>
+              <p className="font-display text-[26px] leading-none">
+                {displayTier ?? "Review"}
+              </p>
+              <p className="font-mono text-[10px] font-semibold tracking-[0.18em] mt-2.5 opacity-80">
+                {r.severity}
               </p>
             </div>
           </div>
 
-          {/* Narrative */}
-          <p className="text-slate-600 text-sm leading-relaxed mt-4 pt-4 border-t border-black/5">
-            {r.narrative}
-          </p>
+          {/* Measurement + referral action */}
+          <div className="px-6 pb-6 space-y-4">
+            <div className="grid sm:grid-cols-2 gap-3">
+              <div className="bg-white/70 rounded-field border border-black/5 px-4 py-3.5">
+                <p className="eyebrow-muted mb-1.5">Corneal reflex asymmetry</p>
+                <p className={`font-display text-[26px] leading-none tabular ${config.colour}`}>
+                  {asymDeg.toFixed(1)}&deg;
+                </p>
+                <p className="text-ink-500 text-[12.5px] mt-1.5">
+                  &asymp; <span className="font-mono tabular">{asymPD}</span> prism dioptres
+                </p>
+              </div>
 
-          {/* Honest low-SNR disclosure — when measurement noise dominated the signal */}
-          {lowSNR && (
-            <div className="mt-3 bg-white/70 border border-amber-300 rounded-xl px-4 py-3">
-              <p className="text-amber-800 font-bold text-xs uppercase tracking-wider mb-1">
-                ⚠ Measurement noise was high
-              </p>
-              <p className="text-amber-700 text-xs leading-relaxed">
-                Capture conditions (torch wobble, ambient reflections, or
-                fixation drift) produced inter-frame variation comparable to
-                the asymmetry signal itself. The result is reported as
-                <strong> NORMAL </strong> because no clinically significant
-                deviation was reliably detected — but the screening was not
-                ideal. If you have any concern about the patient&apos;s eye
-                alignment, recommend a clinical cover test by an eye
-                specialist rather than relying on this scan alone.
-              </p>
+              <div className="bg-white/70 rounded-field border border-black/5 px-4 py-3.5">
+                <p className="eyebrow-muted mb-1.5">Referral action</p>
+                <p className={`text-[14px] font-semibold leading-snug ${config.colour}`}>
+                  {r.referral_recommendation}
+                </p>
+                <p className="text-ink-500 text-[12.5px] mt-1.5">Timeframe: {r.timeframe}</p>
+              </div>
             </div>
-          )}
+
+            {/* Narrative */}
+            <p className="text-ink-600 text-[13.5px] leading-relaxed pt-4 border-t border-black/5">
+              {r.narrative}
+            </p>
+
+            {/* Honest low-SNR disclosure */}
+            {lowSNR && (
+              <div className="bg-white/80 border border-amber-300 rounded-field px-4 py-3.5">
+                <p className="text-amber-800 font-semibold text-[11px] uppercase tracking-eyebrow mb-1.5">
+                  Measurement noise was high
+                </p>
+                <p className="text-amber-800/90 text-[12.5px] leading-relaxed">
+                  Capture conditions (torch wobble, ambient reflections, or fixation drift)
+                  produced inter-frame variation comparable to the asymmetry signal itself.
+                  The result is reported as <strong>NORMAL</strong> because no clinically
+                  significant deviation was reliably detected &mdash; but the screening was not
+                  ideal. If you have any concern about the patient&apos;s eye alignment,
+                  recommend a clinical cover test by an eye specialist rather than relying
+                  on this scan alone.
+                </p>
+              </div>
+            )}
+          </div>
         </section>
 
         {/* ══════════════════════════════════════════════════════════════
             §2B  PUPIL-VS-CORNER ALIGNMENT (CLR-free, second view)
         ══════════════════════════════════════════════════════════════ */}
-        {result.alignment && <AlignmentSection alignment={result.alignment} />}
+        {result.alignment && (
+          <AlignmentSection
+            alignment={result.alignment}
+            imageB64={result.intermediate_images?.module8_alignment}
+          />
+        )}
 
         {/* ══════════════════════════════════════════════════════════════
             §3  CLINICAL MEASUREMENTS
@@ -467,28 +519,19 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
           {/* Primary: Bilateral asymmetry */}
           <div className="mb-5">
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">
-              Bilateral Asymmetry (classification signal)
+            <p className="text-ink-400 text-[11px] font-semibold uppercase tracking-eyebrow mb-2.5">
+              Bilateral asymmetry &middot; classification signal
             </p>
             <div className="grid grid-cols-3 gap-2">
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                <p className="text-slate-400 text-xs mb-1">Asymmetry</p>
-                <p className="text-slate-900 font-bold text-lg leading-none">{asymDeg.toFixed(1)}°</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                <p className="text-slate-400 text-xs mb-1">PD</p>
-                <p className="text-slate-900 font-bold text-lg leading-none">{asymPD}</p>
-              </div>
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 text-center">
-                <p className="text-slate-400 text-xs mb-1">Severity</p>
-                <p className="text-slate-900 font-bold text-lg leading-none">{r.severity}</p>
-              </div>
+              <StatBox label="Asymmetry" value={`${asymDeg.toFixed(1)}°`} />
+              <StatBox label="Prism D"   value={String(asymPD)} />
+              <StatBox label="Severity"  value={r.severity} />
             </div>
 
             {/* Avg std if available */}
             {result.asymmetry_std_deg !== undefined && (
-              <p className="text-slate-400 text-xs mt-2">
-                Inter-frame variance: <span className="text-slate-600 font-semibold">
+              <p className="text-ink-400 text-xs mt-2">
+                Inter-frame variance: <span className="text-ink-600 font-semibold">
                   ±{result.asymmetry_std_deg.toFixed(1)}°
                 </span> std dev across {result.frames_accepted} accepted frames
               </p>
@@ -507,7 +550,7 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
           {/* Per-eye displacement */}
           <div>
-            <p className="text-slate-400 text-xs font-semibold uppercase tracking-wide mb-2">
+            <p className="text-ink-400 text-[11px] font-semibold uppercase tracking-eyebrow mb-2.5">
               Per-Eye Displacement
             </p>
             <div className="grid grid-cols-2 gap-3">
@@ -521,17 +564,17 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
                 const pd  = eye === "left" ? leftPD : rightPD;
                 const pct = Math.min(norm * 100, 100);
                 return (
-                  <div key={eye} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
-                    <p className="text-slate-400 text-xs uppercase tracking-wide mb-1 font-semibold">
+                  <div key={eye} className="bg-ink-50 rounded-field p-4 border border-ink-100">
+                    <p className="text-ink-400 text-[11px] uppercase tracking-eyebrow mb-1.5 font-semibold">
                       {eye} eye
                     </p>
-                    <p className="text-slate-900 font-bold text-base leading-none">
+                    <p className="font-display text-ink-900 text-[20px] leading-none tabular">
                       {(norm * 100).toFixed(1)}%
                     </p>
-                    <p className="text-slate-400 text-xs mt-0.5 capitalize">
+                    <p className="text-ink-400 text-xs mt-0.5 capitalize">
                       {dir} · ≈{pd} PD
                     </p>
-                    <div className="mt-2 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                    <div className="mt-2 h-1.5 bg-ink-200 rounded-full overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all ${
                           norm > 0.5 ? "bg-red-400" : norm > 0.2 ? "bg-amber-400" : "bg-emerald-400"
@@ -553,13 +596,13 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
           <SectionTitle>Quality &amp; Provenance</SectionTitle>
 
           {/* Confidence bar */}
-          <div className={`flex items-center gap-2 rounded-xl px-4 py-3 border mb-4 ${CONF_COLOUR[aggConf] ?? ""}`}>
-            <span className="text-lg">
-              {aggConf === "HIGH" ? "✅" : aggConf === "MEDIUM" ? "⚠️" : "🔴"}
-            </span>
+          <div className={`flex items-start gap-3 rounded-field px-4 py-3.5 border mb-5 ${CONF_COLOUR[aggConf] ?? ""}`}>
+            <span className={`w-2 h-2 rounded-full shrink-0 mt-1.5 ${
+              aggConf === "HIGH" ? "bg-emerald-500" : aggConf === "MEDIUM" ? "bg-amber-500" : "bg-red-500"
+            }`} />
             <div>
-              <p className="font-bold text-sm">{aggConf} Confidence</p>
-              <p className="text-xs opacity-80 leading-tight">
+              <p className="font-semibold text-[13.5px]">{aggConf} confidence</p>
+              <p className="text-[12.5px] opacity-80 leading-snug mt-0.5">
                 {aggConf === "HIGH"
                   ? "Low inter-frame variance — result is reliable"
                   : aggConf === "MEDIUM"
@@ -606,8 +649,8 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
           )}
           <MetricRow label="Screener"       value={screenerCtx} />
           <MetricRow label="Session ID"     value={sessionId} />
-          <MetricRow label="Timestamp"      value={new Date().toISOString().replace("T", " ").slice(0, 19) + " UTC"} />
-          <MetricRow label="Pipeline"       value="BeanHealth CLR v1.0 · Hirschberg (7°/mm · 22 PD/mm)" />
+          <MetricRow label="Timestamp"      value={`${result.timestamp.replace("T", " ").slice(0, 19)} UTC`} />
+          <MetricRow label="Pipeline"       value="BeanHealth CLR v1.0 · Hirschberg 7°/mm · PD = 100·tan(θ)" />
         </SectionCard>
 
         {/* ══════════════════════════════════════════════════════════════
@@ -626,19 +669,19 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
                 return (
                   <div
                     key={i}
-                    className={`rounded-xl border px-1.5 py-2 text-center ${
+                    className={`rounded-field border px-1.5 py-2 text-center ${
                       accepted
                         ? "bg-emerald-50 border-emerald-200"
-                        : "bg-slate-100 border-slate-200"
+                        : "bg-ink-100 border-ink-100"
                     }`}
                   >
-                    <p className="text-[9px] text-slate-400 font-mono mb-0.5">F{i + 1}</p>
+                    <p className="text-[9px] text-ink-400 font-mono mb-0.5">F{i + 1}</p>
                     {accepted ? (
                       <p className="text-emerald-700 text-xs font-bold">{reading?.toFixed(1)}°</p>
                     ) : (
                       <>
-                        <p className="text-slate-400 text-xs font-bold">✕</p>
-                        <p className="text-[8px] text-slate-400 leading-tight mt-0.5 font-medium">
+                        <p className="text-ink-400 text-xs font-bold">✕</p>
+                        <p className="text-[8px] text-ink-400 leading-tight mt-0.5 font-medium">
                           {rejLabel(rejection)}
                         </p>
                       </>
@@ -650,8 +693,8 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
             {/* Mini deviation sparkline */}
             {result.frames_accepted >= 2 && (
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <p className="text-slate-400 text-xs mb-1.5">Accepted readings:</p>
+              <div className="mt-3 pt-3 border-t border-ink-100">
+                <p className="text-ink-400 text-xs mb-1.5">Accepted readings:</p>
                 <div className="flex items-end gap-1 h-8">
                   {result.per_frame_readings.map((v, i) => {
                     if (v === null) return null;
@@ -682,20 +725,20 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
             <AnnotatedEye base64Jpeg={result.annotated_image_b64} patientName={patient.name} />
 
             {/* Legend */}
-            <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3 border-t border-slate-100">
+            <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-4 pt-3 border-t border-ink-100">
               {[
-                { cls: "bg-blue-500",            label: "Pupil centre" },
+                { cls: "bg-clinical-500",            label: "Pupil centre" },
                 { cls: "bg-amber-400",            label: "Corneal reflex (CLR)" },
-                { cls: "bg-white border border-slate-300", label: "Hough estimate" },
+                { cls: "bg-white border border-ink-200", label: "Hough estimate" },
               ].map((l) => (
                 <div key={l.label} className="flex items-center gap-1.5">
                   <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${l.cls}`} />
-                  <span className="text-xs text-slate-500">{l.label}</span>
+                  <span className="text-xs text-ink-500">{l.label}</span>
                 </div>
               ))}
               <div className="flex items-center gap-1.5">
-                <div className="w-5 h-[2px] bg-slate-400 shrink-0" />
-                <span className="text-xs text-slate-500">Displacement vector</span>
+                <div className="w-5 h-[2px] bg-ink-400 shrink-0" />
+                <span className="text-xs text-ink-500">Displacement vector</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <div className={`w-3 h-3 rounded-sm border-2 shrink-0 ${
@@ -703,7 +746,7 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
                   r.urgency_tier === "ROUTINE" ? "border-orange-500" :
                   r.urgency_tier === "MONITOR" ? "border-amber-500"  : "border-emerald-500"
                 }`} />
-                <span className="text-xs text-slate-500">Urgency border</span>
+                <span className="text-xs text-ink-500">Urgency border</span>
               </div>
             </div>
           </SectionCard>
@@ -718,9 +761,9 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
         {/* Detection flags (if any) */}
         {technical.flags.length > 0 && (
-          <section className="bg-amber-50 rounded-2xl border border-amber-200 p-5">
-            <h2 className="text-amber-800 font-semibold text-sm uppercase tracking-wider mb-2">
-              ⚠ Detection Flags
+          <section className="bg-amber-50 rounded-card border border-amber-200 p-5">
+            <h2 className="text-amber-700 text-[10.5px] font-semibold uppercase tracking-eyebrow mb-3">
+              Detection flags
             </h2>
             <div className="flex flex-wrap gap-1.5">
               {technical.flags.map((flag) => (
@@ -740,23 +783,21 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
         ══════════════════════════════════════════════════════════════ */}
 
         {/* Screening limitations */}
-        <section className="bg-slate-100 rounded-2xl border border-slate-200 p-5 print:bg-slate-50">
-          <h2 className="text-slate-500 font-semibold text-xs uppercase tracking-wider mb-3">
-            Screening Limitations
-          </h2>
-          <ul className="space-y-2 text-slate-500 text-xs leading-relaxed">
+        <section className="bg-ink-50 rounded-card border border-ink-100 p-6 print:bg-white">
+          <h2 className="eyebrow-muted mb-4">Screening limitations</h2>
+          <ul className="space-y-3 text-ink-500 text-[12.5px] leading-relaxed">
             <li>
-              <strong className="text-slate-600">Microtropia (&lt;8 PD):</strong>{" "}
+              <strong className="text-ink-600">Microtropia (&lt;8 PD):</strong>{" "}
               This tool cannot reliably detect strabismus below 8 PD. Small-angle cases require a
               cover test or synoptophore examination by a trained examiner.
             </li>
             <li>
-              <strong className="text-slate-600">Intermittent strabismus:</strong>{" "}
+              <strong className="text-ink-600">Intermittent strabismus:</strong>{" "}
               If the deviation only manifests at certain distances, times of day, or fatigue states,
               a single-session CLR capture may miss it entirely.
             </li>
             <li>
-              <strong className="text-slate-600">Pseudostrabismus:</strong>{" "}
+              <strong className="text-ink-600">Pseudostrabismus:</strong>{" "}
               Wide epicanthal folds (common in children under 2 years) can simulate medial esotropia.
               This tool may over-flag these cases — age context is critical.
             </li>
@@ -767,14 +808,14 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
         <div className="print:hidden">
           <button
             onClick={() => setShowTechnical((s) => !s)}
-            className="w-full text-left text-slate-400 text-xs font-medium px-1 py-1.5 flex items-center gap-2
-                       hover:text-slate-600 transition-colors"
+            className="w-full text-left text-ink-400 text-xs font-medium px-1 py-1.5 flex items-center gap-2
+                       hover:text-ink-600 transition-colors"
           >
             <span>{showTechnical ? "▲" : "▼"}</span>
             <span>{showTechnical ? "Hide" : "Show"} technical details (JSON)</span>
           </button>
           {showTechnical && (
-            <pre className="text-[10px] bg-slate-900 text-emerald-300 rounded-xl p-4 overflow-auto max-h-72 mt-1
+            <pre className="text-[10.5px] bg-ink-900 text-emerald-300 rounded-field p-4 overflow-auto max-h-72 mt-1
                            font-mono leading-relaxed">
               {JSON.stringify(
                 {
@@ -801,34 +842,30 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
         </div>
 
         {/* Action buttons */}
-        <div className="flex gap-3 print:hidden pb-4">
-          <button
-            onClick={onRetry}
-            className="flex-1 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800
-                       font-medium py-3.5 text-sm transition-colors"
-          >
-            New Screening
+        <div className="flex flex-col sm:flex-row gap-3 print:hidden pb-4">
+          <button onClick={onRetry} className="btn-secondary flex-1">
+            New screening
           </button>
-          <button
-            onClick={() => window.print()}
-            className="flex-1 rounded-xl bg-blue-600 hover:bg-blue-700 text-white
-                       font-medium py-3.5 text-sm transition-colors shadow-sm shadow-blue-600/25"
-          >
-            Print / Save PDF
+          <button onClick={() => window.print()} className="btn-primary flex-1">
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round"
+                d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0 1 10.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0 .229 2.523a1.125 1.125 0 0 1-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0 0 21 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 0 0-1.913-.247M6.34 18H5.25A2.25 2.25 0 0 1 3 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 0 1 1.913-.247m10.5 0a48.536 48.536 0 0 0-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5Z" />
+            </svg>
+            Print / save PDF
           </button>
         </div>
 
         {/* Print-only footer */}
-        <div className="hidden print:block pt-4 mt-4 border-t border-slate-300 text-[8pt] text-slate-500 leading-relaxed">
+        <div className="hidden print:block pt-4 mt-4 border-t border-ink-200 text-[8pt] text-ink-500 leading-relaxed">
           <p>
-            <strong className="text-slate-700">Disclaimer:</strong>{" "}
+            <strong className="text-ink-700">Disclaimer:</strong>{" "}
             This report is generated by BeanHealth CLR Tool v1.0.0, an AI-assisted strabismus
             screening aid. It does not constitute a medical diagnosis and must not replace
             examination by a qualified ophthalmologist. Results are based on the Hirschberg corneal
-            light reflex test (7°/mm, 22 PD/mm, iris radius 5.75 mm). Cannot detect strabismus &lt;8 PD.
+            light reflex test (7°/mm, iris radius 5.75 mm; prism dioptres = 100&middot;tan&thinsp;&theta;). Cannot detect strabismus &lt;8 PD.
           </p>
-          <p className="mt-1 text-slate-400">
-            Generated: {new Date().toISOString()} · Status: {result.status} · Confidence: {aggConf} ·
+          <p className="mt-1 text-ink-400">
+            Generated: {result.timestamp} · Status: {result.status} · Confidence: {aggConf} ·
             BeanHealth · EyeQ Innovate Hackathon 2.0
           </p>
         </div>

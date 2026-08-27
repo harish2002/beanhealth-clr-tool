@@ -37,6 +37,7 @@ const MOCK_SUCCESS: AnalyseResponse = {
     icd10_code:              "H50.01",
     deviation_degrees:       14.2,
     asymmetry_degrees:       12.1,
+    asymmetry_pd:            25.9,
     asymmetry_score:         0.35,
     severity:                "MODERATE",
     referral_recommendation: "Refer to ophthalmology within 4 weeks",

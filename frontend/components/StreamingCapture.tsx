@@ -29,12 +29,15 @@ const PIPELINE_MODULES = [
   { name: "Report",              desc: "Generating annotated result image" },
 ] as const;
 
-const TOTAL_FRAMES      = 10;    // frames to capture (2 fps × 5 s)
+const TOTAL_FRAMES      = 8;     // frames to capture (2 fps × 4 s)
 const FRAME_INTERVAL_MS = 500;   // 2 frames per second
 
-// Expected processing time per frame on Railway at 640px (~1.5s), plus aggregation (~3s)
-// 10 frames × 1.5s + 3s = ~18s — well within Railway's 60s proxy timeout.
-const MS_PER_FRAME      = 1500;
+// Frames are now ~2x the pixels they used to be (see CAPTURE_MAX_SIDE), so
+// per-frame backend time roughly doubles. Frame count was cut 10 -> 8 to pay
+// for it: precision scales linearly with resolution but only as sqrt(N) with
+// frame count, so bigger-and-fewer is the better trade.
+// 8 frames × ~2.9s + 3s = ~26s — still inside Railway's 60s proxy timeout.
+const MS_PER_FRAME      = 2900;
 const MS_AGGREGATION    = 3000;
 const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
@@ -181,6 +184,18 @@ export default function StreamingCapture({
   const [capturedCount, setCapturedCount] = useState(0);
   const [torchOn,       setTorchOn]       = useState(false);
   const [cameraError,   setCameraError]   = useState<string | null>(null);
+
+  // Most recent FaceMesh landmarks (normalised 0..1), used by captureFrame to
+  // crop the face at native camera resolution instead of downscaling the
+  // whole frame — see CAPTURE_MAX_WIDTH below.
+  const latestLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
+
+  // Child attention-getter — an animated fixation target + optional chime to
+  // draw a young child's gaze toward the phone/lens during capture. Off by
+  // default; toggled by the operator.
+  const [attentionOn, setAttentionOn] = useState(false);
+  const audioCtxRef   = useRef<AudioContext | null>(null);
+  const chimeTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Server warm-up state
   const [serverReady, setServerReady] = useState<boolean | null>(null); // null=checking
@@ -355,6 +370,7 @@ export default function StreamingCapture({
 
         fm.onResults((results: FaceMeshResults) => {
           if (cancelled) return;
+          latestLandmarksRef.current = results.multiFaceLandmarks?.[0] ?? null;
           drawOverlay(results);
         });
 
@@ -560,26 +576,75 @@ export default function StreamingCapture({
   // At 640×360 MediaPipe still detects the iris accurately and the
   // total 10-frame upload + processing stays well under 30 s.
 
-  const CAPTURE_MAX_WIDTH = 640;
+  // Longest side of the uploaded frame. The frame we send is a CROP around the
+  // face, not the whole camera image, so this budget is spent almost entirely
+  // on the face — the part we actually measure.
+  const CAPTURE_MAX_SIDE = 896;
 
+  // Margin added around the FaceMesh face box, as a fraction of face size.
+  // MediaPipe's detector needs some context around the face and fails on
+  // edge-to-edge crops, so this is deliberately generous.
+  const FACE_CROP_MARGIN = 0.45;
+
+  /**
+   * Capture one frame as a JPEG blob.
+   *
+   * Measurement precision is set by how many PIXELS span the iris: the
+   * asymmetry angle is the pupil-to-reflex offset divided by the iris radius,
+   * so at a 14 px iris radius a single pixel of error is worth ~3 degrees —
+   * enough on its own to push a normal eye into a referral tier.
+   *
+   * Downscaling the whole 1280-wide camera frame to 640 spends most of that
+   * budget on background. Instead we crop to the face (using the landmarks the
+   * live overlay already computes) and keep native camera pixels, which
+   * roughly doubles the iris radius for the same upload size.
+   *
+   * Falls back to the old whole-frame downscale when no landmarks are
+   * available, so capture never depends on FaceMesh having a lock.
+   */
   function captureFrame(): Promise<Blob | null> {
     return new Promise((resolve) => {
       const video = videoRef.current;
       if (!video) return resolve(null);
 
-      // Scale to max width, preserve aspect ratio
-      const srcW  = video.videoWidth  || 1280;
-      const srcH  = video.videoHeight || 720;
-      const scale = Math.min(1, CAPTURE_MAX_WIDTH / srcW);
-      const dstW  = Math.round(srcW * scale);
-      const dstH  = Math.round(srcH * scale);
+      const srcW = video.videoWidth  || 1280;
+      const srcH = video.videoHeight || 720;
+
+      // Source rect: face box + margin, in native video pixels.
+      let sx = 0, sy = 0, sw = srcW, sh = srcH;
+
+      const lms = latestLandmarksRef.current;
+      if (lms && lms.length > 0) {
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+        for (const pt of lms) {
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        }
+        const fw = (maxX - minX) * srcW;
+        const fh = (maxY - minY) * srcH;
+        if (fw > 20 && fh > 20) {
+          const padX = fw * FACE_CROP_MARGIN;
+          const padY = fh * FACE_CROP_MARGIN;
+          sx = Math.max(0, Math.round(minX * srcW - padX));
+          sy = Math.max(0, Math.round(minY * srcH - padY));
+          sw = Math.min(srcW - sx, Math.round(fw + padX * 2));
+          sh = Math.min(srcH - sy, Math.round(fh + padY * 2));
+        }
+      }
+
+      // Only downscale if the crop is larger than the budget — never upscale.
+      const scale = Math.min(1, CAPTURE_MAX_SIDE / Math.max(sw, sh));
+      const dstW  = Math.max(1, Math.round(sw * scale));
+      const dstH  = Math.max(1, Math.round(sh * scale));
 
       const offscreen = document.createElement("canvas");
       offscreen.width  = dstW;
       offscreen.height = dstH;
       const ctx = offscreen.getContext("2d");
       if (!ctx) return resolve(null);
-      ctx.drawImage(video, 0, 0, dstW, dstH);
+      ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dstW, dstH);
       // Quality 0.88 — indistinguishable from 0.92 for CLR analysis
       // but ~15 % smaller file, slightly faster upload on mobile
       offscreen.toBlob((blob) => resolve(blob), "image/jpeg", 0.88);
@@ -651,12 +716,56 @@ export default function StreamingCapture({
     }, FRAME_INTERVAL_MS);
   }, [eyesDetected, submitFrames]);
 
+  // ── Child attention chime ─────────────────────────────────
+  // Plays a soft two-note chime every ~1.6s while the attention-getter is on,
+  // synthesised with the Web Audio API (no asset files, CSP-safe).
+
+  useEffect(() => {
+    if (!attentionOn) {
+      if (chimeTimerRef.current) { clearInterval(chimeTimerRef.current); chimeTimerRef.current = null; }
+      return;
+    }
+
+    const playChime = () => {
+      try {
+        if (!audioCtxRef.current) {
+          const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+          audioCtxRef.current = new Ctx();
+        }
+        const ctx = audioCtxRef.current;
+        if (ctx.state === "suspended") void ctx.resume();
+        const now = ctx.currentTime;
+        [880, 1320].forEach((freq, i) => {
+          const osc  = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.value = freq;
+          const t0 = now + i * 0.18;
+          gain.gain.setValueAtTime(0.0001, t0);
+          gain.gain.exponentialRampToValueAtTime(0.15, t0 + 0.03);
+          gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+          osc.connect(gain).connect(ctx.destination);
+          osc.start(t0);
+          osc.stop(t0 + 0.18);
+        });
+      } catch {
+        /* audio unavailable — the visual target still works */
+      }
+    };
+
+    playChime();
+    chimeTimerRef.current = setInterval(playChime, 1600);
+    return () => { if (chimeTimerRef.current) { clearInterval(chimeTimerRef.current); chimeTimerRef.current = null; } };
+  }, [attentionOn]);
+
   // ── Cleanup on unmount ────────────────────────────────────
 
   useEffect(() => {
     return () => {
       capturingRef.current = false;
       if (intervalRef.current) clearInterval(intervalRef.current);
+      if (chimeTimerRef.current) clearInterval(chimeTimerRef.current);
+      if (audioCtxRef.current) void audioCtxRef.current.close();
       stopCamera();
     };
   }, [stopCamera]);
@@ -669,7 +778,7 @@ export default function StreamingCapture({
     <div className="flex flex-col items-center gap-4 w-full max-w-md mx-auto">
 
       {/* Camera + overlay */}
-      <div className="relative w-full aspect-[4/3] bg-black rounded-2xl overflow-hidden shadow-lg">
+      <div className="relative w-full aspect-[4/3] bg-black rounded-card overflow-hidden shadow-lg">
         <video
           ref={videoRef}
           playsInline
@@ -686,6 +795,18 @@ export default function StreamingCapture({
         {torchOn && (
           <div className="absolute top-3 right-3 bg-amber-400 text-amber-900 text-xs font-semibold px-2 py-0.5 rounded-full">
             Torch ON
+          </div>
+        )}
+
+        {/* Child attention-getter — animated fixation target.
+            Draws the child's gaze to a single point so their eyes stay fixated
+            (steady fixation is the biggest true-signal stabiliser for kids). */}
+        {attentionOn && (
+          <div className="absolute inset-x-0 top-6 flex justify-center pointer-events-none z-10">
+            <div className="attn-bob flex flex-col items-center">
+              <span className="text-4xl attn-wiggle drop-shadow-[0_2px_6px_rgba(0,0,0,0.5)]">🐤</span>
+              <span className="mt-1 w-3 h-3 rounded-full bg-rose-400 attn-pulse" />
+            </div>
           </div>
         )}
 
@@ -764,7 +885,7 @@ export default function StreamingCapture({
         {status === "idle" && !cameraError && (
           <div className="flex flex-col gap-2 w-full">
             {/* Server warm-up status */}
-            <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+            <div className={`flex items-center gap-2 px-3.5 py-2.5 rounded-field text-[12.5px] font-medium transition-colors ${
               serverReady === null ? "bg-amber-50 border border-amber-200 text-amber-700" :
               serverReady         ? "bg-emerald-50 border border-emerald-200 text-emerald-700" :
                                     "bg-red-50 border border-red-200 text-red-600"
@@ -778,15 +899,20 @@ export default function StreamingCapture({
             </div>
             <button
               onClick={startCamera}
-              className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl transition-colors"
+              className="btn-primary w-full"
             >
-              Enable Camera
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round"
+                  d="M6.827 6.175A2.31 2.31 0 0 1 5.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 0 0 2.25 2.25h15A2.25 2.25 0 0 0 21.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 0 0-1.134-.175 2.31 2.31 0 0 1-1.64-1.055l-.822-1.316a2.192 2.192 0 0 0-1.736-1.039 48.774 48.774 0 0 0-5.232 0 2.192 2.192 0 0 0-1.736 1.039l-.821 1.316Z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 12.75a4.5 4.5 0 1 1-9 0 4.5 4.5 0 0 1 9 0ZM18.75 10.5h.008v.008h-.008V10.5Z" />
+              </svg>
+              Enable camera
             </button>
           </div>
         )}
 
         {cameraError && (
-          <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-sm text-center">
+          <div className="w-full p-3.5 bg-red-50 border border-red-200 rounded-field text-red-700 text-[13.5px] text-center">
             {cameraError}
           </div>
         )}
@@ -794,8 +920,8 @@ export default function StreamingCapture({
         {status === "detecting" && (
           <div className="flex flex-col gap-3 w-full">
             {/* ── Live quality card ── */}
-            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
-              <p className="text-slate-400 text-[10px] font-semibold uppercase tracking-widest mb-3">
+            <div className="bg-white border border-ink-100 rounded-card p-5 shadow-card">
+              <p className="eyebrow-muted mb-4">
                 Live capture quality
               </p>
               <div className="grid grid-cols-2 gap-2">
@@ -861,7 +987,7 @@ export default function StreamingCapture({
                     key={label}
                     className={`flex items-start gap-2 px-3 py-2 rounded-lg transition-colors duration-300 ${
                       unknown
-                        ? "bg-slate-50"
+                        ? "bg-ink-50"
                         : ok
                         ? "bg-emerald-50"
                         : "bg-amber-50"
@@ -870,7 +996,7 @@ export default function StreamingCapture({
                     <span
                       className={`mt-1 w-2 h-2 rounded-full flex-shrink-0 ${
                         unknown
-                          ? "bg-slate-300"
+                          ? "bg-ink-200"
                           : ok
                           ? "bg-emerald-500"
                           : "bg-amber-400 animate-pulse"
@@ -880,7 +1006,7 @@ export default function StreamingCapture({
                       <p
                         className={`text-xs font-semibold leading-tight ${
                           unknown
-                            ? "text-slate-400"
+                            ? "text-ink-400"
                             : ok
                             ? "text-emerald-700"
                             : "text-amber-700"
@@ -888,7 +1014,7 @@ export default function StreamingCapture({
                       >
                         {label}
                       </p>
-                      <p className="text-[10px] text-slate-400 leading-tight mt-0.5 truncate">
+                      <p className="text-[10px] text-ink-400 leading-tight mt-0.5 truncate">
                         {unknown ? "Waiting…" : ok ? okTip : warnTip}
                       </p>
                     </div>
@@ -912,17 +1038,26 @@ export default function StreamingCapture({
               )}
             </div>
 
+            {/* Child attention-getter toggle — animated target + chime to hold
+                a young child's gaze steady during capture. */}
+            <button
+              onClick={() => setAttentionOn((v) => !v)}
+              className={`w-full py-2.5 text-[13.5px] font-medium rounded-field border transition-colors ${
+                attentionOn
+                  ? "bg-rose-50 border-rose-200 text-rose-700"
+                  : "bg-white border-ink-200 text-ink-600 hover:border-ink-300 hover:bg-ink-50"
+              }`}
+            >
+              {attentionOn ? "🐤 Attention-getter ON (tap to stop)" : "🐤 Attention-getter for children"}
+            </button>
+
             <button
               onClick={startCapture}
               disabled={!isReadyToCapture(quality)}
-              className={`w-full py-3.5 font-semibold rounded-xl transition-all ${
-                isReadyToCapture(quality)
-                  ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/25"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
-              }`}
+              className="btn-primary w-full"
             >
               {isReadyToCapture(quality)
-                ? "Start 10-Frame Analysis"
+                ? `Start ${TOTAL_FRAMES}-frame analysis`
                 : "Align for best results…"}
             </button>
           </div>
@@ -940,12 +1075,12 @@ export default function StreamingCapture({
                       ? "bg-emerald-500"
                       : i === capturedCount
                       ? "bg-emerald-300 animate-pulse"
-                      : "bg-slate-200"
+                      : "bg-ink-200"
                   }`}
                 />
               ))}
             </div>
-            <p className="text-center text-slate-600 text-sm font-medium">
+            <p className="text-center text-ink-600 text-sm font-medium">
               Hold steady — capturing frame {capturedCount + 1} of {TOTAL_FRAMES}
             </p>
           </div>
@@ -954,13 +1089,25 @@ export default function StreamingCapture({
 
       {/* Instructions */}
       {(status === "idle" || status === "detecting") && (
-        <div className="w-full bg-slate-50 rounded-xl border border-slate-100 p-4">
-          <p className="text-slate-700 text-xs font-medium mb-2">How to get the best result</p>
-          <ul className="space-y-1 text-slate-500 text-xs">
-            <li>• Hold the phone <strong>30 cm</strong> from the patient&apos;s face</li>
-            <li>• Ensure <strong>torch is on</strong> — you should see reflections in both eyes</li>
-            <li>• Keep <strong>eyes open and looking straight</strong> at the camera</li>
-            <li>• The app captures <strong>10 frames over 5 seconds</strong> and averages them</li>
+        <div className="w-full surface-subtle p-5">
+          <p className="eyebrow-muted mb-3">How to get the best result</p>
+          <ul className="space-y-2 text-ink-500 text-[12.5px] leading-relaxed">
+            <li className="flex gap-2.5">
+              <span className="text-ink-300 shrink-0">&mdash;</span>
+              <span>Hold the phone <strong className="text-ink-800 font-semibold">30&ndash;40 cm</strong> from the patient&apos;s face</span>
+            </li>
+            <li className="flex gap-2.5">
+              <span className="text-ink-300 shrink-0">&mdash;</span>
+              <span>Ensure the <strong className="text-ink-800 font-semibold">torch is on</strong> &mdash; you should see a bright dot in both eyes</span>
+            </li>
+            <li className="flex gap-2.5">
+              <span className="text-ink-300 shrink-0">&mdash;</span>
+              <span>Keep <strong className="text-ink-800 font-semibold">eyes open and looking straight</strong> at the camera</span>
+            </li>
+            <li className="flex gap-2.5">
+              <span className="text-ink-300 shrink-0">&mdash;</span>
+              <span>The app captures <strong className="text-ink-800 font-semibold">{TOTAL_FRAMES} frames</strong> and averages them</span>
+            </li>
           </ul>
         </div>
       )}

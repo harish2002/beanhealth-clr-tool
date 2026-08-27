@@ -4,19 +4,37 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import StreamingCapture from "@/components/StreamingCapture";
+import { TopBar, FlowStepper } from "@/components/ui/Chrome";
 import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
+
+const PIPELINE = [
+  { n: "1", title: "Eye detection",      desc: "MediaPipe Face Mesh locates both irises in real time, at ~30 fps." },
+  { n: "2", title: "Pupil localisation", desc: "Landmark mean and Hough circle cross-validate the pupil centre." },
+  { n: "3", title: "CLR detection",      desc: "The brightest 3% of pixels isolate the torch reflection on the cornea." },
+  { n: "4", title: "Displacement",       desc: "Vector from pupil to reflex, normalised by iris radius." },
+  { n: "5", title: "Hirschberg angle",   desc: "1 mm of displacement ≈ 7° of ocular deviation." },
+  { n: "6", title: "Aggregation",        desc: "Frames averaged, IQR outliers dropped, variance scored." },
+];
+
+const TIERS = [
+  { tier: "URGENT",  dot: "bg-red-500",     desc: "≥ 30° — refer within 1 week" },
+  { tier: "ROUTINE", dot: "bg-orange-500",  desc: "15–30° — refer within 4 weeks" },
+  { tier: "MONITOR", dot: "bg-amber-400",   desc: "5–15° — re-screen in 3 months" },
+  { tier: "NORMAL",  dot: "bg-emerald-500", desc: "< 5° — no referral required" },
+];
 
 export default function CapturePage() {
   const router = useRouter();
   const patientName       = useAppStore((s) => s.patientName);
   const patientAge        = useAppStore((s) => s.patientAge);
+  const sessionId         = useAppStore((s) => s.sessionId);
   const setAnalysisResult = useAppStore((s) => s.setAnalysisResult);
   const setLoading        = useAppStore((s) => s.setLoading);
   const setError          = useAppStore((s) => s.setError);
 
   useEffect(() => {
     if (!patientName || patientAge === null) {
-      router.replace("/");
+      router.replace("/patient");
     }
   }, [patientName, patientAge, router]);
 
@@ -61,35 +79,45 @@ export default function CapturePage() {
   if (!patientName || patientAge === null) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen bg-white flex flex-col">
+      <TopBar step={2} />
 
-      {/* ── Header ──────────────────────────────────────────────────────── */}
-      <div className="bg-white border-b border-slate-100">
-        <div className="max-w-5xl mx-auto flex items-center justify-between px-5 py-4">
-          <button
-            onClick={() => router.push("/")}
-            className="text-slate-400 hover:text-slate-700 transition-colors"
-            aria-label="Go back"
-          >
-            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
-            </svg>
-          </button>
-
-          <div className="text-center">
-            <p className="text-slate-800 text-sm font-semibold">{patientName}</p>
-            <p className="text-slate-400 text-xs">Age {patientAge} · 10-Frame Analysis</p>
+      {/* ── Patient strip ────────────────────────────────────────────── */}
+      <div className="border-b border-ink-100 bg-ink-50/60">
+        <div className="max-w-5xl mx-auto px-5 sm:px-6 py-3.5 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <button
+              onClick={() => router.push("/patient")}
+              className="text-ink-400 hover:text-ink-900 transition-colors shrink-0 -ml-1 p-1"
+              aria-label="Back to patient details"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+            <div className="min-w-0">
+              <p className="text-[14px] font-semibold text-ink-900 truncate">{patientName}</p>
+              <p className="text-[11.5px] text-ink-400">
+                Age {patientAge}
+                {sessionId && <span className="font-mono"> · {sessionId}</span>}
+              </p>
+            </div>
           </div>
 
-          <div className="w-6" />
+          <div className="sm:hidden">
+            <FlowStepper current={2} />
+          </div>
+          <p className="hidden sm:block text-[11.5px] text-ink-400 font-mono shrink-0">
+            8-FRAME BILATERAL ANALYSIS
+          </p>
         </div>
       </div>
 
-      {/* ── Body ──────────────────────────────────────────────────────────── */}
-      <div className="flex-1 flex items-start justify-center px-4 py-6">
-        <div className="w-full max-w-5xl flex flex-col lg:flex-row lg:gap-8 lg:items-start">
+      {/* ── Body ─────────────────────────────────────────────────────── */}
+      <div className="flex-1 px-4 sm:px-6 py-6 md:py-10">
+        <div className="w-full max-w-5xl mx-auto flex flex-col lg:flex-row lg:gap-10 lg:items-start">
 
-          {/* Camera capture — constrained width on desktop so it feels like a phone */}
+          {/* Camera — phone-width on desktop */}
           <div className="w-full lg:w-[420px] lg:shrink-0">
             <StreamingCapture
               patientName={patientName}
@@ -100,58 +128,46 @@ export default function CapturePage() {
             />
           </div>
 
-          {/* Desktop sidebar — pipeline + triage reference */}
-          <div className="hidden lg:flex flex-col gap-4 flex-1 pt-1">
+          {/* Desktop reference rail */}
+          <aside className="hidden lg:flex flex-col gap-5 flex-1 pt-1">
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-              <h3 className="text-slate-900 font-semibold text-sm mb-3">How the pipeline works</h3>
-              <ol className="space-y-3">
-                {[
-                  { n: "1", title: "Eye Detection",      desc: "MediaPipe Face Mesh locates both irises in real time (30 fps)" },
-                  { n: "2", title: "Pupil Localisation", desc: "Two independent methods cross-validate the pupil centre" },
-                  { n: "3", title: "CLR Detection",      desc: "Top 3% brightest pixels isolate the torch reflection on the cornea" },
-                  { n: "4", title: "Displacement",       desc: "Vector measured from pupil → corneal reflex, normalised by iris radius" },
-                  { n: "5", title: "Hirschberg Angle",   desc: "1 mm displacement ≈ 7° ocular deviation (clinical standard)" },
-                  { n: "6", title: "Aggregation",        desc: "10 frames averaged · IQR outliers removed · std dev scored" },
-                ].map((s) => (
-                  <li key={s.n} className="flex gap-3">
-                    <span className="w-5 h-5 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">
-                      {s.n}
+            <div className="surface p-6">
+              <p className="eyebrow-muted mb-4">Pipeline</p>
+              <ol className="space-y-3.5">
+                {PIPELINE.map((s) => (
+                  <li key={s.n} className="flex gap-3.5">
+                    <span className="font-mono text-[11px] text-clinical-600 tabular pt-0.5 shrink-0">
+                      0{s.n}
                     </span>
                     <div>
-                      <p className="text-slate-800 text-xs font-semibold">{s.title}</p>
-                      <p className="text-slate-500 text-xs leading-relaxed">{s.desc}</p>
+                      <p className="text-ink-800 text-[13px] font-semibold">{s.title}</p>
+                      <p className="text-ink-500 text-[12.5px] leading-relaxed mt-0.5">{s.desc}</p>
                     </div>
                   </li>
                 ))}
               </ol>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
-              <h3 className="text-slate-900 font-semibold text-sm mb-3">Triage tiers</h3>
-              <div className="space-y-2">
-                {[
-                  { tier: "URGENT",  colour: "bg-red-100 text-red-700",       desc: "≥ 30° — refer within 1 week" },
-                  { tier: "ROUTINE", colour: "bg-orange-100 text-orange-700", desc: "15–30° — refer within 4 weeks" },
-                  { tier: "MONITOR", colour: "bg-amber-100 text-amber-700",   desc: "5–15° — re-screen in 3 months" },
-                  { tier: "NORMAL",  colour: "bg-green-100 text-green-700",   desc: "< 5° — no referral required" },
-                ].map((t) => (
-                  <div key={t.tier} className="flex items-center gap-3">
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-md min-w-[64px] text-center ${t.colour}`}>
+            <div className="surface p-6">
+              <p className="eyebrow-muted mb-4">Triage tiers</p>
+              <ul className="divide-y divide-ink-100">
+                {TIERS.map((t) => (
+                  <li key={t.tier} className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0">
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${t.dot}`} />
+                    <span className="font-mono text-[11px] font-semibold text-ink-800 w-[62px] shrink-0">
                       {t.tier}
                     </span>
-                    <span className="text-slate-500 text-xs">{t.desc}</span>
-                  </div>
+                    <span className="text-ink-500 text-[12.5px]">{t.desc}</span>
+                  </li>
                 ))}
-              </div>
+              </ul>
             </div>
 
-            <p className="text-slate-400 text-xs leading-relaxed px-1">
-              Screening aid only · Not a diagnostic device · Results based on the Hirschberg corneal
-              light reflex method · Always confirm with a qualified ophthalmologist.
+            <p className="text-ink-400 text-[12px] leading-relaxed px-1">
+              Screening aid only · Not a diagnostic device · Hirschberg corneal light reflex
+              method · Always confirm with a qualified ophthalmologist.
             </p>
-          </div>
-
+          </aside>
         </div>
       </div>
     </div>
