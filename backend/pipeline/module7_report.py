@@ -740,6 +740,7 @@ def build_inconclusive_report(
     extra_flags:  Optional[List[str]] = None,
     detection:    Optional[EyeDetectionResult] = None,
     pupil_result: Optional[PupilResult]        = None,
+    original_img: Optional[np.ndarray]         = None,
 ) -> Dict[str, Any]:
     """
     Assemble an INCONCLUSIVE report from a pipeline error.
@@ -791,6 +792,12 @@ def build_inconclusive_report(
             for f in alignment.flags:
                 if f not in report["flags"]:
                     report["flags"].append(f)
+            # This is the case Method B exists for — Method A failed, so its
+            # geometry is the only visual evidence the operator gets.
+            if original_img is not None:
+                m8 = _build_alignment_view(original_img, detection, pupil_result, alignment)
+                if m8:
+                    report["intermediate_images"] = {"module8_alignment": m8}
             report["alignment"] = _alignment_to_dict(alignment)
         except Exception as exc:                 # noqa: BLE001 — never block report
             logger.warning(f"[M7] alignment skipped on INCONCLUSIVE: {exc}")
@@ -880,6 +887,7 @@ def generate_report(
                 return build_inconclusive_report(
                     error, patient_name, patient_age,
                     detection=detection, pupil_result=pupil_result,
+                    original_img=original_img,
                 )
             return build_error_report(error, patient_name, patient_age)
 
@@ -902,6 +910,7 @@ def generate_report(
         return build_inconclusive_report(
             e, patient_name, patient_age,
             detection=detection, pupil_result=pupil_result,
+            original_img=original_img,
         )
     except Exception as e:
         return build_error_report(e, patient_name, patient_age)

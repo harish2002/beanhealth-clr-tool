@@ -182,6 +182,9 @@ export interface StreamInconclusiveResponse {
   // Torch-free corner-alignment net — present when detection + pupil
   // localisation succeeded before the halt (e.g. a no-flash CLR failure).
   alignment?:         AlignmentResult;
+  // Carries module8_alignment so Method B can be shown with its geometry even
+  // when Method A produced nothing.
+  intermediate_images?: IntermediateImages;
 }
 
 export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;

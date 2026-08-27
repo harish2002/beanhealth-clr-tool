@@ -282,7 +282,7 @@ async def analyse(
         report = generate_report(
             patient_name=patient_name,
             patient_age=patient_age,
-            original_img=None,
+            original_img=img_rgb,
             detection=detection,        # enables Module 8 alignment on no-CLR halts
             pupil_result=pupil_result,
             error=e,
@@ -295,7 +295,7 @@ async def analyse(
         report = generate_report(
             patient_name=patient_name,
             patient_age=patient_age,
-            original_img=None,
+            original_img=img_rgb,
             error=e,
         )
         logger.exception(f"[API] Unexpected pipeline crash: {e}")
@@ -450,7 +450,7 @@ async def _run_single_frame_pipeline(
             generate_report(
                 patient_name=patient_name,
                 patient_age=patient_age,
-                original_img=None,
+                original_img=img_rgb,
                 detection=detection,        # enables Module 8 alignment on no-CLR halts
                 pupil_result=pupil_result,
                 error=e,
@@ -583,6 +583,38 @@ async def analyse_stream(
 
     aggregated["patient"]   = {"name": patient_name, "age": patient_age}
     aggregated["timestamp"] = timestamp
+
+    # Method B (corner alignment) needs no torch, so it survives exactly the
+    # failures that kill Method A — no flash, no reflex, unstable CLR.  Carry
+    # the first available per-frame alignment onto the aggregate so a
+    # torch-free capture still returns something useful instead of a bare
+    # "not enough usable frames".
+    if "alignment" not in aggregated:
+        for rep in frame_reports:
+            algn = rep.get("alignment")
+            if algn and algn.get("available"):
+                aggregated["alignment"] = algn
+                break
+
+    # Explain the real cause.  When the frames were rejected because no torch
+    # reflex could be found, telling the operator to "hold steadier" sends them
+    # to fix the wrong thing.
+    if aggregated.get("status") == "INCONCLUSIVE":
+        flags = aggregated.get("flags") or []
+        light_failure = sum(
+            1 for f in flags
+            if f in ("no_flash", "deviation_out_of_range")
+            or f.startswith("no_reflex") or f.startswith("rescue_clr")
+        )
+        if light_failure >= max(1, len(flags) // 2):
+            aggregated["reason"] = "no_flash"
+            aggregated["reason_human"] = (
+                "No corneal light reflex could be found. This device's torch is "
+                "probably off or unavailable (laptop webcams have no torch), so "
+                "there is no reflection to measure. Use a phone with the torch "
+                "on, held 30-40 cm away. The torch-free alignment check below "
+                "still ran."
+            )
 
     logger.info(
         f"[API] /analyse-stream DONE — status={aggregated['status']} "

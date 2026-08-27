@@ -490,7 +490,14 @@ def _detect_clr_one_eye(
         )
         passing = _apply_four_way_filter(
             blobs, w, h, iris_radius,
-            pupil_centre=None,           # disable distance filter in rescue
+            # Rescue relaxes SHAPE and SIZE, never LOCATION.  A corneal light
+            # reflex is by definition on the cornea, so it cannot be far from
+            # the pupil centre.  Dropping the distance filter entirely let the
+            # rescue pass adopt screen glare and skin highlights several iris
+            # radii away, which produced >60 degree deviations and rejected
+            # every frame with a "hold steadier" message that blamed the user
+            # for what was really an absent light source.
+            pupil_centre=pupil_centre,
             eye_label=eye_label,
             min_area_ratio=min_area_ratio,
             max_area_ratio=CLR_RESCUE_MAX_AREA_RATIO,

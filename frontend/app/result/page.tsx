@@ -58,11 +58,11 @@ const REASON_TITLE: Record<string, string> = {
 
 const REASON_TIP: Record<string, string> = {
   high_variance_asymmetry: "The eye position shifted between frames. Ask the patient to stare steadily at the target and try again.",
-  no_flash:                "Enable the torch and check that a bright dot is visible in both eyes before capturing.",
+  no_flash:                "A torch is required for this measurement. Laptop webcams have no torch — use a phone, enable the torch, and check a bright dot is visible in both eyes.",
   no_face:                 "Move closer and make sure the whole face is inside the frame.",
   eyes_closed:             "Ask the patient to open their eyes wide and look straight ahead.",
   not_frontal:             "The patient must face the camera squarely — no tilt, no turn.",
-  insufficient_frames:     "Too many frames were unusable. Hold the phone steadier and keep both eyes open.",
+  insufficient_frames:     "Too many frames were unusable. Most often this is a missing torch reflex rather than movement — check for a bright dot in both eyes, then hold steady.",
 };
 
 function InconclusiveScreen({
@@ -102,7 +102,12 @@ function InconclusiveScreen({
           </div>
 
           {/* Torch-free corner-alignment result — still valid without a CLR. */}
-          {result.alignment && <AlignmentSection alignment={result.alignment} />}
+          {result.alignment && (
+            <AlignmentSection
+              alignment={result.alignment}
+              imageB64={result.intermediate_images?.module8_alignment}
+            />
+          )}
 
           {/* Per-frame reading strip */}
           {result.per_frame_readings && result.per_frame_readings.length > 0 && (
