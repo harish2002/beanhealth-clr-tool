@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Problem Understanding</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">04 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">How the clinical learning shaped the project</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: flex; flex-direction: column; gap: 0;"><div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 17px 20px; display: flex; gap: 18px; align-items: flex-start;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2563eb; padding-top: 2px;">01</div><div><div style="font-size: 17px; font-weight: 600; color: #0f172a; margin-bottom: 5px; letter-spacing: -0.01em;">Clinical knowledge provided</div><div style="font-size: 14px; line-height: 1.5; color: #475569; text-wrap: pretty;">Hirschberg CLR is the standard first-line estimation test for ocular alignment; reflex decentration converts to an approximate clinical angle.</div></div></div><div style="display: flex; justify-content: center; padding: 3px 0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></div><div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 17px 20px; display: flex; gap: 18px; align-items: flex-start;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2563eb; padding-top: 2px;">02</div><div><div style="font-size: 17px; font-weight: 600; color: #0f172a; margin-bottom: 5px; letter-spacing: -0.01em;">Understanding of the problem</div><div style="font-size: 14px; line-height: 1.5; color: #475569; text-wrap: pretty;">The test itself needs only a light source and an observer &mdash; what it actually needs is the trained eye that interprets it. That interpretation is the bottleneck, not the equipment.</div></div></div><div style="display: flex; justify-content: center; padding: 3px 0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></div><div style="background: #dbeafe; border: 1px solid #93c5fd; border-radius: 12px; padding: 17px 20px; display: flex; gap: 18px; align-items: flex-start;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #2563eb; padding-top: 2px;">03</div><div><div style="font-size: 17px; font-weight: 600; color: #0f172a; margin-bottom: 5px; letter-spacing: -0.01em;">The specific problem we address</div><div style="font-size: 14px; line-height: 1.5; color: #475569; text-wrap: pretty;">Automate the interpretation step, so a non-specialist can obtain the same objective measurement and a defensible referral decision.</div></div></div><div style="display: flex; justify-content: center; padding: 3px 0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"></path><path d="m19 12-7 7-7-7"></path></svg></div><div style="background: #2563eb; border: 1px solid #2563eb; border-radius: 12px; padding: 17px 20px; display: flex; gap: 18px; align-items: flex-start;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; color: #93c5fd; padding-top: 2px;">04</div><div><div style="font-size: 17px; font-weight: 600; color: #ffffff; margin-bottom: 5px; letter-spacing: -0.01em;">Our proposed solution</div><div style="font-size: 14px; line-height: 1.5; color: #dbeafe; text-wrap: pretty;">A phone camera and its torch reproduce the reflex; computer vision measures the bilateral asymmetry and returns a triage tier with a clinical angle.</div></div></div></div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Component 1 Demonstration</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">09 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">Proof of concept &mdash; the working system</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: grid; grid-template-columns: 1.32fr 1fr; gap: 24px; flex-grow: 1; min-height: 0;">
+      <div style="display: flex; flex-direction: column; min-height: 0;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Measurement stage &mdash; live pipeline output</div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; background: #0f172a;">
+          <img src="pipeline_module5_vector.jpg" alt="Per-eye pupil, corneal reflex and iris boundary with displacement vector" style="width: 100%; display: block;">
+        </div>
+        <div style="display: flex; gap: 16px; margin-top: 11px; font-size: 11.5px; color: #475569;">
+          <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #3b82f6; display: inline-block;"></span>Pupil centre</span>
+          <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 9px; height: 9px; border-radius: 50%; background: #f97316; display: inline-block;"></span>Corneal light reflex</span>
+          <span style="display: flex; align-items: center; gap: 6px;"><span style="width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid #22c55e; display: inline-block;"></span>Iris boundary</span>
+        </div>
+        <div style="margin-top: 12px;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-size: 13px; line-height: 1.5; color: #334155;">Each eye is measured independently: reflex displacement from the pupil centre, normalised by iris radius so the result is scale-invariant. The two normalised vectors are then subtracted &mdash; that difference, not either eye alone, is the screening signal.</div></div>
+        </div>
+      </div>
+      <div style="display: flex; flex-direction: column; min-height: 0;">
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Screener application &mdash; deployed</div>
+        <div style="border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; flex-grow: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; background: #f8fafc;">
+          <img src="ui_landing.jpg" alt="BeanHealth CLR screener application" style="max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; display: block;">
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Phase 2 Plan</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">12 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">Component 2 &mdash; calibration &amp; ground truth</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: grid; grid-template-columns: 1.1fr 1fr; gap: 30px; flex-grow: 1;">
+      <div><div style="margin-bottom: 17px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">What Component 2 will do</div><p style="font-size: 14px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Establish cross-device consistency and build the clinical evidence base: a per-phone calibration profile (torch-to-lens offset, sensor and exposure behaviour) applied to every capture, and a structured ground-truth dataset pairing smartphone captures with clinician reference assessment.</p></div><div style="margin-bottom: 17px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">How it connects to Component 1</div><p style="font-size: 14px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Component 1 currently calibrates within a session. Component 2 turns that into a persistent per-device profile and supplies the labelled data needed to tune Component 1's thresholds against real clinical outcomes rather than assumption.</p></div></div>
+      <div><div style="margin-bottom: 10px;"><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Technical requirements</div><div style="font-size: 13px; line-height: 1.5; color: #334155;">Device fingerprinting and a calibration profile store; a capture-and-label workflow; anonymisation and consent handling in the data path.</div></div></div><div style="margin-bottom: 10px;"><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Clinical knowledge required</div><div style="font-size: 13px; line-height: 1.5; color: #334155;">Clinician reference assessment (Hirschberg / cover test) for each captured session, and agreement on referral thresholds by deviation size.</div></div></div><div style="margin-bottom: 10px;"><div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Expected outcome</div><div style="font-size: 13px; line-height: 1.5; color: #334155;">A working per-phone calibration system covering the common device fleet, plus an initial labelled smartphone-versus-clinician dataset &mdash; the validation set Component 4 measures against.</div></div></div></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

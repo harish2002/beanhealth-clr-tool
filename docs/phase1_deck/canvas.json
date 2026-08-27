@@ -1,0 +1,128 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "01 \u00b7 Project Details"
+    },
+    {
+      "file": "Problem.dc.html",
+      "x": 1360,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "02 \u00b7 Clinical Problem"
+    },
+    {
+      "file": "Learning.dc.html",
+      "x": 2720,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "03 \u00b7 Clinical Learning"
+    },
+    {
+      "file": "Understanding.dc.html",
+      "x": 4080,
+      "y": 0,
+      "w": 1280,
+      "h": 720,
+      "title": "04 \u00b7 Problem Understanding"
+    },
+    {
+      "file": "Existing.dc.html",
+      "x": 0,
+      "y": 820,
+      "w": 1280,
+      "h": 720,
+      "title": "05 \u00b7 Existing Solutions"
+    },
+    {
+      "file": "Solution.dc.html",
+      "x": 1360,
+      "y": 820,
+      "w": 1280,
+      "h": 720,
+      "title": "06 \u00b7 Proposed Solution"
+    },
+    {
+      "file": "Architecture.dc.html",
+      "x": 2720,
+      "y": 820,
+      "w": 1280,
+      "h": 720,
+      "title": "07 \u00b7 Product Architecture"
+    },
+    {
+      "file": "Component1.dc.html",
+      "x": 4080,
+      "y": 820,
+      "w": 1280,
+      "h": 720,
+      "title": "08 \u00b7 Component 1 Development"
+    },
+    {
+      "file": "Demonstration.dc.html",
+      "x": 0,
+      "y": 1640,
+      "w": 1280,
+      "h": 720,
+      "title": "09 \u00b7 Demonstration"
+    },
+    {
+      "file": "Feedback.dc.html",
+      "x": 1360,
+      "y": 1640,
+      "w": 1280,
+      "h": 720,
+      "title": "10 \u00b7 Mentor Feedback"
+    },
+    {
+      "file": "Status.dc.html",
+      "x": 2720,
+      "y": 1641,
+      "w": 1280,
+      "h": 720,
+      "title": "11 \u00b7 Current Status"
+    },
+    {
+      "file": "Phase2.dc.html",
+      "x": 4080,
+      "y": 1640,
+      "w": 1280,
+      "h": 720,
+      "title": "12 \u00b7 Phase 2 Plan"
+    },
+    {
+      "file": "Milestone.dc.html",
+      "x": 0,
+      "y": 2460,
+      "w": 1280,
+      "h": 720,
+      "title": "13 \u00b7 Phase 1 Milestone"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "fill-in-03-10",
+      "x": 2720,
+      "y": -190,
+      "w": 320,
+      "text": "Two slides need your input:\n\n03 \u00b7 Clinical Learning \u2014 what you took from the Dr. Agarwals sessions.\n\n10 \u00b7 Mentor Feedback \u2014 the actual feedback and what it changed.\n\nBoth are marked in amber on the canvas."
+    },
+    {
+      "id": "phase0-delta",
+      "x": 4080,
+      "y": 630,
+      "w": 300,
+      "text": "Slide 08 carries the Phase 0 \u2192 Phase 1 comparison \u2014 this is the slide that answers \"what progress did you actually make?\""
+    }
+  ],
+  "launch": {
+    "view": "focused",
+    "file": "Existing.dc.html"
+  }
+}

@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Clinical Problem</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">02 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">What problem are we solving?</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 26px; flex-grow: 1;">
+      <div style="grid-column: span 3;">
+        <div style="flex-grow: 1; height: 100%; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px;"><div style="font-size: 54px; font-weight: 700; color: #2563eb; letter-spacing: -0.03em; line-height: 1;">1 in 30</div>
+        <div style="font-size: 14px; color: #475569; margin-top: 8px; line-height: 1.45;">children are affected by strabismus</div>
+        <div style="height: 1px; background: #e2e8f0; margin: 18px 0;"></div>
+        <div style="font-size: 30px; font-weight: 700; color: #0f172a; letter-spacing: -0.02em; line-height: 1;">Age 7</div>
+        <div style="font-size: 14px; color: #475569; margin-top: 8px; line-height: 1.45;">age after which the amblyopia treatment window narrows sharply</div></div>
+      </div>
+      <div style="grid-column: span 5;"><div style="margin-bottom: 17px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">The clinical problem</div><p style="font-size: 15px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Strabismus &mdash; a persistent misalignment of the two visual axes. One eye fixates; the other deviates inward, outward, up or down.</p></div><div style="margin-bottom: 17px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Who is affected</div><p style="font-size: 15px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Children. The condition is present from infancy or early childhood, and the child cannot report it &mdash; they do not know their vision is abnormal.</p></div><div style="margin-bottom: 17px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Why it matters</div><p style="font-size: 15px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Untreated strabismus drives amblyopia: the brain suppresses the deviating eye and the visual pathway fails to develop. The treatable window narrows sharply after about age 7.</p></div></div>
+      <div style="grid-column: span 4;"><div style="margin-bottom: 16px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Current practice</div><p style="font-size: 15px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Hirschberg corneal light reflex test and cover / cover-uncover test, performed in a clinic by an ophthalmologist or optometrist.</p></div><div style="margin-bottom: 16px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">The unmet need</div><p style="font-size: 15px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Both require a trained specialist and a clinic visit. Screening therefore does not reach the places children actually are &mdash; schools, anganwadis, rural PHCs and homes. Most cases are found late, after the amblyopia window has closed.</p></div></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

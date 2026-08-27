@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #fffbeb; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Mentor Feedback</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">10 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">What feedback did we receive?</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 12px; padding: 15px 18px; margin-bottom: 18px; display: flex; align-items: center; gap: 12px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M12 9v4"></path><path d="M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+      <div style="font-size: 13.5px; color: #92400e; line-height: 1.45;"><strong>To be completed by the team.</strong> Record the actual feedback received from your mentor and what it changed in the product. Judges may verify this with the mentor &mdash; keep it factual.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 0.62fr 1fr 1fr; gap: 18px; padding-bottom: 9px; border-bottom: 1.5px solid #b45309;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Source</div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Feedback</div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">What we changed / will change</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 0.62fr 1fr 1fr; gap: 18px; padding: 17px 0; border-bottom: 1px solid #fcd34d; align-items: start;"><div style="font-size: 15px; font-weight: 600; color: #2563eb;">Clinical feedback</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What the mentor said]</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What we changed, or will change]</div></div><div style="display: grid; grid-template-columns: 0.62fr 1fr 1fr; gap: 18px; padding: 17px 0; border-bottom: 1px solid #fcd34d; align-items: start;"><div style="font-size: 15px; font-weight: 600; color: #7c3aed;">Technical feedback</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What the mentor said]</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What we changed, or will change]</div></div><div style="display: grid; grid-template-columns: 0.62fr 1fr 1fr; gap: 18px; padding: 17px 0; border-bottom: 1px solid #fcd34d; align-items: start;"><div style="font-size: 15px; font-weight: 600; color: #0d9488;">Product feedback</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What the mentor said]</div><div style="font-size: 13px; color: #a16207; font-style: italic; line-height: 1.5;">[What we changed, or will change]</div></div>
+    <div style="margin-top: auto; padding-top: 14px; font-size: 13px; color: #92400e; line-height: 1.5;">This slide demonstrates that mentoring is actively influencing product development.</div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

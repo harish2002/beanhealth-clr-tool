@@ -1,0 +1,53 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Proposed Solution</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">06 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">What are we building?</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: grid; grid-template-columns: 1.15fr 1fr; gap: 30px; flex-grow: 1;">
+      <div><div style="margin-bottom: 15px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">What we are building</div><p style="font-size: 14px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">A mobile web app that automates the bilateral Hirschberg corneal light reflex test. The phone torch creates the reflex; the camera captures it; computer vision measures how far each reflex sits from its own pupil centre and compares the two eyes.</p></div><div style="margin-bottom: 15px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Intended user</div><p style="font-size: 14px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">Parents, ASHA workers, school nurses and primary-care physicians &mdash; no ophthalmic training assumed.</p></div><div style="margin-bottom: 15px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Intended use</div><p style="font-size: 14px; line-height: 1.55; color: #334155; margin: 0; text-wrap: pretty;">A screening aid that decides whether a child needs to see a specialist. It is explicitly not a diagnostic device.</p></div></div>
+      <div>
+        <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">What makes it different</div>
+        <div style="display: flex; flex-direction: column; gap: 9px;">
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-size: 13.5px; line-height: 1.5; color: #334155;"><strong style="color:#0f172a">Bilateral asymmetry, not absolute displacement.</strong> Comparing the two eyes largely cancels the symmetric component of angle kappa, the anatomical offset that makes normal eyes look deviated.</div></div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-size: 13.5px; line-height: 1.5; color: #334155;"><strong style="color:#0f172a">Five states, not four.</strong> A variance gate returns INCONCLUSIVE rather than a number it cannot stand behind.</div></div>
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 14px;"><div style="font-size: 13.5px; line-height: 1.5; color: #334155;"><strong style="color:#0f172a">Two independent methods.</strong> Hirschberg where a torch reflex exists, plus a torch-free pupil-vs-corner alignment check that works on ordinary photos.</div></div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top: 18px;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Pipeline &mdash; phone photo to clinical triage</div>
+      <div style="display: flex; gap: 6px;"><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M1</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Eye detection</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M2</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Pupil centre</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M3</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">CLR detection</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M4</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Displacement</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M5</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Asymmetry (BAV)</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M6</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Classification</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #2563eb; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #2563eb; font-weight: 600; margin-bottom: 4px;">M7</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Report</div></div><div style="flex-grow: 1; background: #ffffff; border: 1px solid #e2e8f0; border-top: 2.5px solid #7c3aed; border-radius: 8px; padding: 10px 8px; text-align: center;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 9.5px; color: #7c3aed; font-weight: 600; margin-bottom: 4px;">M8</div><div style="font-size: 11px; color: #334155; line-height: 1.3;">Corner alignment</div></div></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

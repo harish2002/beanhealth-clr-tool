@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #fffbeb; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Clinical Learning</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">03 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">What did we learn from the clinical sessions?</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="background: #fef3c7; border: 1px dashed #f59e0b; border-radius: 12px; padding: 15px 18px; margin-bottom: 16px; display: flex; align-items: center; gap: 12px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink: 0;"><path d="M12 9v4"></path><path d="M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+      <div style="font-size: 13.5px; color: #92400e; line-height: 1.45;"><strong>To be completed by the team.</strong> Replace each italic prompt below with what you actually took from the Dr. Agarwals Institute of Optometry sessions. Keep only what is relevant to this project.</div>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 11px;"><div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 10px; padding: 15px 17px; margin-bottom: 11px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Key clinical concept learned</div><div style="font-size: 13.5px; line-height: 1.5; color: #a16207; font-style: italic;">e.g. how the corneal light reflex localises the visual axis, and why symmetry between the two eyes &mdash; not absolute reflex position &mdash; is the diagnostic signal.</div></div><div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 10px; padding: 15px 17px; margin-bottom: 11px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Relevant anatomy / pathology</div><div style="font-size: 13.5px; line-height: 1.5; color: #a16207; font-style: italic;">e.g. cornea, pupil, visual axis, angle kappa; extraocular muscle imbalance; the suppression pathway that leads to amblyopia.</div></div><div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 10px; padding: 15px 17px; margin-bottom: 11px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">How the condition is currently assessed</div><div style="font-size: 13.5px; line-height: 1.5; color: #a16207; font-style: italic;">e.g. Hirschberg reflex estimation, Krimsky, cover / cover-uncover testing, prism measurement of the deviation.</div></div><div style="background: #ffffff; border: 1px solid #fcd34d; border-radius: 10px; padding: 15px 17px; margin-bottom: 11px;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #b45309; margin-bottom: 7px;">Clinical parameters relevant to our solution</div><div style="font-size: 13.5px; line-height: 1.5; color: #a16207; font-style: italic;">e.g. 1&nbsp;mm reflex decentration &asymp; 7&deg; of deviation; prism dioptres = 100&middot;tan&thinsp;&theta;; angle kappa as a confounder; referral thresholds by deviation size.</div></div></div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

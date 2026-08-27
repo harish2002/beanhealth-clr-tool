@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+    a { color: #2563eb; } a:hover { color: #1d4ed8; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width: 1280px; height: 720px; background: #ffffff; display: flex; flex-direction: column; padding: 54px 64px 30px 64px; position: relative;">
+  <div style="display: flex; align-items: baseline; gap: 14px; margin-bottom: 6px;">
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; font-weight: 600; letter-spacing: 0.14em; color: #2563eb; text-transform: uppercase;">Existing Solutions</span>
+    <span style="flex-grow: 1; height: 1px; background: #e2e8f0;"></span>
+    <span style="font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #94a3b8;">05 / 13</span>
+  </div>
+  <h1 style="font-size: 38px; line-height: 1.12; font-weight: 700; color: #0f172a; margin: 0 0 26px 0; letter-spacing: -0.02em; text-wrap: pretty;">What already exists &mdash; and the gap</h1>
+  <div style="flex-grow: 1; display: flex; flex-direction: column; min-height: 0; justify-content: center;">
+    <div style="display: grid; grid-template-columns: 1.05fr 1fr 1.25fr; gap: 22px; padding-bottom: 9px; border-bottom: 1.5px solid #0f172a;">
+      <div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Approach</div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Advantage</div><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #64748b; margin-bottom: 7px;">Limitation</div>
+    </div>
+    <div style="display: grid; grid-template-columns: 1.05fr 1fr 1.25fr; gap: 22px; padding: 15px 0; border-bottom: 1px solid #e2e8f0; align-items: start;"><div style="font-size: 15.5px; font-weight: 600; color: #0f172a; line-height: 1.35;">Manual Hirschberg &amp; cover test</div><div style="font-size: 13.5px; color: #15803d; line-height: 1.5;">Cover/prism cover test is the measurement gold standard; immediate; no hardware cost.</div><div style="font-size: 13.5px; color: #b91c1c; line-height: 1.5;">Requires a trained specialist and a clinic visit. Cannot scale to population screening.</div></div><div style="display: grid; grid-template-columns: 1.05fr 1fr 1.25fr; gap: 22px; padding: 15px 0; border-bottom: 1px solid #e2e8f0; align-items: start;"><div style="font-size: 15.5px; font-weight: 600; color: #0f172a; line-height: 1.35;">Photoscreeners<br><span style='font-weight:400;color:#64748b'>PlusOptix, Spot Vision</span></div><div style="font-size: 13.5px; color: #15803d; line-height: 1.5;">Objective, fast, validated; usable by trained non-specialists.</div><div style="font-size: 13.5px; color: #b91c1c; line-height: 1.5;">Dedicated device costing several lakh rupees. Optimised for refractive error; limited alignment-angle output.</div></div><div style="display: grid; grid-template-columns: 1.05fr 1fr 1.25fr; gap: 22px; padding: 15px 0; border-bottom: 1px solid #e2e8f0; align-items: start;"><div style="font-size: 15.5px; font-weight: 600; color: #0f172a; line-height: 1.35;">Generic smartphone vision apps</div><div style="font-size: 13.5px; color: #15803d; line-height: 1.5;">Zero hardware cost; widely accessible.</div><div style="font-size: 13.5px; color: #b91c1c; line-height: 1.5;">Predominantly acuity or colour tests. Not strabismus-specific, and generally give no clinical angle or referral tier.</div></div>
+    <div style="margin-top: auto; padding-top: 18px;">
+      <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; padding: 20px;"><div style="display: flex; gap: 20px; align-items: flex-start;">
+        <div style="flex-shrink: 0;"><div style="font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; color: #1d4ed8; margin-bottom: 7px;">Our opportunity</div></div>
+        <div style="font-size: 15.5px; line-height: 1.55; color: #1e3a8a; text-wrap: pretty;">No existing option is simultaneously <strong>zero-hardware</strong>, <strong>operable by a non-specialist</strong>, and able to return a <strong>clinical angle with a referral tier</strong>. That intersection is the gap BeanHealth CLR addresses.</div>
+      </div></div>
+    </div>
+  </div>
+  <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 14px; border-top: 1px solid #e2e8f0; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #94a3b8;">
+    <span>BeanHealth CLR &middot; Paediatric Strabismus Screening</span>
+    <span>EyeQ Innovate Hackathon 2.0 &middot; Phase 1</span>
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
