@@ -62,6 +62,12 @@ class ClinicalResult(BaseModel):
                     "This is the primary classification signal — it cancels out kappa angle "
                     "so normal symmetric eyes score near 0° regardless of absolute CLR displacement."
     )
+    asymmetry_pd: float = Field(
+        default=0.0,
+        description="Inter-ocular asymmetry in prism dioptres (asymmetry_degrees × 15/7, "
+                    "the standard Hirschberg conversion). Clinicians grade squint in prism "
+                    "dioptres, so this mirrors asymmetry_degrees in clinical units."
+    )
     severity: Literal["NORMAL", "MILD", "MODERATE", "SEVERE"] = Field(
         description="Severity tier derived from asymmetry_degrees (not absolute deviation)."
     )
@@ -117,6 +123,11 @@ class IntermediateImages(BaseModel):
     module4_clr:    str = Field(description="Step 4: Corneal light reflex detected (amber dot).")
     module5_vector: str = Field(description="Step 5: Displacement vector drawn from pupil to CLR, with measurement.")
     module6_result: str = Field(description="Step 6: Final annotated image with deviation angle and clinical summary.")
+    module8_alignment: Optional[str] = Field(
+        default=None,
+        description="Method B: pupil projected onto the inner→outer canthus axis, "
+                    "with both eye corners marked. None when corners were unavailable."
+    )
 
 
 # ─────────────────────────────────────────────────────────────

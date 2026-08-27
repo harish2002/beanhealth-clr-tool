@@ -41,3 +41,9 @@ npm-debug.log*
 
 # Test artifacts
 backend/tests/test_images/
+
+# Claude Code session worktrees (local scratch)
+.claude/worktrees/
+
+# macOS
+.DS_Store

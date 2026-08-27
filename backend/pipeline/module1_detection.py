@@ -86,6 +86,13 @@ class EyeDetectionResult:
     left_eye_corners:  Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
     right_eye_corners: Optional[Tuple[Tuple[float, float], Tuple[float, float]]] = None
 
+    # Head roll in degrees, measured from the line joining the two iris centres
+    # (0 = eyes level, positive = subject's head tilted so the image-right eye
+    # sits lower).  Module 4 de-rotates displacement vectors by this angle so a
+    # tilted head cannot turn a horizontal deviation into an apparent vertical
+    # one.  None when it cannot be measured.
+    head_roll_deg: Optional[float] = None
+
     # True when the eye corners were ESTIMATED from sclera extent (eyes-only
     # fallback) rather than taken from real FaceMesh canthus landmarks.  In
     # that case both corners are pinned to the iris-centre height, so the
@@ -182,6 +189,33 @@ def _iris_radius_from_landmarks(
     boundary = np.array(landmarks[1:])          # 4 boundary points
     dists = np.linalg.norm(boundary - centre, axis=1)
     return float(np.mean(dists))
+
+
+def _head_roll_degrees(
+    left_iris_px:  List[Tuple[float, float]],
+    right_iris_px: List[Tuple[float, float]],
+) -> Optional[float]:
+    """
+    Estimate head roll from the line joining the two iris centres.
+
+    For an upright head that line is horizontal, so its angle off horizontal is
+    the roll.  Roll matters because every displacement vector this pipeline
+    measures is expressed in image axes: tilt the head and a purely horizontal
+    (eso/exotropic) deviation acquires a spurious vertical component, which is
+    what turns a straight-eyed subject into an apparent hyper/hypotropia.
+
+    Returns degrees (positive = image-right eye sits lower), or None if the
+    iris centres are unusable.
+    """
+    if not left_iris_px or not right_iris_px:
+        return None
+    lx, ly = left_iris_px[0]
+    rx, ry = right_iris_px[0]
+    dx, dy = (lx - rx), (ly - ry)
+    if abs(dx) < 1e-3 and abs(dy) < 1e-3:
+        return None
+    import math as _m
+    return float(_m.degrees(_m.atan2(dy, dx)))
 
 
 def _check_eye_visibility(
@@ -569,6 +603,13 @@ def detect_and_crop_eyes(
         logger.debug(f"Left iris landmarks (px): {left_iris_px}")
         logger.debug(f"Right iris landmarks (px): {right_iris_px}")
 
+    # ── Head roll (used by Module 4 to de-rotate displacement vectors) ──
+    head_roll = _head_roll_degrees(left_iris_px, right_iris_px)
+    if head_roll is not None:
+        logger.debug(f"Module 1: head roll = {head_roll:+.1f}deg")
+        if abs(head_roll) > 15.0:
+            warnings.append("large_head_roll")
+
     # ── Step 6: Compute iris radii from landmarks ──
     left_iris_radius  = _iris_radius_from_landmarks(left_iris_px)
     right_iris_radius = _iris_radius_from_landmarks(right_iris_px)
@@ -620,4 +661,5 @@ def detect_and_crop_eyes(
         warnings=warnings,
         left_eye_corners=left_eye_corners,
         right_eye_corners=right_eye_corners,
+        head_roll_deg=head_roll,
     )

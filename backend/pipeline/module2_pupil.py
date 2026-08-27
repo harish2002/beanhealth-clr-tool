@@ -45,6 +45,7 @@ from utils.constants import (
     HOUGH_PARAM2,
     PUPIL_AGREEMENT_HIGH_PX,
     PUPIL_AGREEMENT_MEDIUM_PX,
+    DARK_PUPIL_MAX_IRIS_RADII,
 )
 from utils.exceptions import PupilError
 
@@ -357,8 +358,30 @@ def _dark_pupil_centre(
 
     ccx, ccy = centroids[best_lbl]
 
+    # Sub-pixel refinement: darkness-weighted centroid.
+    #
+    # The binary centroid above weights every thresholded pixel equally, so it
+    # is quantised by the threshold and carries ~1px of noise — which at this
+    # pipeline's working resolution is worth several degrees of apparent
+    # asymmetry.  Weighting each pixel by how DARK it is (relative to the
+    # blob's brightest pixel) puts the centre on the pupil's intensity minimum
+    # rather than on the midpoint of whatever the threshold happened to keep.
+    comp_pixels = (labels == best_lbl)
+    ys, xs = np.nonzero(comp_pixels)
+    if ys.size > 0:
+        vals = gray[ys, xs].astype(np.float64)
+        wts = vals.max() - vals          # darker pixel → larger weight
+        total = wts.sum()
+        if total > 0:
+            wcx = float((xs * wts).sum() / total)
+            wcy = float((ys * wts).sum() / total)
+            # Only adopt if it agrees with the binary centroid — a large jump
+            # means the blob is not a clean pupil.
+            if np.hypot(wcx - ccx, wcy - ccy) <= iris_radius * 0.35:
+                ccx, ccy = wcx, wcy
+
     # Refine with an ellipse fit — robust to partial occlusion of the pupil
-    comp = (labels == best_lbl).astype(np.uint8) * 255
+    comp = comp_pixels.astype(np.uint8) * 255
     contours, _ = cv2.findContours(comp, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     if contours and len(contours[0]) >= 5:
         try:
@@ -530,6 +553,23 @@ def _localise_one_eye(
     seed_centre   = hough_centre if hough_centre is not None else lm_centre
 
     dark_pupil = _dark_pupil_centre(crop_rgb, seed_centre, iris_radius, eye_label)
+
+    # ── Anatomical sanity bound on the dark-blob candidate ──
+    # The pupil is concentric with the iris, so its centre cannot lie far from
+    # the iris centre.  A dark blob beyond DARK_PUPIL_MAX_IRIS_RADII is an
+    # eyelash, eyeliner, brow shadow or the eye corner — measuring displacement
+    # from it produces a large false reading in ONE eye, which the bilateral
+    # comparison then reports as severe asymmetry.  Reject and fall back.
+    if dark_pupil is not None and iris_radius > 0:
+        gap_px = float(np.linalg.norm(np.array(dark_pupil) - np.array(lm_centre)))
+        if gap_px > DARK_PUPIL_MAX_IRIS_RADII * iris_radius:
+            logger.warning(
+                f"Module 2 [{eye_label}]: dark-blob candidate rejected — "
+                f"{gap_px:.1f}px from iris centre = {gap_px / iris_radius:.2f} iris radii "
+                f"(max {DARK_PUPIL_MAX_IRIS_RADII}); falling back to iris-circle estimate."
+            )
+            flags.append(f"darkblob_rejected_{eye_label}")
+            dark_pupil = None
 
     if dark_pupil is not None:
         final_centre = dark_pupil

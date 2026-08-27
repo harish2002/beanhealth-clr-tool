@@ -127,6 +127,10 @@ def _make_displacement() -> DisplacementResult:
 def _make_asymmetry() -> AsymmetryResult:
     return AsymmetryResult(
         asymmetry_score=0.0,
+        asymmetry_degrees=13.4,
+        asymmetry_pd=round(13.4 * 15 / 7, 1),
+        bav_nasal=0.0,
+        bav_vertical=0.0,
         dominant_eye="equal",
         deviation_degrees=13.4,
         deviation_mm=1.914,

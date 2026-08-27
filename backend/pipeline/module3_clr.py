@@ -170,7 +170,7 @@ def _adaptive_threshold_mask(gray: np.ndarray) -> Tuple[np.ndarray, float]:
 # Internal: Connected component analysis
 # ─────────────────────────────────────────────────────────────
 
-def _find_blobs(mask: np.ndarray) -> List[BlobCandidate]:
+def _find_blobs(mask: np.ndarray, gray: Optional[np.ndarray] = None) -> List[BlobCandidate]:
     """
     Find all connected white regions in the binary mask and compute
     area, centroid, and circularity for each.
@@ -198,11 +198,33 @@ def _find_blobs(mask: np.ndarray) -> List[BlobCandidate]:
         if area < 1:
             continue
 
+        # Sub-pixel centroid.
+        #
+        # connectedComponentsWithStats returns the BINARY centroid — every
+        # pixel in the blob counts equally, so the answer is quantised to the
+        # thresholding and carries ~1px of noise.  At the resolutions this
+        # pipeline runs at, 1px of differential error is several degrees of
+        # apparent asymmetry, so that noise dominates the measurement.
+        #
+        # The corneal reflex is a bright peak with a falloff, so weighting each
+        # pixel by its intensity above the local blob floor recovers the true
+        # peak position to a fraction of a pixel.
+        blob_pixels = (labels == label)
         cx = float(centroids[label, 0])
         cy = float(centroids[label, 1])
+        if gray is not None:
+            ys, xs = np.nonzero(blob_pixels)
+            w = gray[ys, xs].astype(np.float64)
+            # Subtract the blob's own floor so dim edge pixels don't drag the
+            # peak toward the blob's geometric middle.
+            w = w - w.min()
+            total = w.sum()
+            if total > 0:
+                cx = float((xs * w).sum() / total)
+                cy = float((ys * w).sum() / total)
 
         # Compute perimeter via contours for circularity
-        blob_mask = (labels == label).astype(np.uint8) * 255
+        blob_mask = blob_pixels.astype(np.uint8) * 255
         contours, _ = cv2.findContours(
             blob_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
         )
@@ -441,7 +463,7 @@ def _detect_clr_one_eye(
     mask, threshold_val = _adaptive_threshold_mask(gray)
 
     # ── Step 4: Connected component analysis ──
-    blobs = _find_blobs(mask)
+    blobs = _find_blobs(mask, gray)
 
     if not blobs:
         logger.warning(f"Module 3 [{eye_label}]: No blobs found in mask after threshold.")

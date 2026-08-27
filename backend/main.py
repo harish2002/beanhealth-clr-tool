@@ -217,6 +217,7 @@ async def analyse(
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
             upstream_flags=upstream_flags,
+            head_roll_deg=detection.head_roll_deg or 0.0,
         )
 
         # Module 5 — Bilateral asymmetry vector + Hirschberg angle
@@ -409,6 +410,7 @@ async def _run_single_frame_pipeline(
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
             upstream_flags=upstream_flags,
+            head_roll_deg=detection.head_roll_deg or 0.0,
         )
         asymmetry    = compute_asymmetry_and_angle(
             left_displacement_norm=displacement.left_displacement_norm,
@@ -902,6 +904,7 @@ def _process_batch_item(
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
             upstream_flags=pupil_result.flags + clr_result.flags,
+            head_roll_deg=detection.head_roll_deg or 0.0,
         )
         asymmetry = compute_asymmetry_and_angle(
             left_displacement_norm=displacement.left_displacement_norm,

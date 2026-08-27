@@ -96,6 +96,10 @@ _COLOUR_PUPIL    = (235, 100,  20)   # blue
 _COLOUR_CLR      = ( 20, 180, 255)   # amber / orange-yellow
 _COLOUR_VECTOR   = (255, 255, 255)   # white
 _COLOUR_IRIS_RING = (100, 220, 100)  # soft green ring
+# Module 8 (corner alignment) palette — BGR
+_COLOUR_CANTHUS   = (200, 120, 255)  # pink/magenta — the two eye corners
+_COLOUR_AXIS      = (200, 200, 200)  # grey — inner->outer canthus axis
+_COLOUR_PROJ      = (120, 200, 255)  # amber — pupil projected onto the axis
 
 # Border colours by urgency tier
 _BORDER_COLOUR = {
@@ -158,6 +162,135 @@ def _draw_eye_annotations(
     # Pupil blue dot
     cv2.circle(img, pupil_full, 6, _COLOUR_PUPIL, -1, cv2.LINE_AA)
     cv2.circle(img, pupil_full, 7, (255,255,255),   1, cv2.LINE_AA)  # white outline
+
+
+def _draw_alignment_annotations(
+    crop: np.ndarray,
+    pupil: Tuple[float, float],
+    corners_full: Tuple[Tuple[float, float], Tuple[float, float]],
+    crop_box: Tuple[int, int, int, int],
+    h_ratio: Optional[float] = None,
+    side_label: Optional[str] = None,
+) -> np.ndarray:
+    """
+    Draw Module 8's geometry onto an eye crop.
+
+    Method B measures where the pupil sits along the inner->outer canthus axis.
+    Stated as a bare percentage that claim is unverifiable; drawn on the eye it
+    is self-evident, which is the difference between an auditable result and a
+    black box.
+
+    Renders: the two canthi, the axis joining them, the pupil's perpendicular
+    projection onto that axis, and the resulting h_ratio.
+
+    Args:
+        crop:         eye crop (RGB or BGR — drawn in place on a copy).
+        pupil:        pupil centre in CROP-local coords.
+        corners_full: (inner, outer) canthi in FULL-image coords.
+        crop_box:     (x1, y1, x2, y2) of this crop within the full image.
+        h_ratio:      fractional position along the axis, for the label.
+        side_label:   "L" / "R".
+    """
+    out = crop.copy()
+    ox, oy = crop_box[0], crop_box[1]
+
+    # Canthi into crop-local space
+    (ix, iy), (oxr, oyr) = corners_full
+    inner = (ix - ox, iy - oy)
+    outer = (oxr - ox, oyr - oy)
+
+    ip = (int(round(inner[0])), int(round(inner[1])))
+    op = (int(round(outer[0])), int(round(outer[1])))
+    pp = (int(round(pupil[0])), int(round(pupil[1])))
+
+    # Axis between the corners
+    cv2.line(out, ip, op, _COLOUR_AXIS, 1, cv2.LINE_AA)
+
+    # Perpendicular projection of the pupil onto that axis — this IS h_ratio
+    ax, ay = outer[0] - inner[0], outer[1] - inner[1]
+    denom = ax * ax + ay * ay
+    if denom > 1e-6:
+        t = ((pupil[0] - inner[0]) * ax + (pupil[1] - inner[1]) * ay) / denom
+        proj = (inner[0] + t * ax, inner[1] + t * ay)
+        pj = (int(round(proj[0])), int(round(proj[1])))
+        # dropped perpendicular, then the point on the axis
+        cv2.line(out, pp, pj, _COLOUR_PROJ, 1, cv2.LINE_AA)
+        cv2.circle(out, pj, 3, _COLOUR_PROJ, -1, cv2.LINE_AA)
+
+    # Corner markers (small crosses read better than dots at this scale)
+    for pt in (ip, op):
+        cv2.drawMarker(out, pt, _COLOUR_CANTHUS, cv2.MARKER_TILTED_CROSS, 9, 2, cv2.LINE_AA)
+
+    # Pupil
+    cv2.circle(out, pp, 4, _COLOUR_PUPIL, -1, cv2.LINE_AA)
+    cv2.circle(out, pp, 5, (255, 255, 255), 1, cv2.LINE_AA)
+
+    if side_label:
+        _draw_label(out, side_label, (5, 14), colour=(220, 220, 220), scale=0.45, thickness=1)
+    if h_ratio is not None:
+        h = out.shape[0]
+        _draw_label(out, f"h={h_ratio:.2f}", (4, h - 5),
+                    colour=(255, 235, 80), scale=0.40, thickness=1)
+    return out
+
+
+def _build_alignment_view(
+    original_img: np.ndarray,
+    detection: EyeDetectionResult,
+    pupil_result: PupilResult,
+    alignment: AlignmentResult,
+) -> Optional[str]:
+    """
+    Render the Method B (corner-alignment) view for both eyes as one base64 JPEG.
+
+    Cut fresh from the full image rather than reusing Module 1's eye crops: the
+    canthi sit roughly 2.5 iris radii from the pupil, which is outside the tight
+    crop, so drawing on that crop would clip the very landmarks being shown.
+
+    Returns None when corners are unavailable (nothing meaningful to draw).
+    """
+    if not alignment.available:
+        return None
+    if detection.left_eye_corners is None or detection.right_eye_corners is None:
+        return None
+
+    img_h, img_w = original_img.shape[:2]
+    views: List[np.ndarray] = []
+
+    for side in ("left", "right"):
+        corners = getattr(detection, f"{side}_eye_corners")
+        box     = getattr(detection, f"{side}_crop_box")
+        pupil   = getattr(pupil_result, f"{side}_pupil")
+        h_ratio = getattr(alignment, f"{side}_h_ratio")
+
+        # Pupil into full-image space, then a box spanning both canthi + pupil
+        px, py = pupil[0] + box[0], pupil[1] + box[1]
+        xs = [corners[0][0], corners[1][0], px]
+        ys = [corners[0][1], corners[1][1], py]
+        span = max(max(xs) - min(xs), 1.0)
+        pad_x = span * 0.18
+        pad_y = span * 0.38          # eyes are wide and short — pad height more
+
+        x1 = max(0, int(min(xs) - pad_x)); x2 = min(img_w, int(max(xs) + pad_x))
+        y1 = max(0, int(min(ys) - pad_y)); y2 = min(img_h, int(max(ys) + pad_y))
+        if x2 - x1 < 10 or y2 - y1 < 10:
+            return None
+
+        sub = original_img[y1:y2, x1:x2]
+        views.append(_draw_alignment_annotations(
+            sub,
+            pupil=(px - x1, py - y1),
+            corners_full=corners,
+            crop_box=(x1, y1, x2, y2),
+            h_ratio=h_ratio,
+            side_label="L" if side == "left" else "R",
+        ))
+
+    try:
+        return combine_crops_to_base64(views[0], views[1])
+    except Exception as e:      # never let a picture break the report
+        logger.warning(f"Module 7: alignment view render failed: {e}")
+        return None
 
 
 def _draw_zoomed_annotations(
@@ -532,6 +665,14 @@ def build_success_report(
             seen.add(f)
             all_flags.append(f)
 
+    # Method B needs a picture as much as Method A does — a bare percentage is
+    # not auditable.  Never allowed to break the report.
+    try:
+        m8_b64 = _build_alignment_view(original_img, detection, pupil_result, alignment)
+    except Exception as e:
+        logger.warning(f"Module 7: alignment view skipped: {e}")
+        m8_b64 = None
+
     report = {
         "status": "SUCCESS",
         "patient": {
@@ -545,6 +686,7 @@ def build_success_report(
             "deviation_degrees":       round(asymmetry.deviation_degrees, 2),
             "asymmetry_score":         round(asymmetry.asymmetry_score,   4),
             "asymmetry_degrees":       round(asymmetry.asymmetry_degrees, 2),
+            "asymmetry_pd":            round(asymmetry.asymmetry_pd, 1),
             "severity":                asymmetry.severity,
             "referral_recommendation": classification.referral_recommendation,
             "timeframe":               classification.timeframe,
@@ -568,6 +710,7 @@ def build_success_report(
         },
         "alignment": _alignment_to_dict(alignment),
         "intermediate_images": {
+            "module8_alignment": m8_b64,
             "module1_crops":  m1_b64,
             "module2_clahe":  m2_b64,
             "module3_pupil":  m3_b64,

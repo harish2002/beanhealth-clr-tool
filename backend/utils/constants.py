@@ -25,8 +25,14 @@ RIGHT_EYE_BOUNDARY = [362, 382, 381, 380, 374, 373, 390, 249, 263,
 # Pipeline "left"  = subject's LEFT eye  = image-RIGHT half.
 # Pipeline "right" = subject's RIGHT eye = image-LEFT  half.
 # Each tuple is (inner / medial canthus, outer / lateral canthus).
-LEFT_EYE_CORNERS  = (362, 263)   # subject's left eye:  inner=362, outer=263
-RIGHT_EYE_CORNERS = (133, 33)    # subject's right eye: inner=133, outer=33
+# These MUST match the eye each *_EYE_BOUNDARY set describes, or Module 8
+# projects a pupil onto the OTHER eye's canthus axis and h_ratio lands far
+# outside its valid 0..1 range.
+# LEFT_EYE_BOUNDARY contains 33/133  -> left  eye corners come from {33, 133}
+# RIGHT_EYE_BOUNDARY contains 362/263 -> right eye corners come from {362, 263}
+# 133 and 362 are the medial (nasal) canthi; 33 and 263 are the lateral ones.
+LEFT_EYE_CORNERS  = (133, 33)    # left  eye: inner=133, outer=33
+RIGHT_EYE_CORNERS = (362, 263)   # right eye: inner=362, outer=263
 
 # ─────────────────────────────────────────────
 # Module 8 — Pupil-vs-corner alignment (CLR-free screening net)
@@ -95,6 +101,13 @@ CLR_RESCUE_MIN_CIRCULARITY = 0.20 # allow irregular shape
 HIRSCHBERG_CONSTANT  = 7.0    # degrees per mm of CLR displacement
 IRIS_RADIUS_MM       = 5.75   # average adult iris radius in mm
 
+# Prism dioptres are DEFINED as 100 × tan(angle) — 1Δ deflects light 1 cm
+# at 1 m.  The conversion is therefore trigonometric, not a fixed ratio:
+#   7°  →  12.3Δ        15° →  26.8Δ        30° →  57.7Δ
+# A linear "PD per degree" constant (the 15/7 or 22/7 shortcuts that
+# circulate in Hirschberg teaching) diverges badly above ~10° and is not
+# used here.  See degrees_to_prism_dioptres() in module5_asymmetry.
+
 SEVERITY_MILD_DEG     = 5.0
 SEVERITY_MODERATE_DEG = 15.0
 SEVERITY_SEVERE_DEG   = 30.0
@@ -161,3 +174,12 @@ DIRECTION_NASAL    = "nasal"
 DIRECTION_TEMPORAL = "temporal"
 DIRECTION_SUPERIOR = "superior"
 DIRECTION_INFERIOR = "inferior"
+
+# Module 2 — dark-blob pupil sanity bound.
+# The pupil is anatomically concentric with the iris, so its centre cannot sit
+# far from the iris centre.  A "dark pupil" found beyond this fraction of the
+# iris radius is eyelash, eyeliner, brow shadow or the eye corner — never a
+# pupil.  Measuring from such a point produces a large false displacement in
+# one eye and hence a false asymmetry, so the candidate is rejected and the
+# iris-circle estimate is used instead.
+DARK_PUPIL_MAX_IRIS_RADII = 0.6

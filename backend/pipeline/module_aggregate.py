@@ -381,6 +381,7 @@ def aggregate_frame_results(
         SEVERITY_NORMAL, SEVERITY_MILD, SEVERITY_MODERATE, SEVERITY_SEVERE,
         SEVERITY_MILD_DEG, SEVERITY_MODERATE_DEG, SEVERITY_SEVERE_DEG,
     )
+    from pipeline.module5_asymmetry import degrees_to_prism_dioptres
 
     # Derive severity from averaged ASYMMETRY degrees (not absolute deviation).
     # This matches the kappa-angle-corrected logic in Module 5:
@@ -511,6 +512,7 @@ def aggregate_frame_results(
             "deviation_std_deg":       round(dev_std,       2),
             "asymmetry_score":         round(asym_mean,     4),
             "asymmetry_degrees":       round(asym_deg_mean, 2),
+            "asymmetry_pd":            degrees_to_prism_dioptres(asym_deg_mean),
             "severity":                avg_severity,
             "referral_recommendation": avg_referral,
             "timeframe":               avg_timeframe,

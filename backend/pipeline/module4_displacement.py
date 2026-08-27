@@ -165,6 +165,7 @@ def measure_displacement(
     iris_radius: float,
     eye: str = "left",
     mirror: bool = True,
+    head_roll_deg: float = 0.0,
 ) -> dict:
     """
     Compute displacement of CLR from pupil centre for a single eye.
@@ -175,6 +176,12 @@ def measure_displacement(
         iris_radius: iris radius in pixels (for normalisation)
         eye:         "left" or "right" — used for anatomical direction labelling
         mirror:      True if image is front-camera (mirrored); False for back camera
+        head_roll_deg: head tilt from Module 1.  The displacement vector is
+                     de-rotated by this angle so that "horizontal" and
+                     "vertical" mean horizontal and vertical *in the head's
+                     own frame*, not the camera's.  Without it a tilted head
+                     leaks a horizontal deviation into the vertical axis and
+                     a straight-eyed subject reads as hyper/hypotropia.
 
     Returns:
         dict with keys:
@@ -191,6 +198,15 @@ def measure_displacement(
 
     dx = clr[0] - pupil[0]
     dy = clr[1] - pupil[1]
+
+    # De-rotate into the head's frame.  Magnitude is unchanged by rotation —
+    # this only corrects which axis the deviation is attributed to, which is
+    # what drives the eso/exo vs hyper/hypo label.
+    if head_roll_deg:
+        theta = math.radians(-head_roll_deg)
+        cos_t, sin_t = math.cos(theta), math.sin(theta)
+        dx, dy = dx * cos_t - dy * sin_t, dx * sin_t + dy * cos_t
+
     magnitude = math.sqrt(dx * dx + dy * dy)
     normalised = magnitude / iris_radius
     angle_rad = math.atan2(dy, dx)
@@ -235,6 +251,7 @@ def compute_displacement(
     right_iris_radius: float,
     upstream_flags: Optional[List[str]] = None,
     mirror: bool = True,
+    head_roll_deg: float = 0.0,
 ) -> DisplacementResult:
     """
     Compute CLR displacement from pupil centre for both eyes.
@@ -258,8 +275,10 @@ def compute_displacement(
     flags: List[str] = list(upstream_flags or [])
 
     # Compute per eye
-    left  = measure_displacement(left_pupil,  left_clr,  left_iris_radius,  eye="left",  mirror=mirror)
-    right = measure_displacement(right_pupil, right_clr, right_iris_radius, eye="right", mirror=mirror)
+    left  = measure_displacement(left_pupil,  left_clr,  left_iris_radius,  eye="left",  mirror=mirror,
+        head_roll_deg=head_roll_deg)
+    right = measure_displacement(right_pupil, right_clr, right_iris_radius, eye="right", mirror=mirror,
+        head_roll_deg=head_roll_deg)
 
     # Warn if displacement is extremely large (> 1 iris radius) — may indicate bad detection
     if left["normalised"] > 1.0:

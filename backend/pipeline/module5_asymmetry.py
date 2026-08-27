@@ -99,6 +99,9 @@ class AsymmetryResult:
     deviation_degrees:  float   # Hirschberg angle of dominant eye (reference only)
     deviation_mm:       float   # physical displacement in mm
     severity:           str     # NORMAL / MILD / MODERATE / SEVERE
+    # Prism dioptres = 100·tan(asymmetry_degrees). Defaulted so existing
+    # constructors (tests, fixtures) stay valid; real pipeline always sets it.
+    asymmetry_pd:       float = 0.0
     flags:              List[str] = field(default_factory=list)
 
 
@@ -235,6 +238,24 @@ def compute_asymmetry(
         "dominant_eye":    dominant_eye,
         "dominant_norm":   dominant_norm,
     }
+
+
+def degrees_to_prism_dioptres(degrees: float) -> float:
+    """
+    Convert an ocular deviation in degrees to prism dioptres.
+
+    A prism dioptre is defined as 100 × tan(angle): 1Δ deflects light by
+    1 cm at 1 metre.  The relationship is trigonometric, so the linear
+    "PD per degree" shortcuts common in Hirschberg teaching (15/7, 22/7)
+    are only usable for very small angles and overstate large ones.
+
+    Args:
+        degrees: deviation angle in degrees (>= 0).
+
+    Returns:
+        Deviation in prism dioptres, rounded to 1 decimal place.
+    """
+    return round(100.0 * math.tan(math.radians(degrees)), 1)
 
 
 def compute_angle(displacement_norm: float) -> dict:
@@ -402,6 +423,7 @@ def compute_asymmetry_and_angle(
     result = AsymmetryResult(
         asymmetry_score=round(asymmetry_score, 4),
         asymmetry_degrees=round(asymmetry_degrees, 2),
+        asymmetry_pd=degrees_to_prism_dioptres(asymmetry_degrees),
         bav_nasal=round(bav_nasal, 4),
         bav_vertical=round(bav_vertical, 4),
         dominant_eye=dominant_eye,
