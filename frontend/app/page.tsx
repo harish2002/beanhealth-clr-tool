@@ -85,7 +85,7 @@ export default function LandingPage() {
     <main className="min-h-screen bg-white text-ink-900">
       <TopBar
         right={
-          <Link href="/patient" className="btn-primary btn-sm">
+          <Link href="/patient" className="btn-primary btn-sm whitespace-nowrap shrink-0">
             Start screening
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>

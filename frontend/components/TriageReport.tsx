@@ -430,8 +430,9 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
         ══════════════════════════════════════════════════════════════ */}
         <section className={`rounded-card border ${config.borderColour} ${config.bgColour} overflow-hidden print:bg-white print:border-ink-100`}>
 
-          {/* Verdict header — condition on the left, tier block on the right */}
-          <div className="flex items-stretch">
+          {/* Verdict header. On phones the tier reads as a banner above the
+              condition; from sm up it becomes the right-hand column. */}
+          <div className="flex flex-col-reverse sm:flex-row sm:items-stretch">
             <div className="flex-1 min-w-0 p-6">
               <p className="eyebrow-muted mb-2">Method A · Hirschberg corneal light reflex</p>
               <h2 className={`font-display text-[28px] leading-tight ${config.colour}`}>
@@ -443,12 +444,13 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
               </span>
             </div>
 
-            <div className={`${config.badgeColour} px-6 py-6 text-white text-center shrink-0
-                             flex flex-col justify-center min-w-[128px]`}>
-              <p className="font-display text-[26px] leading-none">
+            <div className={`${config.badgeColour} text-white shrink-0
+                             flex sm:flex-col items-center justify-between sm:justify-center
+                             px-6 py-3.5 sm:py-6 sm:min-w-[128px] sm:text-center`}>
+              <p className="font-display text-[22px] sm:text-[26px] leading-none">
                 {displayTier ?? "Review"}
               </p>
-              <p className="font-mono text-[10px] font-semibold tracking-[0.18em] mt-2.5 opacity-80">
+              <p className="font-mono text-[10px] font-semibold tracking-[0.18em] opacity-80 sm:mt-2.5">
                 {r.severity}
               </p>
             </div>

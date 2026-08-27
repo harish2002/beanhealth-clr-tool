@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import StreamingCapture from "@/components/StreamingCapture";
-import { TopBar, FlowStepper } from "@/components/ui/Chrome";
+import { TopBar } from "@/components/ui/Chrome";
 import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
 
 const PIPELINE = [
@@ -104,11 +104,9 @@ export default function CapturePage() {
             </div>
           </div>
 
-          <div className="sm:hidden">
-            <FlowStepper current={2} />
-          </div>
-          <p className="hidden sm:block text-[11.5px] text-ink-400 font-mono shrink-0">
-            8-FRAME BILATERAL ANALYSIS
+          <p className="text-[11px] sm:text-[11.5px] text-ink-400 font-mono shrink-0 text-right leading-tight">
+            8-FRAME<span className="hidden sm:inline"> BILATERAL</span>
+            <br className="sm:hidden" /> ANALYSIS
           </p>
         </div>
       </div>

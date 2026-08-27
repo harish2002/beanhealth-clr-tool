@@ -31,10 +31,11 @@ export function BrandMark({ compact = false }: { compact?: boolean }) {
       </span>
       {!compact && (
         <span className="leading-none">
-          <span className="block text-[14px] font-semibold text-ink-900 tracking-[-0.01em]">
+          <span className="block text-[14px] font-semibold text-ink-900 tracking-[-0.01em] whitespace-nowrap">
             BeanHealth <span className="text-ink-400 font-normal">CLR</span>
           </span>
-          <span className="block text-[10.5px] text-ink-400 mt-1">
+          {/* The tagline is the first thing to go when the bar gets tight */}
+          <span className="hidden sm:block text-[10.5px] text-ink-400 mt-1 whitespace-nowrap">
             Pediatric strabismus screening
           </span>
         </span>
@@ -110,7 +111,7 @@ export function TopBar({
       className="sticky top-0 z-30 border-b border-ink-100 bg-white/85 backdrop-blur-md
                  supports-[backdrop-filter]:bg-white/75 no-print"
     >
-      <div className="max-w-6xl mx-auto px-5 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <div className="max-w-6xl mx-auto px-5 sm:px-6 h-16 flex items-center justify-between gap-3">
         <BrandMark />
         {right ?? (step ? <FlowStepper current={step} /> : null)}
       </div>
