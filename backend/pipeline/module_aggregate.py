@@ -486,6 +486,24 @@ def aggregate_frame_results(
             "flags": all_flags + ["high_variance_asymmetry"],
         }
 
+    # The representative frame carries the verdict IT was given individually.
+    # When per-frame readings straddle a severity threshold that can contradict
+    # the aggregate the report actually issues, so re-stamp the picture with the
+    # aggregate verdict rather than the frame's.
+    annotated_b64 = best_frame_report.get("annotated_image_b64") if best_frame_report else None
+    if annotated_b64:
+        frame_tier = (best_frame_report.get("result") or {}).get("urgency_tier")
+        if frame_tier != avg_urgency:
+            logger.info(
+                f"[Aggregate] Re-stamping annotated image: frame said "
+                f"{frame_tier}/{(best_frame_report.get('result') or {}).get('condition_name')}, "
+                f"aggregate is {avg_urgency}/{avg_condition}"
+            )
+            from pipeline.module7_report import relabel_annotated_image
+            annotated_b64 = relabel_annotated_image(
+                annotated_b64, avg_urgency, avg_condition, avg_icd10
+            )
+
     return {
         "status":         "SUCCESS",
         # ── Aggregated measurements ──
@@ -526,6 +544,6 @@ def aggregate_frame_results(
         },
         # ── Images from best frame ──
         "intermediate_images":   best_frame_report.get("intermediate_images")  if best_frame_report else None,
-        "annotated_image_b64":   best_frame_report.get("annotated_image_b64") if best_frame_report else None,
+        "annotated_image_b64":   annotated_b64,
         "patient":               best_frame_report.get("patient")             if best_frame_report else None,
     }

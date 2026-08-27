@@ -494,6 +494,55 @@ def _annotate_image(
     return annotated
 
 
+def relabel_annotated_image(
+    image_b64: str,
+    urgency_tier: str,
+    condition_name: str,
+    icd10_code: str,
+) -> str:
+    """
+    Re-stamp an annotated image's banner and border with a different verdict.
+
+    The multi-frame path picks one representative frame's annotated image, but
+    that frame carries the verdict IT was given individually.  When per-frame
+    readings straddle a severity threshold the frame's verdict can disagree
+    with the aggregate — e.g. accepted readings of 8.5/3.9/4.5/8.3 average to
+    6.3 degrees (MILD, Hypertropia) while the median-closest frame reads 4.5
+    (NORMAL, Orthophoria).  The report then showed one verdict in text and the
+    opposite burned into the picture.
+
+    This repaints the banner strip and the border so the image always states
+    the verdict the report actually issued.  Returns the original string
+    unchanged if anything goes wrong — a mislabelled picture is bad, but no
+    picture is worse.
+    """
+    try:
+        raw = base64.b64decode(image_b64)
+        arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
+        if arr is None:
+            return image_b64
+
+        # The border is painted INSIDE the image, so the new one overwrites the
+        # old in place — no cropping (which would eat real pixels each pass).
+        # The old banner text is baked in, so black it out before rewriting.
+        b = _BORDER_THICKNESS
+        cv2.rectangle(arr, (b, b), (arr.shape[1] - b, b + 30), (0, 0, 0), -1)
+
+        banner = f"{urgency_tier}  |  {condition_name}  |  ICD {icd10_code}"
+        _draw_label(arr, banner, (16, 28),
+                    colour=_BORDER_COLOUR.get(urgency_tier, (255, 255, 255)),
+                    scale=0.5, thickness=1)
+        arr = _draw_urgency_border(arr, urgency_tier)
+
+        ok, buf = cv2.imencode(".jpg", arr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        if not ok:
+            return image_b64
+        return base64.b64encode(buf.tobytes()).decode("ascii")
+    except Exception as e:
+        logger.warning(f"Module 7: could not relabel annotated image: {e}")
+        return image_b64
+
+
 def _image_to_base64_jpeg(img_rgb: np.ndarray, quality: int = 90) -> str:
     """
     Encode an RGB numpy image to a base64 JPEG string.
