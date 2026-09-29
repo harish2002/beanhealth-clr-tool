@@ -92,7 +92,8 @@ def _project_pupil(
 
     Returns (h_ratio, v_ratio):
         h_ratio = fractional position along the axis (0=inner, 1=outer)
-        v_ratio = signed perpendicular distance / axis length
+        v_ratio = signed perpendicular distance / axis length,
+                  positive = below the canthus line, in either eye
     or None if the canthi coincide (degenerate).
     """
     p = np.array(pupil_full, dtype=float)
@@ -104,9 +105,15 @@ def _project_pupil(
         return None
     rel = p - a
     h_ratio = float(np.dot(rel, axis) / (width * width))
-    # 2-D cross product gives signed perpendicular distance
+    # 2-D cross product gives signed perpendicular distance — but its sign is
+    # relative to this eye's own inner→outer axis, and the two eyes' axes point
+    # in opposite directions (the nose sits between them). Orient it against
+    # image-down so v means the same thing in both eyes; otherwise two pupils
+    # sitting equally below their lines read as a large vertical asymmetry.
+    # cross(axis, image-down) reduces to axis[0].
     cross = axis[0] * rel[1] - axis[1] * rel[0]
-    v_ratio = float(cross / (width * width))
+    down_sign = 1.0 if axis[0] >= 0 else -1.0
+    v_ratio = float(down_sign * cross / (width * width))
     return h_ratio, v_ratio
 
 
