@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import StreamingCapture from "@/components/StreamingCapture";
@@ -104,10 +105,9 @@ export default function CapturePage() {
             </div>
           </div>
 
-          <p className="text-[11px] sm:text-[11.5px] text-ink-400 font-mono shrink-0 text-right leading-tight">
-            8-FRAME<span className="hidden sm:inline"> BILATERAL</span>
-            <br className="sm:hidden" /> ANALYSIS
-          </p>
+          <Link href="/live" className="btn-secondary btn-sm whitespace-nowrap shrink-0">
+            Live eye view
+          </Link>
         </div>
       </div>
 
