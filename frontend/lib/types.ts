@@ -161,6 +161,8 @@ export interface StreamSuccessResponse {
   intermediate_images?:  IntermediateImages;
   annotated_image_b64?:  string;
   timestamp:             string;
+  /** Present only when the request carried a client_measurement. */
+  parity?:               ParityReport;
 }
 
 export interface StreamInconclusiveResponse {
@@ -185,9 +187,54 @@ export interface StreamInconclusiveResponse {
   // Carries module8_alignment so Method B can be shown with its geometry even
   // when Method A produced nothing.
   intermediate_images?: IntermediateImages;
+  /** Present only when the request carried a client_measurement. */
+  parity?:            ParityReport;
 }
 
 export type StreamAnalyseResponse = StreamSuccessResponse | StreamInconclusiveResponse;
+
+// ─── Browser / server parity (live-view comparison) ─────────────────────────
+
+/** The browser's own measurement of the frames it sends, for side-by-side comparison. */
+export interface ClientMeasurement {
+  schema:                   1;
+  pipeline:                 string;
+  frames:                   number;
+  reflex_frames:            number;
+  per_frame_asymmetry_deg:  (number | null)[];
+  asymmetry_deg:            number | null;
+  asymmetry_std_deg:        number | null;
+  tier:                     UrgencyTier | null;
+  unstable:                 boolean;
+  method_b: {
+    h_asym:  number;
+    v_asym:  number;
+    verdict: "ALIGNED" | "BORDERLINE" | "ASYMMETRIC";
+  } | null;
+}
+
+interface ParityPair<T> { client: T | null; server: T | null }
+
+/** Returned by /analyse-stream when a client_measurement was sent. Never affects the result. */
+export interface ParityReport {
+  error?:          string;
+  client_pipeline?: string;
+  server_status?:  AnalysisStatus;
+  asymmetry_deg?:  ParityPair<number> & { delta: number | null };
+  tier?:           ParityPair<UrgencyTier> & { agree: boolean | null };
+  per_frame?: {
+    client:           (number | null)[];
+    server:           (number | null)[];
+    delta:            (number | null)[];
+    median_abs_delta: number | null;
+    frames_compared:  number;
+  };
+  method_b?: {
+    verdict: ParityPair<string> & { agree: boolean | null };
+    h_asym:  ParityPair<number> & { delta: number | null };
+    v_asym:  ParityPair<number> & { delta: number | null };
+  };
+}
 
 // ─── Batch pre-screen (school / camp) ────────────────────────────────────────
 

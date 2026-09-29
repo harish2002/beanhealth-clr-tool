@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "node --test --no-warnings tests/*.test.ts"
   },
   "dependencies": {
     "@mediapipe/camera_utils": "^0.3.1675466862",

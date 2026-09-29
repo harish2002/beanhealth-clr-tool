@@ -10,7 +10,7 @@
  */
 
 import axios, { AxiosError } from "axios";
-import type { AnalyseResponse, BatchResponse, StreamAnalyseResponse } from "./types";
+import type { AnalyseResponse, BatchResponse, ClientMeasurement, StreamAnalyseResponse } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
@@ -128,11 +128,14 @@ export async function analyseStream(
   frames:      File[],
   patientName: string,
   patientAge:  number,
+  /** The browser's own measurement of these frames; the server compares and logs it. */
+  clientMeasurement?: ClientMeasurement,
 ): Promise<StreamAnalyseResponse> {
   const form = new FormData();
   frames.forEach((f) => form.append("images", f));
   form.append("patient_name", patientName);
   form.append("patient_age",  String(patientAge));
+  if (clientMeasurement) form.append("client_measurement", JSON.stringify(clientMeasurement));
   // Send User-Agent for session-level device calibration (Phase 1)
   form.append("user_agent",   typeof navigator !== "undefined" ? navigator.userAgent : "");
 

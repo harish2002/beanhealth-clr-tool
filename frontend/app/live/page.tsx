@@ -38,7 +38,7 @@ export default function LivePage() {
 
       <main className="flex-1 px-4 sm:px-6 py-6 md:py-8">
         <div className="max-w-6xl mx-auto">
-          <LiveEyeView />
+          <LiveEyeView patientName={patientName} patientAge={patientAge} />
         </div>
       </main>
     </div>

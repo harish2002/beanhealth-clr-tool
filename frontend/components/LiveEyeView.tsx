@@ -8,25 +8,28 @@
  *  1. Opens the rear camera (torch on where supported) and runs MediaPipe Face
  *     Mesh on every frame.
  *  2. Once a face is found, the view zooms onto the eye band and follows it.
- *  3. Every frame it locates both pupils, both eye corners, and each corneal
- *     light reflex, and draws them — pupil-to-pupil and pupil-to-reflex lines
- *     included.
+ *  3. Every frame it runs the server's own image steps on the server's own
+ *     eye crop (lib/eyeVision.ts: modules 1–3, verified to match the Python
+ *     to within float rounding) and draws the pupils, reflexes and corners —
+ *     pupil-to-pupil and pupil-to-reflex lines included.
  *  4. Readings are smoothed over a ~1 s rolling window and shown beside the
  *     view with their clinical meaning.
  *
  * Preview only: the reported result still comes from the server's 8-frame
- * analysis. The maths lives in lib/liveMetrics.ts.
+ * analysis. "Compare with server" sends 8 frames, lossless, together with the
+ * browser's own measurement of them; the server measures, compares and logs
+ * the difference, which is the evidence needed before the browser result can
+ * ever become the reported one.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FaceMesh, NormalizedLandmark, Results } from "@mediapipe/face_mesh";
 import {
   aggregate,
-  detectReflex,
   measureFrame,
-  toLuminance,
   CONDITION_BY_REFLEX,
   MIN_REFLEX_FRAMES,
+  SERVER_MIN_FRAMES,
   SEVERITY_MILD_DEG,
   SEVERITY_MODERATE_DEG,
   SEVERITY_SEVERE_DEG,
@@ -37,19 +40,34 @@ import {
   type Pt,
   type Tier,
 } from "@/lib/liveMetrics";
+import {
+  detectReflex,
+  eyeCropBox,
+  localisePupil,
+  rgbaToGray,
+  EYE_BOUNDARY_A,
+  EYE_BOUNDARY_B,
+  type Box,
+} from "@/lib/eyeVision";
+import { analyseStream } from "@/lib/api";
 import { URGENCY_CONFIG } from "@/lib/types";
+import type { ClientMeasurement, StreamAnalyseResponse } from "@/lib/types";
 
 // ── Landmarks ──────────────────────────────────────────────────────────────
 
-const IRIS_GROUPS: [number[], number[]] = [
-  [468, 469, 470, 471, 472],
-  [473, 474, 475, 476, 477],
+interface EyeSpec {
+  iris:    number[];            // 5 iris landmarks, centre first
+  outline: number[];            // eye outline → module 1 crop box
+  corners: [number, number];    // (inner, outer) canthus → Method B
+}
+/** The server's pairing (constants.py LEFT_* / RIGHT_*). */
+const EYES: [EyeSpec, EyeSpec] = [
+  { iris: [468, 469, 470, 471, 472], outline: EYE_BOUNDARY_A, corners: [133, 33]  },
+  { iris: [473, 474, 475, 476, 477], outline: EYE_BOUNDARY_B, corners: [362, 263] },
 ];
-/** (inner, outer) canthus pairs — matched to each iris by proximity at runtime. */
-const CORNER_PAIRS: [[number, number], [number, number]] = [
-  [133, 33],
-  [362, 263],
-];
+/** Module 1 rejects eye crops smaller than this (MIN_CROP_WIDTH/HEIGHT). */
+const MIN_CROP_W = 60;
+const MIN_CROP_H = 40;
 /** Corners and lid mid-points that bound the eye band for the zoomed view. */
 const EYE_BAND = [33, 133, 159, 145, 362, 263, 386, 374];
 
@@ -63,6 +81,11 @@ const MAX_AGE_MS      = 5000;   // hard limit on staleness; long enough for MIN_
 const MAX_SAMPLES     = 40;
 const PANEL_EVERY_MS  = 150;    // side-panel refresh rate
 const FACE_LOST_MS    = 800;    // drop back to the full frame after this
+
+const COMPARE_FRAMES      = 8;    // same as the capture screen
+const COMPARE_INTERVAL_MS = 500;  // 2 fps, same as the capture screen
+const FACE_CROP_MARGIN    = 0.45; // capture screen's face-crop margin
+const PIPELINE_VERSION    = "browser-live-2";
 
 // ── Overlay palette (drawn on video, so it stays light-on-dark in both themes)
 
@@ -89,8 +112,24 @@ type Phase  = "idle" | "starting" | "searching" | "tracking" | "error";
 type Facing = "environment" | "user";
 
 interface EyeFrame {
-  input:  EyeInput;
-  status: "ok" | "no_flash" | "no_reflex";
+  input:       EyeInput;                 // final pupil, reflex, corners (video px)
+  status:      "ok" | "no_flash" | "no_reflex" | "too_small";
+  pupilSource: "dark" | "iris";
+  irisCentre:  Pt;                       // landmark mean, for drawing the iris
+  rollRef:     Pt;                       // iris-centre landmark, defines head roll
+  box:         Box;                      // module 1 crop
+}
+
+type CompareState =
+  | { phase: "idle" }
+  | { phase: "capturing"; got: number }
+  | { phase: "sending" }
+  | { phase: "done"; run: CompareRun }
+  | { phase: "error"; message: string };
+
+interface CompareRun {
+  client: ClientMeasurement;
+  server: StreamAnalyseResponse;
 }
 
 interface Crop { cx: number; cy: number; w: number }
@@ -102,54 +141,81 @@ const mid  = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
 const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
 
-function irisFrom(lms: NormalizedLandmark[], idx: number[], W: number, H: number) {
-  const pts    = idx.map((i) => toPx(lms[i], W, H));
-  // Module 2's primary estimate: mean of the five iris landmarks.
-  const pupil  = { x: pts.reduce((s, p) => s + p.x, 0) / 5, y: pts.reduce((s, p) => s + p.y, 0) / 5 };
-  const irisR  = pts.slice(1).reduce((s, p) => s + dist(p, pts[0]), 0) / 4;
-  return { pupil, irisR };
-}
-
 /**
- * Find the corneal reflex in a patch of the frame around one pupil.
- *
- * The patch is copied from the (GPU-backed) frame into a small CPU canvas
- * before reading pixels. Reading straight from a full-size CPU frame canvas
- * measured ~4× slower per frame.
+ * Pixels are copied from the (GPU-backed) frame into a small CPU canvas
+ * before reading. Reading straight from a full-size CPU frame canvas measured
+ * ~4× slower per frame.
  */
 const patchCanvas: HTMLCanvasElement | null =
   typeof document !== "undefined" ? document.createElement("canvas") : null;
 
-function sampleReflex(
-  frame: HTMLCanvasElement, W: number, H: number, pupil: Pt, irisR: number,
-): { pos: Pt | null; status: EyeFrame["status"] } {
-  const half = Math.ceil(irisR * 1.6) + 2;
-  const x0 = clamp(Math.round(pupil.x - half), 0, W - 1);
-  const y0 = clamp(Math.round(pupil.y - half), 0, H - 1);
-  const x1 = clamp(Math.round(pupil.x + half), 0, W);
-  const y1 = clamp(Math.round(pupil.y + half), 0, H);
-  const w = x1 - x0;
-  const h = y1 - y0;
-  if (w < 6 || h < 6 || !patchCanvas) return { pos: null, status: "no_reflex" };
+/** One eye, exactly as the server sees it: its crop (module 1), pupil (module 2) and reflex (module 3). */
+function analyseEye(frame: HTMLCanvasElement, W: number, H: number, lms: NormalizedLandmark[], spec: EyeSpec): EyeFrame {
+  const irisPts    = spec.iris.map((i) => toPx(lms[i], W, H));
+  const irisCentre = { x: irisPts.reduce((s, p) => s + p.x, 0) / 5, y: irisPts.reduce((s, p) => s + p.y, 0) / 5 };
+  const irisR      = irisPts.slice(1).reduce((s, p) => s + dist(p, irisPts[0]), 0) / 4;
+  const corners    = { inner: toPx(lms[spec.corners[0]], W, H), outer: toPx(lms[spec.corners[1]], W, H) };
+  const box        = eyeCropBox(spec.outline.map((i) => toPx(lms[i], W, H)), W, H);
+  const w = box.x2 - box.x1;
+  const h = box.y2 - box.y1;
+  const common = { irisCentre, rollRef: irisPts[0], box };
 
+  const pctx = patchCanvas?.getContext("2d", { willReadFrequently: true });
+  if (w < MIN_CROP_W || h < MIN_CROP_H || !patchCanvas || !pctx) {
+    return { ...common, input: { pupil: irisCentre, irisR, reflex: null, ...corners }, status: "too_small", pupilSource: "iris" };
+  }
   if (patchCanvas.width < w)  patchCanvas.width  = w;
   if (patchCanvas.height < h) patchCanvas.height = h;
-  const pctx = patchCanvas.getContext("2d", { willReadFrequently: true });
-  if (!pctx) return { pos: null, status: "no_reflex" };
-  pctx.drawImage(frame, x0, y0, w, h, 0, 0, w, h);
-  const img = pctx.getImageData(0, 0, w, h);
-  const res = detectReflex(toLuminance(img.data), w, h, { x: pupil.x - x0, y: pupil.y - y0 }, irisR);
-  if (res.status !== "ok") return { pos: null, status: res.status };
+  pctx.drawImage(frame, box.x1, box.y1, w, h, 0, 0, w, h);
+  const gray = rgbaToGray(pctx.getImageData(0, 0, w, h).data);
 
-  // Pixel indices mark pixel corners; landmark coordinates are continuous.
-  // Shift by half a pixel so both live in the same frame — otherwise a
-  // constant 0.5 px offset turns into ~1 px of false horizontal asymmetry.
-  return { pos: { x: res.pos.x + x0 + 0.5, y: res.pos.y + y0 + 0.5 }, status: "ok" };
+  // Crop coordinates throughout, exactly like the server; shift back to the frame at the end.
+  const pupil  = localisePupil(gray, w, h, { x: irisCentre.x - box.x1, y: irisCentre.y - box.y1 }, irisR);
+  const reflex = detectReflex(gray, w, h, pupil.centre, irisR);
+  return {
+    ...common,
+    input: {
+      pupil:  { x: pupil.centre.x + box.x1, y: pupil.centre.y + box.y1 },
+      irisR,
+      reflex: reflex.status === "ok" ? { x: reflex.pos.x + box.x1, y: reflex.pos.y + box.y1 } : null,
+      ...corners,
+    },
+    status: reflex.status,
+    pupilSource: pupil.source,
+  };
+}
+
+/**
+ * The face crop the capture screen sends (StreamingCapture captureFrame), but
+ * PNG and at native resolution, so the server measures the same pixels the
+ * browser did — any difference is then the code, not compression or resizing.
+ */
+function encodeFaceCrop(frame: HTMLCanvasElement, lms: NormalizedLandmark[]): Promise<Blob | null> {
+  const W = frame.width, H = frame.height;
+  let minX = 1, minY = 1, maxX = 0, maxY = 0;
+  for (const p of lms) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  const fw = (maxX - minX) * W, fh = (maxY - minY) * H;
+  const padX = fw * FACE_CROP_MARGIN, padY = fh * FACE_CROP_MARGIN;
+  const sx = Math.max(0, Math.round(minX * W - padX));
+  const sy = Math.max(0, Math.round(minY * H - padY));
+  const sw = Math.min(W - sx, Math.round(fw + padX * 2));
+  const sh = Math.min(H - sy, Math.round(fh + padY * 2));
+  const out = document.createElement("canvas");
+  out.width = sw; out.height = sh;
+  out.getContext("2d")?.drawImage(frame, sx, sy, sw, sh, 0, 0, sw, sh);   // copied now; the frame canvas is reused next frame
+  return new Promise((resolve) => out.toBlob(resolve, "image/png"));
 }
 
 // ── Component ──────────────────────────────────────────────────────────────
 
-export default function LiveEyeView() {
+export default function LiveEyeView({ patientName, patientAge }: {
+  /** Used only to label comparison requests to the server. */
+  patientName?: string;
+  patientAge?:  number | null;
+} = {}) {
   const videoRef   = useRef<HTMLVideoElement>(null);
   const canvasRef  = useRef<HTMLCanvasElement>(null);
   const frameRef   = useRef<HTMLCanvasElement | null>(null);
@@ -157,7 +223,11 @@ export default function LiveEyeView() {
   const streamRef  = useRef<MediaStream | null>(null);
   const busyRef    = useRef(false);
   const cropRef    = useRef<Crop | null>(null);
-  const samplesRef = useRef<{ t: number; m: FrameMeasurement }[]>([]);
+  const samplesRef = useRef<{ t: number; m: FrameMeasurement; src: [EyeFrame["pupilSource"], EyeFrame["pupilSource"]] }[]>([]);
+  const compareRef = useRef<{ active: boolean; lastT: number; frames: { m: FrameMeasurement; png: Promise<Blob | null> }[] }>(
+    { active: false, lastT: 0, frames: [] },
+  );
+  const finishCompareRef = useRef<() => Promise<void>>(async () => undefined);
   const aggRef     = useRef<LiveAggregate | null>(null);
   const lastFaceRef  = useRef(0);
   const lastPanelRef = useRef(0);
@@ -171,6 +241,9 @@ export default function LiveEyeView() {
   const [torch,   setTorch]      = useState<boolean | null>(null);   // null = unsupported
   const [facing,  setFacing]     = useState<Facing>("environment");
   const [fmReady, setFmReady]    = useState(false);
+  const [compare, setCompare]    = useState<CompareState>({ phase: "idle" });
+  const [history, setHistory]    = useState<CompareRun[]>([]);
+  const [darkRate, setDarkRate]  = useState<[number, number] | null>(null);
 
   const setPhase = useCallback((p: Phase) => {
     if (phaseRef.current !== p) {
@@ -245,6 +318,8 @@ export default function LiveEyeView() {
     if (f.last) f.value = f.value * 0.9 + (1000 / Math.max(1, now - f.last)) * 0.1;
     f.last = now;
     pill(`● LIVE  ${Math.round(f.value)} fps`, { x: 10, y: 20 }, "#FCA5A5", "left");
+    const cmp = compareRef.current;
+    if (cmp.active) pill(`Comparing ${cmp.frames.length}/${COMPARE_FRAMES} — hold still`, { x: cssW - 10, y: 20 }, "#FCD34D");
 
     if (!eyes) {
       pill(compact ? "Looking for a face…" : "Looking for a face — hold the camera 30–40 cm away", { x: cssW / 2, y: cssH / 2 });
@@ -308,11 +383,12 @@ export default function LiveEyeView() {
     const eyeLabel = (tag: "OD" | "OS") => (tag === "OD" ? "R eye (OD)" : "L eye (OS)");
     ([["OD", od], ["OS", os]] as const).forEach(([tag, e]) => {
       const p = M(e.input.pupil);
+      const ic = M(e.irisCentre);
       const r = e.input.irisR * k;
 
       ctx.strokeStyle = C.iris;
       ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ic.x, ic.y, r, 0, Math.PI * 2); ctx.stroke();
 
       ctx.strokeStyle = C.pupil;
       ctx.lineWidth = 1.5;
@@ -370,28 +446,32 @@ export default function LiveEyeView() {
     lastFaceRef.current = now;
     setPhase("tracking");
 
-    // Both irises; the image-left one is the patient's right eye (OD).
-    const irises = IRIS_GROUPS.map((g) => irisFrom(lms, g, W, H));
-    const [odIris, osIris] = irises[0].pupil.x <= irises[1].pupil.x ? irises : [irises[1], irises[0]];
+    // Both eyes through the server's own steps; the image-left one is the
+    // patient's right eye (OD).
+    const eyes = EYES.map((spec) => analyseEye(frame, W, H, lms, spec));
+    const [od, os] = eyes[0].irisCentre.x <= eyes[1].irisCentre.x ? eyes : [eyes[1], eyes[0]];
 
-    // Pair each iris with its own corners by proximity.
-    const pairs = CORNER_PAIRS.map(([i, o]) => ({ inner: toPx(lms[i], W, H), outer: toPx(lms[o], W, H) }));
-    const d0 = dist(mid(pairs[0].inner, pairs[0].outer), odIris.pupil);
-    const d1 = dist(mid(pairs[1].inner, pairs[1].outer), odIris.pupil);
-    const [odCorners, osCorners] = d0 <= d1 ? pairs : [pairs[1], pairs[0]];
-
-    const odRef = sampleReflex(frame, W, H, odIris.pupil, odIris.irisR);
-    const osRef = sampleReflex(frame, W, H, osIris.pupil, osIris.irisR);
-
-    const od: EyeFrame = { input: { ...odIris, reflex: odRef.pos, ...odCorners }, status: odRef.status };
-    const os: EyeFrame = { input: { ...osIris, reflex: osRef.pos, ...osCorners }, status: osRef.status };
-
-    // Rolling window of measurements
+    // Module 1 rejects a frame whose eye crops are too small — so do we.
     const samples = samplesRef.current;
-    samples.push({ t: now, m: measureFrame(od.input, os.input) });
-    while (samples.length > MAX_SAMPLES) samples.shift();
-    while (samples.length > MIN_KEEP && now - samples[0].t > WINDOW_MS) samples.shift();
-    while (samples.length && now - samples[0].t > MAX_AGE_MS) samples.shift();
+    if (od.status !== "too_small" && os.status !== "too_small") {
+      const m = measureFrame(od.input, os.input, [od.rollRef, os.rollRef]);
+      samples.push({ t: now, m, src: [od.pupilSource, os.pupilSource] });
+      while (samples.length > MAX_SAMPLES) samples.shift();
+      while (samples.length > MIN_KEEP && now - samples[0].t > WINDOW_MS) samples.shift();
+      while (samples.length && now - samples[0].t > MAX_AGE_MS) samples.shift();
+
+      // Comparison capture: 8 frames at 2 fps, like the capture screen.
+      const cmp = compareRef.current;
+      if (cmp.active && now - cmp.lastT >= COMPARE_INTERVAL_MS) {
+        cmp.lastT = now;
+        cmp.frames.push({ m, png: encodeFaceCrop(frame, lms) });
+        setCompare({ phase: "capturing", got: cmp.frames.length });
+        if (cmp.frames.length >= COMPARE_FRAMES) {
+          cmp.active = false;
+          void finishCompareRef.current();
+        }
+      }
+    }
 
     // Zoom box follows the eye band, smoothed so the view doesn't shake.
     const band = EYE_BAND.map((i) => toPx(lms[i], W, H));
@@ -420,6 +500,9 @@ export default function LiveEyeView() {
       lastPanelRef.current = now;
       aggRef.current = aggregate(samples.map((s) => s.m));
       setAgg(aggRef.current);
+      if (samples.length) {
+        setDarkRate([0, 1].map((i) => samples.filter((x) => x.src[i] === "dark").length / samples.length) as [number, number]);
+      }
       const span = samples.length > 1 ? samples[samples.length - 1].t - samples[0].t : 0;
       setRate({ frames: samples.length, fps: span > 0 ? ((samples.length - 1) * 1000) / span : 0 });
     }
@@ -505,7 +588,12 @@ export default function LiveEyeView() {
     aggRef.current = null;
     setAgg(null);
     setRate(null);
+    setDarkRate(null);
     setTorch(null);
+    if (compareRef.current.active) {
+      compareRef.current = { active: false, lastT: 0, frames: [] };
+      setCompare({ phase: "idle" });
+    }
   }, []);
 
   const startCamera = useCallback(async (which: Facing) => {
@@ -552,6 +640,57 @@ export default function LiveEyeView() {
       setTorch(null);
     }
   }, [torch]);
+
+  // ── Browser-vs-server comparison ─────────────────────────────────────────
+
+  const startCompare = useCallback(() => {
+    compareRef.current = { active: true, lastT: 0, frames: [] };
+    setCompare({ phase: "capturing", got: 0 });
+  }, []);
+
+  const finishCompare = useCallback(async () => {
+    const frames = compareRef.current.frames;
+    compareRef.current.frames = [];
+    setCompare({ phase: "sending" });
+    try {
+      const blobs = await Promise.all(frames.map((f) => f.png));
+      if (blobs.some((b) => !b)) throw new Error("A frame could not be encoded.");
+      const files = blobs.map((b, i) => new File([b as Blob], `frame-${i + 1}.png`, { type: "image/png" }));
+
+      // The browser's reading of exactly these frames, with the server's
+      // own minimum-frame rule.
+      const ms  = frames.map((f) => f.m);
+      const a   = aggregate(ms, SERVER_MIN_FRAMES);
+      const h   = a?.hirschberg ?? null;
+      const r2  = (v: number) => Math.round(v * 100) / 100;
+      const r4  = (v: number) => Math.round(v * 10000) / 10000;
+      const client: ClientMeasurement = {
+        schema: 1,
+        pipeline: PIPELINE_VERSION,
+        frames: ms.length,
+        reflex_frames: a?.reflexFrames ?? 0,
+        per_frame_asymmetry_deg: ms.map((m) => (m.asymDeg === null ? null : r2(m.asymDeg))),
+        asymmetry_deg: h ? r2(h.asymDeg) : null,
+        asymmetry_std_deg: h ? r2(h.stdDeg) : null,
+        tier: h && !h.unstable ? h.tier : null,
+        unstable: h?.unstable ?? false,
+        method_b: a ? { h_asym: r4(a.methodB.hAsym), v_asym: r4(a.methodB.vAsym), verdict: a.methodB.verdict } : null,
+      };
+
+      const server = await analyseStream(files, patientName?.trim() || "Live comparison", patientAge ?? 30, client);
+      const run = { client, server };
+      setCompare({ phase: "done", run });
+      setHistory((hs) => [...hs, run]);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setCompare({
+        phase: "error",
+        message: msg === "TIMEOUT" ? "The server took too long to answer. Try again."
+          : msg || "The comparison could not reach the server.",
+      });
+    }
+  }, [patientName, patientAge]);
+  finishCompareRef.current = finishCompare;
 
   useEffect(() => () => stopCamera(), [stopCamera]);
 
@@ -606,6 +745,16 @@ export default function LiveEyeView() {
             <button onClick={() => startCamera(facing === "environment" ? "user" : "environment")} className="btn-secondary btn-sm">
               Switch to {facing === "environment" ? "front" : "rear"} camera
             </button>
+            <button
+              onClick={startCompare}
+              disabled={phase !== "tracking" || compare.phase === "capturing" || compare.phase === "sending"}
+              className="btn-accent btn-sm"
+              title="Capture 8 frames and have the server measure the same frames"
+            >
+              {compare.phase === "capturing" ? `Capturing ${compare.got}/${COMPARE_FRAMES}…`
+                : compare.phase === "sending" ? "Server measuring…"
+                : "Compare with server"}
+            </button>
             <button onClick={() => { stopCamera(); setPhase("idle"); }} className="btn-ghost btn-sm">
               Stop
             </button>
@@ -616,7 +765,7 @@ export default function LiveEyeView() {
       </div>
 
       {/* Values */}
-      <LivePanel agg={agg} rate={rate} phase={phase} torch={torch} />
+      <LivePanel agg={agg} rate={rate} phase={phase} torch={torch} darkRate={darkRate} compare={compare} history={history} />
     </div>
   );
 }
@@ -649,11 +798,14 @@ function Section({ title, note, children }: { title: string; note?: string; chil
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
-function LivePanel({ agg, rate, phase, torch }: {
+function LivePanel({ agg, rate, phase, torch, darkRate, compare, history }: {
   agg: LiveAggregate | null;
   rate: { frames: number; fps: number } | null;
   phase: Phase;
   torch: boolean | null;
+  darkRate: [number, number] | null;
+  compare: CompareState;
+  history: CompareRun[];
 }) {
   const h = agg?.hirschberg ?? null;
   const pattern = h?.reflexDirection && h.directionReliable ? CONDITION_BY_REFLEX[h.reflexDirection] : null;
@@ -674,6 +826,8 @@ function LivePanel({ agg, rate, phase, torch }: {
   return (
     <aside className="space-y-4">
 
+      {(compare.phase !== "idle" || history.length > 0) && <CompareCard compare={compare} history={history} />}
+
       <Section title="Signal" note="rolling window">
         <Row label="Face" value={status.text} tone={status.tone} />
         <Row
@@ -683,6 +837,11 @@ function LivePanel({ agg, rate, phase, torch }: {
         />
         <Row label="Torch" value={torch === null ? "Not controllable" : torch ? "On" : "Off"} />
         <Row label="Reflex found · R / L" value={agg ? `${pct(agg.odReflexRate)} / ${pct(agg.osReflexRate)}` : "—"} sub="of frames in the window" />
+        <Row
+          label="Pupil found as dark disc · R / L"
+          value={darkRate ? `${pct(darkRate[0])} / ${pct(darkRate[1])}` : "—"}
+          sub="otherwise the iris centre is used, as on the server"
+        />
         <Row
           label="Stability"
           value={h ? `σ ${h.stdDeg.toFixed(2)}° · ${h.confidence}` : "—"}
@@ -817,6 +976,85 @@ function LivePanel({ agg, rate, phase, torch }: {
         </p>
       </Section>
     </aside>
+  );
+}
+
+const fmtDeg = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v.toFixed(1)}°`);
+const fmtDelta = (v: number | null | undefined) => (v === null || v === undefined ? "—" : `${v > 0 ? "+" : ""}${v.toFixed(1)}°`);
+
+function CompareCard({ compare, history }: { compare: CompareState; history: CompareRun[] }) {
+  const run = compare.phase === "done" ? compare.run : history[history.length - 1] ?? null;
+  const p = run?.server.parity;
+  const reason = run && run.server.status === "INCONCLUSIVE" ? run.server.reason_human : null;
+
+  // Across this session's runs
+  const tiered = history.map((r) => r.server.parity?.tier).filter((t) => t && t.agree !== null);
+  const agreeing = tiered.filter((t) => t?.agree).length;
+  const deltas = history
+    .map((r) => r.server.parity?.asymmetry_deg?.delta)
+    .filter((d): d is number => typeof d === "number")
+    .map(Math.abs)
+    .sort((a, b) => a - b);
+  const medianDelta = deltas.length ? deltas[deltas.length >> 1] : null;
+
+  return (
+    <Section title="Browser vs server" note="same 8 frames · lossless">
+      {compare.phase === "capturing" && (
+        <p className="text-[12.5px] text-ink-600 py-1">Capturing frame {compare.got} of {COMPARE_FRAMES} — keep the patient still.</p>
+      )}
+      {compare.phase === "sending" && (
+        <p className="text-[12.5px] text-ink-600 py-1">The server is measuring the same frames…</p>
+      )}
+      {compare.phase === "error" && (
+        <p role="alert" className="text-[12.5px] text-red-700 py-1">{compare.message}</p>
+      )}
+
+      {run && (
+        p?.error ? (
+          <p className="text-[12.5px] text-red-700 py-1">Server could not compare: {p.error}</p>
+        ) : p ? (
+          <>
+            <Row label="Server result" value={p.server_status ?? run.server.status} sub={reason ?? undefined}
+                 tone={run.server.status === "SUCCESS" ? "text-ink-900" : "text-amber-700"} />
+            <Row
+              label="Asymmetry · browser / server"
+              value={`${fmtDeg(p.asymmetry_deg?.client)} / ${fmtDeg(p.asymmetry_deg?.server)}`}
+              sub={`difference ${fmtDelta(p.asymmetry_deg?.delta)}`}
+            />
+            <Row
+              label="Tier · browser / server"
+              value={`${p.tier?.client ?? "—"} / ${p.tier?.server ?? "—"}`}
+              tone={p.tier?.agree === true ? "text-emerald-700" : p.tier?.agree === false ? "text-red-600" : undefined}
+              sub={p.tier?.agree === true ? "agree" : p.tier?.agree === false ? "disagree" : "not comparable"}
+            />
+            <Row
+              label="Frame by frame"
+              value={p.per_frame?.median_abs_delta === null || p.per_frame?.median_abs_delta === undefined
+                ? "—" : `±${p.per_frame.median_abs_delta.toFixed(1)}°`}
+              sub={`median difference over ${p.per_frame?.frames_compared ?? 0} frames both measured`}
+            />
+            <Row
+              label="Method B · browser / server"
+              value={`${p.method_b?.verdict.client ?? "—"} / ${p.method_b?.verdict.server ?? "—"}`}
+              tone={p.method_b?.verdict.agree === true ? "text-emerald-700" : p.method_b?.verdict.agree === false ? "text-red-600" : undefined}
+            />
+          </>
+        ) : (
+          <p className="text-[12.5px] text-ink-500 py-1">The server didn&apos;t return a comparison — it may be running an older version.</p>
+        )
+      )}
+
+      {history.length > 1 && (
+        <p className="text-[12px] text-ink-500 mt-3 pt-3 border-t border-ink-100">
+          This session: {history.length} runs · tiers agree in {agreeing} of {tiered.length}
+          {medianDelta !== null && <> · typical difference {medianDelta.toFixed(1)}°</>}
+        </p>
+      )}
+      <p className="text-[11.5px] text-ink-400 leading-relaxed mt-3">
+        The server logs every comparison. Browser readings stay a preview until
+        these agree consistently.
+      </p>
+    </Section>
   );
 }
 

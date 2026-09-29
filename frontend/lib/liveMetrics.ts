@@ -1,6 +1,6 @@
 /**
- * BeanHealth CLR — live measurement maths (browser port of modules 3–6 and 8)
- * ===========================================================================
+ * BeanHealth CLR — live measurement maths (browser port of modules 4–6, 8, aggregate)
+ * ==================================================================================
  *
  * Runs on every camera frame to give the screener a real-time readout.
  *
@@ -10,7 +10,8 @@
  * copied from backend/utils/constants.py — keep them in sync.
  *
  * Pure functions only: no DOM, no camera, no React. The component feeds in
- * landmark coordinates and pixel luminance and gets numbers back.
+ * pupil, reflex and corner positions (from lib/eyeVision.ts, the port of
+ * modules 1–3) and gets numbers back.
  *
  * Eye naming: frames from getUserMedia are NOT mirrored, so the eye on the
  * image's left is the patient's RIGHT eye (OD) and the image-right eye is the
@@ -31,15 +32,6 @@ export const SEVERITY_MILD_DEG     = 5.0;
 export const SEVERITY_MODERATE_DEG = 15.0;
 export const SEVERITY_SEVERE_DEG   = 30.0;
 
-const CLR_PERCENTILE             = 97;     // top 3% brightest pixels
-export const CLR_MIN_PEAK        = 235;    // peak below this → no torch reflex
-const CLR_MIN_AREA_RATIO         = 0.004;  // of iris area
-const CLR_MAX_AREA_RATIO         = 0.25;
-const CLR_MIN_CIRCULARITY        = 0.35;
-const CLR_MAX_DIST_IRIS_RADII    = 1.5;    // reflex must sit on the cornea
-const CLR_RESCUE_MAX_AREA_RATIO  = 0.45;   // rescue pass for bloomed reflexes
-const CLR_RESCUE_MIN_CIRCULARITY = 0.20;
-
 const ALIGN_H_ALIGNED_MAX    = 0.05;
 const ALIGN_H_BORDERLINE_MAX = 0.10;
 const ALIGN_V_ALIGNED_MAX    = 0.06;
@@ -51,162 +43,8 @@ const VARIANCE_INCONCLUSIVE_STD_THRESHOLD = 2.5;  // unstable when asymmetry ≥
 
 /** Frames with a reflex in both eyes needed before a Hirschberg reading shows. */
 export const MIN_REFLEX_FRAMES = 5;
-
-// ── Pixel helpers ───────────────────────────────────────────────────────────
-
-/** RGBA → luminance with the same weights as cv2.COLOR_RGB2GRAY. */
-export function toLuminance(rgba: Uint8ClampedArray): Float32Array {
-  const n   = rgba.length / 4;
-  const out = new Float32Array(n);
-  for (let i = 0, j = 0; i < n; i++, j += 4) {
-    out[i] = 0.299 * rgba[j] + 0.587 * rgba[j + 1] + 0.114 * rgba[j + 2];
-  }
-  return out;
-}
-
-/** Percentile of 0–255 values via a histogram — O(n), no sort. */
-function percentile255(values: Float32Array, pct: number): number {
-  const hist = new Uint32Array(256);
-  for (let i = 0; i < values.length; i++) hist[Math.min(255, Math.round(values[i]))]++;
-  const target = (pct / 100) * values.length;
-  let cum = 0;
-  for (let v = 0; v < 256; v++) {
-    cum += hist[v];
-    if (cum >= target) return v;
-  }
-  return 255;
-}
-
-// ── Module 3 port: corneal light reflex detection ──────────────────────────
-
-interface Blob {
-  x: number;
-  y: number;
-  area: number;
-  circularity: number;
-}
-
-export type ReflexResult =
-  | { status: "ok";        pos: Pt; area: number; circularity: number; candidates: number; peak: number }
-  | { status: "no_flash";  peak: number }
-  | { status: "no_reflex"; peak: number };
-
-/** 8-connected components with intensity-weighted sub-pixel centroids. */
-function findBlobs(mask: Uint8Array, lum: Float32Array, w: number, h: number): Blob[] {
-  const labels = new Int32Array(w * h);
-  const blobs: Blob[] = [];
-  const stack: number[] = [];
-  let next = 1;
-
-  for (let start = 0; start < mask.length; start++) {
-    if (!mask[start] || labels[start]) continue;
-
-    const pixels: number[] = [];
-    labels[start] = next;
-    stack.push(start);
-    while (stack.length) {
-      const idx = stack.pop() as number;
-      pixels.push(idx);
-      const px = idx % w;
-      const py = (idx - px) / w;
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = px + dx;
-          const ny = py + dy;
-          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-          const nIdx = ny * w + nx;
-          if (mask[nIdx] && !labels[nIdx]) {
-            labels[nIdx] = next;
-            stack.push(nIdx);
-          }
-        }
-      }
-    }
-
-    // Perimeter ≈ pixels touching the outside on a 4-neighbour; for a disc
-    // this gives 4πA/P² ≈ 1, matching cv2's contour-based circularity.
-    let perimeter = 0;
-    let floor = Infinity;
-    for (const idx of pixels) {
-      const px = idx % w;
-      const py = (idx - px) / w;
-      const edge =
-        px === 0 || py === 0 || px === w - 1 || py === h - 1 ||
-        !mask[idx - 1] || !mask[idx + 1] || !mask[idx - w] || !mask[idx + w];
-      if (edge) perimeter++;
-      if (lum[idx] < floor) floor = lum[idx];
-    }
-
-    // Weight each pixel by its brightness above the blob's own floor so the
-    // centroid lands on the reflex peak, not its geometric middle (as module 3).
-    let sw = 0, sx = 0, sy = 0, bx = 0, by = 0;
-    for (const idx of pixels) {
-      const px = idx % w;
-      const py = (idx - px) / w;
-      const wt = lum[idx] - floor;
-      sw += wt; sx += px * wt; sy += py * wt;
-      bx += px; by += py;
-    }
-    const area = pixels.length;
-    blobs.push({
-      x: sw > 0 ? sx / sw : bx / area,
-      y: sw > 0 ? sy / sw : by / area,
-      area,
-      circularity: Math.min(1, (4 * Math.PI * area) / Math.max(1, perimeter * perimeter)),
-    });
-    next++;
-  }
-  return blobs;
-}
-
-/**
- * Find the corneal light reflex in a luminance patch centred on one eye.
- * `pupil` and `irisR` are in patch pixel coordinates.
- */
-export function detectReflex(
-  lum: Float32Array, w: number, h: number, pupil: Pt, irisR: number,
-): ReflexResult {
-  let peak = 0;
-  for (let i = 0; i < lum.length; i++) if (lum[i] > peak) peak = lum[i];
-  if (peak < CLR_MIN_PEAK) return { status: "no_flash", peak };
-
-  // Adaptive threshold, never a fixed brightness. A heavily bloomed reflex
-  // can push the 97th percentile to saturation, so include equality there.
-  const thr = percentile255(lum, CLR_PERCENTILE);
-  const mask = new Uint8Array(lum.length);
-  for (let i = 0; i < lum.length; i++) {
-    mask[i] = (thr >= 254 ? lum[i] >= thr : lum[i] > thr) ? 1 : 0;
-  }
-
-  const blobs    = findBlobs(mask, lum, w, h);
-  const irisArea = Math.PI * irisR * irisR;
-  const dist     = (b: Blob) => Math.hypot(b.x - pupil.x, b.y - pupil.y);
-
-  const strict = blobs.filter((b) => {
-    const ratio = b.area / irisArea;
-    return ratio >= CLR_MIN_AREA_RATIO && ratio <= CLR_MAX_AREA_RATIO &&
-           b.circularity >= CLR_MIN_CIRCULARITY &&
-           dist(b) <= irisR * CLR_MAX_DIST_IRIS_RADII;
-  });
-  const passing = strict.length ? strict : blobs.filter((b) => {
-    const ratio = b.area / irisArea;
-    return ratio >= CLR_MIN_AREA_RATIO && ratio <= CLR_RESCUE_MAX_AREA_RATIO &&
-           b.circularity >= CLR_RESCUE_MIN_CIRCULARITY;
-  });
-  if (!passing.length) return { status: "no_reflex", peak };
-
-  // Several candidates → nearest the pupil, so the choice is stable frame to frame.
-  const best = passing.reduce((a, b) => (dist(b) < dist(a) ? b : a));
-  return {
-    status: "ok",
-    pos: { x: best.x, y: best.y },
-    area: best.area,
-    circularity: best.circularity,
-    candidates: passing.length,
-    peak,
-  };
-}
+/** The server's minimum usable frames (module_aggregate MIN_ACCEPTED_FRAMES). */
+export const SERVER_MIN_FRAMES = 3;
 
 // ── Per-frame geometry (modules 4, 5, 8) ───────────────────────────────────
 
@@ -261,13 +99,20 @@ function projectPupil(pupil: Pt, inner: Pt, outer: Pt, down: Pt): { h: number; v
   return { h, v: (sign * cross) / (width * width) };
 }
 
-export function measureFrame(od: EyeInput, os: EyeInput): FrameMeasurement {
+/**
+ * `axis` is the pair of points that defines head roll — the server uses the
+ * two iris-centre landmarks (module 1 _head_roll_degrees). Defaults to the
+ * pupils.
+ */
+export function measureFrame(od: EyeInput, os: EyeInput, axis?: [Pt, Pt]): FrameMeasurement {
   // Face-relative axes: u runs from the patient's right eye to their left eye,
   // "up" is perpendicular to it. Measuring along these instead of the image
   // axes keeps a tilted head from leaking into the readings.
   const ipdVec = sub(os.pupil, od.pupil);
   const ipdPx  = norm(ipdVec);
-  const u:    Pt = { x: ipdVec.x / ipdPx, y: ipdVec.y / ipdPx };
+  const axisVec = axis ? sub(axis[1], axis[0]) : ipdVec;
+  const axisLen = norm(axisVec);
+  const u:    Pt = { x: axisVec.x / axisLen, y: axisVec.y / axisLen };
   const up:   Pt = { x: u.y, y: -u.x };
   const down: Pt = { x: -u.y, y: u.x };
 
@@ -388,7 +233,7 @@ export function stdDev(xs: number[]): number {
   return Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length);
 }
 
-export function aggregate(samples: FrameMeasurement[]): LiveAggregate | null {
+export function aggregate(samples: FrameMeasurement[], minReflexFrames = MIN_REFLEX_FRAMES): LiveAggregate | null {
   if (!samples.length) return null;
 
   const eyeMedian = (pick: (s: FrameMeasurement) => EyeReflexReading | null) => {
@@ -404,7 +249,7 @@ export function aggregate(samples: FrameMeasurement[]): LiveAggregate | null {
   const asyms = samples.map((s) => s.asymDeg).filter((a): a is number => a !== null);
 
   let hirschberg: LiveAggregate["hirschberg"] = null;
-  if (asyms.length >= MIN_REFLEX_FRAMES && od && os) {
+  if (asyms.length >= minReflexFrames && od && os) {
     const asymDeg = median(asyms);
     const stdDeg  = stdDev(asyms);
     const { severity, tier } = severityOf(asymDeg);
