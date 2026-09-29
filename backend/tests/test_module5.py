@@ -239,11 +239,13 @@ class TestComputeAsymmetryAndAngle:
         right_norm = 0.1
         r = compute_asymmetry_and_angle(left_norm, right_norm)
         expected_deg = left_norm * IRIS_RADIUS_MM * HIRSCHBERG_CONSTANT
-        assert abs(r.deviation_degrees - expected_deg) < 0.001
+        # deviation_degrees is reported to 2 dp
+        assert r.deviation_degrees == pytest.approx(expected_deg, abs=0.01)
 
     def test_equal_eyes_uses_either(self):
         """Equal displacements → result is still computed without error."""
         r = compute_asymmetry_and_angle(0.25, 0.25)
         expected_deg = 0.25 * IRIS_RADIUS_MM * HIRSCHBERG_CONSTANT
-        assert abs(r.deviation_degrees - expected_deg) < 0.001
+        # deviation_degrees is reported to 2 dp
+        assert r.deviation_degrees == pytest.approx(expected_deg, abs=0.01)
         assert r.dominant_eye == "equal"

@@ -42,6 +42,12 @@ from pipeline.module3_clr import (
     _validate_flash,
     detect_clr,
 )
+from utils.constants import (
+    CLR_MAX_AREA_RATIO,
+    CLR_MIN_AREA_RATIO,
+    CLR_MIN_CIRCULARITY,
+    CLR_MIN_PEAK_BRIGHTNESS,
+)
 from utils.exceptions import CLRError
 from utils.image_utils import draw_dot, draw_crosshair, save_debug_image
 
@@ -142,31 +148,31 @@ class TestFlashValidation:
 
     @pytest.mark.unit
     def test_bright_image_passes(self):
-        """Max pixel >= 240 → no error raised."""
+        """Max pixel at or above the flash floor → no error raised."""
         gray = np.full((80, 120), 200, dtype=np.uint8)
         gray[40, 60] = 245   # one bright pixel
         _validate_flash(gray, "left")   # should not raise
 
     @pytest.mark.unit
     def test_dark_image_raises_no_flash(self):
-        """All pixels below 240 → CLRError(no_flash)."""
+        """All pixels below the flash floor → CLRError(no_flash)."""
         gray = np.full((80, 120), 180, dtype=np.uint8)
         with pytest.raises(CLRError) as exc_info:
             _validate_flash(gray, "left")
         assert exc_info.value.code == "no_flash"
 
     @pytest.mark.unit
-    def test_exactly_240_passes(self):
-        """Peak == 240 → should NOT raise (threshold is strictly less than)."""
+    def test_peak_at_flash_floor_passes(self):
+        """Peak exactly at the flash floor → should NOT raise (check is strictly less than)."""
         gray = np.full((80, 120), 100, dtype=np.uint8)
-        gray[40, 60] = 240
+        gray[40, 60] = CLR_MIN_PEAK_BRIGHTNESS
         _validate_flash(gray, "right")   # should not raise
 
     @pytest.mark.unit
-    def test_exactly_239_raises(self):
-        """Peak == 239 → below threshold → raises."""
+    def test_peak_just_below_flash_floor_raises(self):
+        """Peak one level below the flash floor → raises."""
         gray = np.full((80, 120), 100, dtype=np.uint8)
-        gray[40, 60] = 239
+        gray[40, 60] = CLR_MIN_PEAK_BRIGHTNESS - 1
         with pytest.raises(CLRError) as exc_info:
             _validate_flash(gray, "right")
         assert exc_info.value.code == "no_flash"
@@ -290,8 +296,8 @@ class TestFourWayFilter:
     CROP_H     = 80
     IRIS_R     = 28.0
     IRIS_AREA  = math.pi * (28.0 ** 2)   # ≈ 2463 px²
-    MIN_AREA   = 0.005 * IRIS_AREA        # ≈ 12.3 px²
-    MAX_AREA   = 0.150 * IRIS_AREA        # ≈ 369.4 px²
+    MIN_AREA   = CLR_MIN_AREA_RATIO * IRIS_AREA
+    MAX_AREA   = CLR_MAX_AREA_RATIO * IRIS_AREA
 
     def _run_filter(self, blobs):
         return _apply_four_way_filter(blobs, self.CROP_W, self.CROP_H, self.IRIS_R, (60.0, 40.0), "left")
@@ -331,14 +337,14 @@ class TestFourWayFilter:
     @pytest.mark.unit
     def test_valid_area_passes(self):
         """Area in the valid range → passes area filter."""
-        valid_area = self.IRIS_AREA * 0.02   # 2% — within [0.5%, 15%]
+        valid_area = self.IRIS_AREA * 0.02   # 2% — inside the allowed area window
         b = make_blob(area=valid_area, cx=60.0, cy=40.0, circularity=0.9)
         result = self._run_filter([b])
         assert len(result) == 1
 
     @pytest.mark.unit
     def test_area_too_small_fails(self):
-        """Area < 0.5% of iris area → fails area filter."""
+        """Area below the minimum share of iris area → fails area filter."""
         tiny_area = self.IRIS_AREA * 0.001   # 0.1% — too small
         b = make_blob(area=tiny_area, cx=60.0, cy=40.0, circularity=0.9)
         result = self._run_filter([b])
@@ -346,8 +352,8 @@ class TestFourWayFilter:
 
     @pytest.mark.unit
     def test_area_too_large_fails(self):
-        """Area > 15% of iris area → fails area filter (glasses glare)."""
-        large_area = self.IRIS_AREA * 0.20   # 20% — too large
+        """Area above the maximum share of iris area → fails area filter (glasses glare)."""
+        large_area = self.MAX_AREA * 1.2   # comfortably past the ceiling
         b = make_blob(area=large_area, cx=60.0, cy=40.0, circularity=0.9)
         result = self._run_filter([b])
         assert len(result) == 0
@@ -370,15 +376,15 @@ class TestFourWayFilter:
 
     @pytest.mark.unit
     def test_exactly_at_circularity_threshold_fails(self):
-        """Circularity exactly at 0.5 → must FAIL (condition is strictly >)."""
-        b = make_blob(area=50.0, cx=60.0, cy=40.0, circularity=0.50)
+        """Circularity exactly at the floor → must FAIL (condition is strictly >)."""
+        b = make_blob(area=50.0, cx=60.0, cy=40.0, circularity=CLR_MIN_CIRCULARITY)
         result = self._run_filter([b])
         assert len(result) == 0
 
     @pytest.mark.unit
     def test_just_above_circularity_threshold_passes(self):
-        """Circularity 0.51 → passes."""
-        b = make_blob(area=50.0, cx=60.0, cy=40.0, circularity=0.51)
+        """Circularity just above the floor → passes."""
+        b = make_blob(area=50.0, cx=60.0, cy=40.0, circularity=CLR_MIN_CIRCULARITY + 0.01)
         result = self._run_filter([b])
         assert len(result) == 1
 
@@ -430,19 +436,23 @@ class TestSelectCLRBlob:
 
     @pytest.mark.unit
     def test_many_blobs_flags_ambiguous(self):
-        """More than 3 passing blobs → ambiguous_reflex flag added."""
+        """Several passing blobs → ambiguous_reflex flag added."""
         flags = []
         blobs = [make_blob(area=50.0 + i, label=i) for i in range(5)]
         _select_clr_blob(blobs, "right", flags)
         assert "ambiguous_reflex_right" in flags
 
     @pytest.mark.unit
-    def test_three_blobs_no_ambiguous_flag(self):
-        """Exactly 3 passing blobs → no ambiguity flag."""
+    def test_two_blobs_flag_ambiguous(self):
+        """
+        Any second passing blob → ambiguity flag (a single blob stays unflagged,
+        see test_single_blob_selected). The flag is informational: the
+        aggregator deliberately keeps these frames.
+        """
         flags = []
-        blobs = [make_blob(area=50.0 + i, label=i) for i in range(3)]
+        blobs = [make_blob(area=50.0 + i, label=i) for i in range(2)]
         _select_clr_blob(blobs, "left", flags)
-        assert not any("ambiguous" in f for f in flags)
+        assert "ambiguous_reflex_left" in flags
 
 
 # ─────────────────────────────────────────────────────────────
