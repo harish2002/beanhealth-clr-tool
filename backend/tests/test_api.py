@@ -65,6 +65,18 @@ def _real_image_bytes(folder: str, index: int = 0) -> bytes | None:
     return files[index].read_bytes()
 
 
+# Photo known to produce SUCCESS on /analyse: a frontal face with a torch
+# reflex in both eyes. Test images are git-ignored (they are real faces), so on
+# a clean checkout this file is absent and the success-path tests skip. When it
+# IS present they must pass — a non-SUCCESS result there is a pipeline
+# regression, not a reason to skip.
+SUCCESS_REFERENCE = TEST_IMAGES / "success_reference" / "clr_both_eyes.jpg"
+
+
+def _success_reference_bytes() -> bytes | None:
+    return SUCCESS_REFERENCE.read_bytes() if SUCCESS_REFERENCE.exists() else None
+
+
 def _multipart(image_bytes: bytes, name: str = "Test Patient", age: int = 5):
     """Build the multipart form data dict for /analyse."""
     return {
@@ -320,10 +332,10 @@ async def test_analyse_flash_on_returns_200():
 
 @pytest.mark.asyncio
 async def test_analyse_success_schema_complete():
-    """If flash-on photo produces SUCCESS, verify all required fields are present."""
-    img_bytes = _real_image_bytes("flash_on_normal")
+    """The reference photo produces SUCCESS with every required field present."""
+    img_bytes = _success_reference_bytes()
     if img_bytes is None:
-        pytest.skip("No test image in flash_on_normal/ folder")
+        pytest.skip(f"Reference image not present: {SUCCESS_REFERENCE.name} (test images are git-ignored)")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
@@ -332,8 +344,9 @@ async def test_analyse_success_schema_complete():
             data={"patient_name": "Test Child", "patient_age": "5"},
         )
     body = r.json()
-    if body["status"] != "SUCCESS":
-        pytest.skip(f"Image produced {body['status']} — skipping SUCCESS schema check")
+    assert body["status"] == "SUCCESS", (
+        f"Reference image produced {body['status']} ({body.get('reason')}) — expected SUCCESS"
+    )
 
     # Top-level keys
     for key in ["status", "patient", "result", "technical", "annotated_image_b64", "timestamp"]:
@@ -359,9 +372,9 @@ async def test_analyse_success_schema_complete():
 @pytest.mark.asyncio
 async def test_analyse_success_urgency_is_valid_value():
     """urgency_tier must be one of the four known values."""
-    img_bytes = _real_image_bytes("flash_on_normal")
+    img_bytes = _success_reference_bytes()
     if img_bytes is None:
-        pytest.skip("No test image in flash_on_normal/ folder")
+        pytest.skip(f"Reference image not present: {SUCCESS_REFERENCE.name} (test images are git-ignored)")
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         r = await client.post(
@@ -370,8 +383,9 @@ async def test_analyse_success_urgency_is_valid_value():
             data={"patient_name": "Test Child", "patient_age": "5"},
         )
     body = r.json()
-    if body["status"] != "SUCCESS":
-        pytest.skip("Image did not produce SUCCESS")
+    assert body["status"] == "SUCCESS", (
+        f"Reference image produced {body['status']} ({body.get('reason')}) — expected SUCCESS"
+    )
 
     assert body["result"]["urgency_tier"] in {"URGENT", "ROUTINE", "MONITOR", "NORMAL"}
 
