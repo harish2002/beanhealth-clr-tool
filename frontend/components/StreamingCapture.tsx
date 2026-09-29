@@ -9,7 +9,7 @@
  *  1. Opens the back-facing camera with torch enabled
  *  2. Runs @mediapipe/face_mesh in the browser (WASM, ~30 fps) to detect iris
  *  3. Draws iris circles, pupil dots, and "L / R" labels on a canvas overlay
- *  4. When user taps "Start Analysis", captures 2 frames per second for 5 seconds (10 frames)
+ *  4. When user taps "Start Analysis", captures 2 frames per second for 4 seconds (8 frames)
  *  5. Shows a countdown + per-frame pulse indicator while capturing
  *  6. Sends all frames to POST /analyse-stream and returns the aggregated result
  */
@@ -567,14 +567,6 @@ export default function StreamingCapture({
   }
 
   // ── Capture a single frame as JPEG blob ───────────────────
-  //
-  // Frames are downscaled to a max of 640 px wide before encoding.
-  // The CLR pipeline only needs the iris to be ~40–60 px wide to
-  // work reliably; sending full 1280×720 camera frames (~920 K pixels)
-  // forces MediaPipe to process 4× more data per frame, inflating
-  // per-frame backend time from ~1.5 s to ~6 s.
-  // At 640×360 MediaPipe still detects the iris accurately and the
-  // total 10-frame upload + processing stays well under 30 s.
 
   // Longest side of the uploaded frame. The frame we send is a CROP around the
   // face, not the whole camera image, so this budget is spent almost entirely
@@ -683,7 +675,7 @@ export default function StreamingCapture({
     }
   }, [patientName, patientAge, onSuccess, onInconclusive, onError, stopCamera]);
 
-  // ── Start the 10-frame capture sequence ───────────────────
+  // ── Start the 8-frame capture sequence ────────────────────
 
   const startCapture = useCallback(async () => {
     if (!eyesDetected) return;

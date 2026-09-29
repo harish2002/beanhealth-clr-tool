@@ -33,7 +33,7 @@ const STEPS = [
     key:         'module4_clr'    as const,
     step:        '04',
     title:       'CLR Detection',
-    description: 'Top 3% brightest pixels thresholded. Connected blobs filtered by 3 rules: ① location (central 80%), ② area (0.5–15% of iris area), ③ circularity > 0.5. The largest passing blob is the corneal light reflex (amber dot).',
+    description: 'Top 3% brightest pixels thresholded. Connected blobs filtered by 3 rules: ① location (central 80%), ② area (0.4–25% of iris area), ③ circularity > 0.35. The largest passing blob is the corneal light reflex (amber dot).',
     tag:         'Module 3',
     tagColour:   'bg-amber-100 text-amber-700',
   },
@@ -61,7 +61,7 @@ export default function ProcessingSteps({ intermediateImages }: ProcessingStepsP
       {/* Header */}
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h2 className="text-ink-900 font-semibold text-base">How the AI Calculates This</h2>
+          <h2 className="text-ink-900 font-semibold text-base">How the Measurement Works</h2>
           <p className="text-ink-500 text-xs mt-0.5">
             6-step Corneal Light Reflex pipeline — from raw photo to clinical angle
           </p>
