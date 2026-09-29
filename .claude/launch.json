@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "FastAPI Backend",
-      "runtimeExecutable": "backend/venv/bin/uvicorn",
-      "runtimeArgs": ["main:app", "--reload", "--host", "0.0.0.0", "--port", "8000"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd backend && exec venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"],
       "port": 8000
     },
     {
@@ -16,7 +16,13 @@
     {
       "name": "BeanHealth Frontend",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd frontend && npm run dev -- -H 0.0.0.0 -p 3000 --experimental-https"],
+      "runtimeArgs": ["-c", "cd frontend && npm run dev -- -H 0.0.0.0 -p 3000"],
+      "port": 3000
+    },
+    {
+      "name": "BeanHealth Frontend (local API)",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd frontend && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev -- -H 0.0.0.0 -p 3000"],
       "port": 3000
     }
   ]
