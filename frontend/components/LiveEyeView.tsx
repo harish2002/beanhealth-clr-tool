@@ -560,8 +560,10 @@ export default function LiveEyeView() {
   return (
     <div className="grid lg:grid-cols-[minmax(0,1fr)_380px] gap-6 items-start">
 
-      {/* Camera */}
-      <div className="space-y-3">
+      {/* Camera — pinned under the top bar so it stays in view while the
+          readings scroll past (beside it on desktop, beneath it on phones). */}
+      <div className="space-y-3 sticky top-[65px] lg:top-20 z-20 bg-white pb-3 lg:pb-0
+                      border-b border-ink-100 lg:border-0">
         <div className="relative w-full aspect-[2/1] bg-ink-900 rounded-card overflow-hidden shadow-card">
           <video ref={videoRef} playsInline muted className="absolute w-px h-px opacity-0 pointer-events-none" />
           <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
