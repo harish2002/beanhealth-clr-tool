@@ -12,6 +12,9 @@ const config: Config = {
     "./pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./components/**/*.{js,ts,jsx,tsx,mdx}",
     "./app/**/*.{js,ts,jsx,tsx,mdx}",
+    // URGENCY_CONFIG in lib/types.ts holds tier colour classes; without this
+    // they are never generated and the URGENT/NORMAL tier blocks render blank.
+    "./lib/**/*.{js,ts,jsx,tsx}",
   ],
   theme: {
     extend: {
