@@ -21,10 +21,13 @@
  *     cv2.threshold does for 8-bit images; circularity uses the traced
  *     contour's length, as cv2.arcLength does.
  *
- * Not ported: the Hough circle estimate. On the server it only seeds the
- * dark-pupil search and serves as a fallback, so here the seed is the
- * MediaPipe iris centre and the fallback is the iris centre alone. Session
- * calibration (module_calibrate) is not ported either.
+ * Not ported: the Hough circle estimate. On the server it seeds the
+ * dark-pupil search (retrying from the iris landmarks if that fails) and
+ * serves as a fallback; here the seed is always the MediaPipe iris centre and
+ * the fallback is the iris centre alone. The seed decides which pixels the
+ * search thresholds, so when both seeds succeed the two centres can differ by
+ * a fraction of a pixel — about 0.9° of asymmetry on the reference photo.
+ * Session calibration (module_calibrate) is not ported either.
  *
  * Pure functions: no DOM, no camera. Coordinates are crop pixel indices
  * (a pixel's centre sits on the integer), matching cv2 — and, like the

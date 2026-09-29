@@ -38,6 +38,7 @@ from pipeline.module2_pupil import (
     CONFIDENCE_MEDIUM,
     PupilResult,
     _agree_and_fuse,
+    _localise_one_eye,
     _iris_radius_in_crop,
     _landmark_centre,
     _map_landmarks_to_crop,
@@ -455,6 +456,73 @@ class TestLocalise:
 # ─────────────────────────────────────────────────────────────
 # VISUAL TESTS — run on real crops from Module 1
 # ─────────────────────────────────────────────────────────────
+
+class TestDarkPupilSeeding:
+    """
+    Regression: a Hough circle that locks onto the wrong feature must not stop
+    the dark-pupil search from finding the real pupil.
+
+    On a real photo (tests/test_images/success_reference) Hough centred 1.63
+    iris radii from the eye; the dark-pupil search, seeded there, found a dark
+    blob 2 radii out, rejected it, and fell back to the iris-landmark centre —
+    0.3 radii off the true pupil — adding ~9 degrees of false asymmetry.
+
+    Fixture: true pupil at (60, 40); iris landmarks 8/4 px off it (MediaPipe
+    error, as on the real photo); a dark decoy far to the right.
+    """
+
+    TRUE_PUPIL = (60.0, 40.0)
+    LANDMARK_CENTRE = (68.0, 44.0)
+
+    def _crop(self):
+        crop = make_synthetic_eye_crop(width=180, height=80, pupil_cx=60, pupil_cy=40, iris_r=28, pupil_r=12)
+        cv2.circle(crop, (150, 40), 16, (20, 20, 20), -1)       # dark decoy (eye corner / shadow)
+        lms = make_5_iris_landmarks(*self.LANDMARK_CENTRE, 28)
+        return crop, lms, (0, 0, 180, 80)
+
+    def _run(self, monkeypatch, hough):
+        import pipeline.module2_pupil as m2
+        monkeypatch.setattr(m2, "_hough_estimate", lambda *a, **k: hough)
+        crop, lms, box = self._crop()
+        flags: List[str] = []
+        centre, *_ = _localise_one_eye(crop, lms, box, "left", flags)
+        return centre, flags
+
+    @pytest.mark.unit
+    def test_wrong_hough_circle_still_finds_the_pupil(self, monkeypatch):
+        centre, flags = self._run(monkeypatch, hough=(150.0, 40.0, 16.0))
+        err = float(np.hypot(centre[0] - self.TRUE_PUPIL[0], centre[1] - self.TRUE_PUPIL[1]))
+        assert err < 1.5, f"pupil {centre} is {err:.1f}px from the true pupil {self.TRUE_PUPIL}"
+        assert "pupil_from_darkblob_left" in flags
+        assert "darkblob_reseeded_left" in flags
+
+    @pytest.mark.unit
+    def test_good_hough_circle_is_used_without_reseeding(self, monkeypatch):
+        centre, flags = self._run(monkeypatch, hough=(60.0, 40.0, 28.0))
+        assert float(np.hypot(centre[0] - 60.0, centre[1] - 40.0)) < 1.5
+        assert "pupil_from_darkblob_left" in flags
+        assert "darkblob_reseeded_left" not in flags
+
+    @pytest.mark.unit
+    def test_no_hough_circle_seeds_from_landmarks(self, monkeypatch):
+        centre, flags = self._run(monkeypatch, hough=None)
+        assert float(np.hypot(centre[0] - 60.0, centre[1] - 40.0)) < 1.5
+        assert "darkblob_reseeded_left" not in flags
+
+    @pytest.mark.unit
+    def test_reference_photo_left_eye(self):
+        """The real photo that exposed the bug: left pupil must be the dark pupil."""
+        ref = Path(__file__).parent / "test_images" / "success_reference" / "clr_both_eyes.jpg"
+        if not ref.exists():
+            pytest.skip("Reference image not present (test images are git-ignored)")
+        from pipeline.module1_detection import detect_and_crop_eyes
+        from utils.image_utils import load_image_from_path
+        det = detect_and_crop_eyes(load_image_from_path(ref))
+        flags: List[str] = []
+        centre, *_ = _localise_one_eye(det.left_crop, det.left_iris_landmarks, det.left_crop_box, "left", flags)
+        assert "pupil_from_darkblob_left" in flags, flags
+        assert float(np.hypot(centre[0] - 113.2, centre[1] - 45.8)) < 0.5, centre
+
 
 class TestVisual:
     """

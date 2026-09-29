@@ -552,24 +552,46 @@ def _localise_one_eye(
     hough_radius  = hough_result[2] if hough_result else None
     seed_centre   = hough_centre if hough_centre is not None else lm_centre
 
-    dark_pupil = _dark_pupil_centre(crop_rgb, seed_centre, iris_radius, eye_label)
-
     # ── Anatomical sanity bound on the dark-blob candidate ──
     # The pupil is concentric with the iris, so its centre cannot lie far from
     # the iris centre.  A dark blob beyond DARK_PUPIL_MAX_IRIS_RADII is an
     # eyelash, eyeliner, brow shadow or the eye corner — measuring displacement
     # from it produces a large false reading in ONE eye, which the bilateral
-    # comparison then reports as severe asymmetry.  Reject and fall back.
-    if dark_pupil is not None and iris_radius > 0:
-        gap_px = float(np.linalg.norm(np.array(dark_pupil) - np.array(lm_centre)))
-        if gap_px > DARK_PUPIL_MAX_IRIS_RADII * iris_radius:
-            logger.warning(
-                f"Module 2 [{eye_label}]: dark-blob candidate rejected — "
-                f"{gap_px:.1f}px from iris centre = {gap_px / iris_radius:.2f} iris radii "
-                f"(max {DARK_PUPIL_MAX_IRIS_RADII}); falling back to iris-circle estimate."
+    # comparison then reports as severe asymmetry.
+    def _plausible(candidate: Optional[Tuple[float, float]]) -> bool:
+        if candidate is None or iris_radius <= 0:
+            return candidate is not None
+        gap_px = float(np.linalg.norm(np.array(candidate) - np.array(lm_centre)))
+        return gap_px <= DARK_PUPIL_MAX_IRIS_RADII * iris_radius
+
+    dark_pupil = _dark_pupil_centre(crop_rgb, seed_centre, iris_radius, eye_label)
+
+    # A Hough circle can lock onto the wrong feature (eye corner, shadow,
+    # brow).  The search is confined to 1.2 iris radii around its seed, so a
+    # misplaced Hough seed never even looks at the real pupil — it finds the
+    # wrong dark blob (rejected below) or nothing, and the eye falls back to
+    # the iris-circle estimate, which can sit a third of an iris radius off the
+    # true pupil (~9 degrees of false asymmetry on one real photo).  When the
+    # Hough-seeded search fails, search again from the iris landmarks.
+    if not _plausible(dark_pupil) and hough_centre is not None:
+        retry = _dark_pupil_centre(crop_rgb, lm_centre, iris_radius, eye_label)
+        if _plausible(retry):
+            logger.info(
+                f"Module 2 [{eye_label}]: Hough-seeded pupil search failed; "
+                f"found the pupil from the iris-landmark seed instead."
             )
-            flags.append(f"darkblob_rejected_{eye_label}")
-            dark_pupil = None
+            flags.append(f"darkblob_reseeded_{eye_label}")
+            dark_pupil = retry
+
+    if dark_pupil is not None and not _plausible(dark_pupil):
+        gap_px = float(np.linalg.norm(np.array(dark_pupil) - np.array(lm_centre)))
+        logger.warning(
+            f"Module 2 [{eye_label}]: dark-blob candidate rejected — "
+            f"{gap_px:.1f}px from iris centre = {gap_px / iris_radius:.2f} iris radii "
+            f"(max {DARK_PUPIL_MAX_IRIS_RADII}); falling back to iris-circle estimate."
+        )
+        flags.append(f"darkblob_rejected_{eye_label}")
+        dark_pupil = None
 
     if dark_pupil is not None:
         final_centre = dark_pupil
