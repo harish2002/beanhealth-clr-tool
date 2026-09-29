@@ -20,6 +20,7 @@ All raw tracebacks are logged server-side and never sent to the client.
 from __future__ import annotations
 
 import io
+import json
 import logging
 from typing import List, Optional
 
@@ -53,6 +54,7 @@ from pipeline.module5_asymmetry    import compute_asymmetry_and_angle
 from pipeline.module6_classify     import classify_strabismus
 from pipeline.module7_report       import generate_report
 from pipeline.module8_alignment    import compute_corner_alignment
+from pipeline.module_parity       import compare_with_client, parse_client_measurement
 from utils.device_fingerprint      import parse_device_model
 from utils.exceptions              import CLRPipelineError, DetectionError, CLRError
 
@@ -470,6 +472,7 @@ async def analyse_stream(
     patient_name: str              = Form(..., min_length=1, max_length=100),
     patient_age:  int              = Form(..., ge=1, le=120),
     user_agent:   str              = Form("", description="navigator.userAgent from the browser (used for session-level calibration)"),
+    client_measurement: str        = Form("", description="Optional: the browser's own measurement of these frames (live-view comparison). Compared and logged; never affects the result."),
 ) -> JSONResponse:
     """
     Accept N frames captured during a streaming session, run the full 7-module
@@ -615,6 +618,15 @@ async def analyse_stream(
                 "on, held 30-40 cm away. The torch-free alignment check below "
                 "still ran."
             )
+
+    # Browser/server parity: compare the live view's own reading of these
+    # frames with ours and log it. Purely observational — the result above is
+    # already final and is not changed.
+    if client_measurement:
+        client, parse_error = parse_client_measurement(client_measurement)
+        parity = {"error": parse_error} if parse_error else compare_with_client(client, aggregated, frame_reports)
+        aggregated["parity"] = parity
+        logger.info("[PARITY] " + json.dumps(parity, separators=(",", ":")))
 
     logger.info(
         f"[API] /analyse-stream DONE — status={aggregated['status']} "
