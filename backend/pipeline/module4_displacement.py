@@ -73,7 +73,7 @@ class DisplacementResult:
     left_displacement_norm:  float  # magnitude / iris_radius
     right_displacement_norm: float
 
-    # Directions in anatomical terms (accounts for left/right eye mirroring)
+    # Directions in anatomical terms, for the patient's left / right eye
     left_direction:  str   # nasal / temporal / superior / inferior
     right_direction: str
 
@@ -123,21 +123,13 @@ def _cardinal_to_anatomical(cardinal: str, eye: str) -> str:
     """
     Convert a crop-space direction to an anatomical direction label.
 
-    The mapping depends on which eye we're looking at because the nasal
-    side of the left eye is to the right in the image, and vice versa.
+    `eye` is the PATIENT's eye (see the laterality convention in
+    utils/constants.py). In the unmirrored input image the patient's right
+    eye sits on the image left, so its nasal side is image-right; the left
+    eye's nasal side is image-left. Nasal always faces the image centre, so
+    this holds whether or not the image is mirrored.
 
-    Image convention (Photo Booth / front camera — mirrored):
-        Left eye  in image → person's RIGHT eye (nasal = image-right)
-        Right eye in image → person's LEFT eye  (nasal = image-left)
-
-    For back camera (production app — not mirrored):
-        Left eye  in image → person's LEFT eye  (nasal = image-right)
-        Right eye in image → person's RIGHT eye (nasal = image-left)
-
-    We assume FRONT camera (mirrored) as per current test setup.
-    This can be toggled with the `mirror` parameter in measure_displacement().
-
-    Vertical directions are consistent:
+    Vertical directions are the same for both eyes:
         up   → superior (CLR above pupil)
         down → inferior (CLR below pupil)
     """
@@ -146,13 +138,11 @@ def _cardinal_to_anatomical(cardinal: str, eye: str) -> str:
     if cardinal == "down":
         return DIRECTION_INFERIOR
 
-    # Horizontal — depends on which eye and camera mirroring
-    if eye == "left":
-        # In a mirrored (front-camera) image, left eye's nasal side is image-RIGHT
+    if eye == "right":
+        # OD (image-left): nasal side is image-RIGHT
         return DIRECTION_NASAL if cardinal == "right" else DIRECTION_TEMPORAL
-    else:
-        # Right eye's nasal side is image-LEFT
-        return DIRECTION_NASAL if cardinal == "left" else DIRECTION_TEMPORAL
+    # OS (image-right): nasal side is image-LEFT
+    return DIRECTION_NASAL if cardinal == "left" else DIRECTION_TEMPORAL
 
 
 # ─────────────────────────────────────────────────────────────
@@ -164,7 +154,6 @@ def measure_displacement(
     clr: Tuple[float, float],
     iris_radius: float,
     eye: str = "left",
-    mirror: bool = True,
     head_roll_deg: float = 0.0,
 ) -> dict:
     """
@@ -174,8 +163,7 @@ def measure_displacement(
         pupil:       (x, y) pupil centre in crop-local coordinates
         clr:         (x, y) CLR position in crop-local coordinates
         iris_radius: iris radius in pixels (for normalisation)
-        eye:         "left" or "right" — used for anatomical direction labelling
-        mirror:      True if image is front-camera (mirrored); False for back camera
+        eye:         the patient's "left" or "right" eye — for anatomical labelling
         head_roll_deg: head tilt from Module 1.  The displacement vector is
                      de-rotated by this angle so that "horizontal" and
                      "vertical" mean horizontal and vertical *in the head's
@@ -212,14 +200,6 @@ def measure_displacement(
     angle_rad = math.atan2(dy, dx)
 
     cardinal = _angle_to_cardinal(angle_rad)
-
-    # For back camera (not mirrored), flip horizontal direction
-    if not mirror:
-        if cardinal == "right":
-            cardinal = "left"
-        elif cardinal == "left":
-            cardinal = "right"
-
     direction = _cardinal_to_anatomical(cardinal, eye)
 
     logger.debug(
@@ -250,7 +230,6 @@ def compute_displacement(
     left_iris_radius:  float,
     right_iris_radius: float,
     upstream_flags: Optional[List[str]] = None,
-    mirror: bool = True,
     head_roll_deg: float = 0.0,
 ) -> DisplacementResult:
     """
@@ -264,7 +243,9 @@ def compute_displacement(
         left_iris_radius:   left iris radius in pixels
         right_iris_radius:  right iris radius in pixels
         upstream_flags:     flags carried forward from Modules 1–3
-        mirror:             True for front camera (mirrored image)
+        head_roll_deg:      head roll from Module 1 (see measure_displacement)
+
+    "left" / "right" are the patient's eyes (utils/constants.py).
 
     Returns:
         DisplacementResult
@@ -275,9 +256,9 @@ def compute_displacement(
     flags: List[str] = list(upstream_flags or [])
 
     # Compute per eye
-    left  = measure_displacement(left_pupil,  left_clr,  left_iris_radius,  eye="left",  mirror=mirror,
+    left  = measure_displacement(left_pupil,  left_clr,  left_iris_radius,  eye="left",
         head_roll_deg=head_roll_deg)
-    right = measure_displacement(right_pupil, right_clr, right_iris_radius, eye="right", mirror=mirror,
+    right = measure_displacement(right_pupil, right_clr, right_iris_radius, eye="right",
         head_roll_deg=head_roll_deg)
 
     # Warn if displacement is extremely large (> 1 iris radius) — may indicate bad detection

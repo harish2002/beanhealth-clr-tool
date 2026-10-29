@@ -7,32 +7,40 @@ All magic numbers live here. Never hardcode these in pipeline modules.
 # Module 1 — Eye Detection & Crop
 # ─────────────────────────────────────────────
 
-# MediaPipe Face Mesh iris landmark indices
-# Left eye iris:  landmarks 468–472 (5 points: centre + 4 boundary)
-# Right eye iris: landmarks 473–477 (5 points: centre + 4 boundary)
-LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472]
-RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477]
+# ── Laterality convention ──
+# Every "left" / "right" in this pipeline — field names, flags, dominant_eye,
+# annotations — means the PATIENT'S left / right eye (OS / OD), never a side
+# of the image.
+#
+# Input images are assumed UNMIRRORED: the camera's view of the patient, as
+# both the rear and front cameras deliver frames through getUserMedia (only
+# the on-screen preview is mirrored). In such an image the patient's right
+# eye (OD) is on the image LEFT and their left eye (OS) on the image RIGHT.
+# A mirrored image swaps OD and OS; nasal / temporal are unaffected, because
+# the nasal side of either eye always faces the image centre.
+#
+# MediaPipe Face Mesh numbers its landmarks by face topology, which in an
+# unmirrored image puts 468–472 / 33 / 133 on the image-left eye (= OD) and
+# 473–477 / 263 / 362 on the image-right eye (= OS).
 
-# Left eye boundary landmarks (approximate bounding box)
-LEFT_EYE_BOUNDARY  = [33, 7, 163, 144, 145, 153, 154, 155, 133,
+# Iris landmarks (5 points: centre + 4 boundary)
+RIGHT_IRIS_INDICES = [468, 469, 470, 471, 472]   # OD — image-left
+LEFT_IRIS_INDICES  = [473, 474, 475, 476, 477]   # OS — image-right
+
+# Eye boundary landmarks (approximate bounding box)
+RIGHT_EYE_BOUNDARY = [33, 7, 163, 144, 145, 153, 154, 155, 133,
                        173, 157, 158, 159, 160, 161, 246]
-
-# Right eye boundary landmarks (approximate bounding box)
-RIGHT_EYE_BOUNDARY = [362, 382, 381, 380, 374, 373, 390, 249, 263,
+LEFT_EYE_BOUNDARY  = [362, 382, 381, 380, 374, 373, 390, 249, 263,
                        466, 388, 387, 386, 385, 384, 398]
 
 # Eye corner (canthus) landmarks — used by Module 8 (corner alignment).
-# Pipeline "left"  = subject's LEFT eye  = image-RIGHT half.
-# Pipeline "right" = subject's RIGHT eye = image-LEFT  half.
-# Each tuple is (inner / medial canthus, outer / lateral canthus).
-# These MUST match the eye each *_EYE_BOUNDARY set describes, or Module 8
+# Each tuple is (inner / medial canthus, outer / lateral canthus), and MUST
+# come from the same eye as that side's *_EYE_BOUNDARY set, or Module 8
 # projects a pupil onto the OTHER eye's canthus axis and h_ratio lands far
-# outside its valid 0..1 range.
-# LEFT_EYE_BOUNDARY contains 33/133  -> left  eye corners come from {33, 133}
-# RIGHT_EYE_BOUNDARY contains 362/263 -> right eye corners come from {362, 263}
-# 133 and 362 are the medial (nasal) canthi; 33 and 263 are the lateral ones.
-LEFT_EYE_CORNERS  = (133, 33)    # left  eye: inner=133, outer=33
-RIGHT_EYE_CORNERS = (362, 263)   # right eye: inner=362, outer=263
+# outside its valid 0..1 range. 133 and 362 are the medial (nasal) canthi;
+# 33 and 263 the lateral ones.
+RIGHT_EYE_CORNERS = (133, 33)    # OD: inner=133, outer=33
+LEFT_EYE_CORNERS  = (362, 263)   # OS: inner=362, outer=263
 
 # ─────────────────────────────────────────────
 # Module 8 — Pupil-vs-corner alignment (CLR-free screening net)

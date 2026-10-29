@@ -42,8 +42,10 @@ const MS_AGGREGATION    = 3000;
 const TOTAL_EXPECTED_MS = TOTAL_FRAMES * MS_PER_FRAME + MS_AGGREGATION;
 
 // ── Iris landmark indices (MediaPipe FaceMesh) ──────────────
-const LEFT_IRIS_INDICES  = [468, 469, 470, 471, 472];
-const RIGHT_IRIS_INDICES = [473, 474, 475, 476, 477];
+// Named by the PATIENT's eye. Camera frames are unmirrored, so the patient's
+// right eye (OD) is on the image left — MediaPipe's 468–472 group.
+const RIGHT_IRIS_INDICES = [468, 469, 470, 471, 472];
+const LEFT_IRIS_INDICES  = [473, 474, 475, 476, 477];
 
 type CaptureStatus =
   | "idle"           // waiting for user to start
@@ -150,12 +152,12 @@ function sampleMaxLuminance(
 }
 
 // Eyelid landmark indices for eye openness (MediaPipe FaceMesh)
-// Subject's left eye  (iris indices 468-472): upper=159, lower=145
-// Subject's right eye (iris indices 473-477): upper=386, lower=374
-const LEFT_UPPER_LID  = 159;
-const LEFT_LOWER_LID  = 145;
-const RIGHT_UPPER_LID = 386;
-const RIGHT_LOWER_LID = 374;
+// Patient's right eye (iris indices 468-472): upper=159, lower=145
+// Patient's left eye  (iris indices 473-477): upper=386, lower=374
+const RIGHT_UPPER_LID = 159;
+const RIGHT_LOWER_LID = 145;
+const LEFT_UPPER_LID  = 386;
+const LEFT_LOWER_LID  = 374;
 
 interface Props {
   patientName: string;

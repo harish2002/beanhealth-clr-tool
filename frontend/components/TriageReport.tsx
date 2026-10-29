@@ -49,6 +49,12 @@ interface TriageReportProps {
 
 const TIER_ORDER: UrgencyTier[] = ["NORMAL", "MONITOR", "ROUTINE", "URGENT"];
 
+/** The pipeline's "left" / "right" are the patient's eyes. */
+const EYE_LABEL: Record<string, string> = {
+  left:  "Left eye (OS)",
+  right: "Right eye (OD)",
+};
+
 /** Human-readable labels for per-frame rejection reasons */
 const REJECTION_LABEL: Record<string, string> = {
   statistical_outlier:    "Outlier",
@@ -542,7 +548,7 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
 
           {/* Dominant eye + direction */}
           <div className="mb-5">
-            <MetricRow label="Dominant eye"     value={`${technical.dominant_eye} (${r.severity.toLowerCase()} deviation)`} />
+            <MetricRow label="Dominant eye"     value={`${EYE_LABEL[technical.dominant_eye] ?? technical.dominant_eye} (${r.severity.toLowerCase()} deviation)`} />
             <MetricRow label="Absolute deviation" value={
               result.deviation_avg_deg !== undefined
                 ? `${result.deviation_avg_deg.toFixed(1)}° ± ${result.deviation_std_deg?.toFixed(1)}°`

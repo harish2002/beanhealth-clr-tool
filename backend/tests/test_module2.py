@@ -510,8 +510,9 @@ class TestDarkPupilSeeding:
         assert "darkblob_reseeded_left" not in flags
 
     @pytest.mark.unit
-    def test_reference_photo_left_eye(self):
-        """The real photo that exposed the bug: left pupil must be the dark pupil."""
+    def test_reference_photo_right_eye(self):
+        """The real photo that exposed the bug: the patient's right (image-left)
+        pupil must be the dark pupil."""
         ref = Path(__file__).parent / "test_images" / "success_reference" / "clr_both_eyes.jpg"
         if not ref.exists():
             pytest.skip("Reference image not present (test images are git-ignored)")
@@ -519,8 +520,8 @@ class TestDarkPupilSeeding:
         from utils.image_utils import load_image_from_path
         det = detect_and_crop_eyes(load_image_from_path(ref))
         flags: List[str] = []
-        centre, *_ = _localise_one_eye(det.left_crop, det.left_iris_landmarks, det.left_crop_box, "left", flags)
-        assert "pupil_from_darkblob_left" in flags, flags
+        centre, *_ = _localise_one_eye(det.right_crop, det.right_iris_landmarks, det.right_crop_box, "right", flags)
+        assert "pupil_from_darkblob_right" in flags, flags
         assert float(np.hypot(centre[0] - 113.2, centre[1] - 45.8)) < 0.5, centre
 
 

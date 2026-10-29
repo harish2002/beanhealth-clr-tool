@@ -287,7 +287,7 @@ def _build_alignment_view(
         ))
 
     try:
-        return combine_crops_to_base64(views[0], views[1])
+        return _eye_pair_b64(views[0], views[1])
     except Exception as e:      # never let a picture break the report
         logger.warning(f"Module 7: alignment view render failed: {e}")
         return None
@@ -332,6 +332,15 @@ def _draw_zoomed_annotations(
     return out
 
 
+def _eye_pair_b64(left: np.ndarray, right: np.ndarray) -> str:
+    """
+    Show the patient's two eyes side by side as they appear in the photo:
+    the right eye (OD) on the viewer's left, the left eye (OS) on the right —
+    the face-on view a clinician expects.
+    """
+    return combine_crops_to_base64(right, left)
+
+
 def _generate_grayscale_clahe_crops(
     left_crop: np.ndarray,
     right_crop: np.ndarray,
@@ -357,7 +366,7 @@ def _generate_grayscale_clahe_crops(
     _draw_label(left_rgb,  "L", (5, 14), colour=(220, 220, 220), scale=0.45)
     _draw_label(right_rgb, "R", (5, 14), colour=(220, 220, 220), scale=0.45)
 
-    return combine_crops_to_base64(left_rgb, right_rgb)
+    return _eye_pair_b64(left_rgb, right_rgb)
 
 
 def _generate_result_overlay(
@@ -657,7 +666,7 @@ def build_success_report(
     # Step 1 — raw eye crops with L/R labels
     m1_left_labelled  = _draw_zoomed_annotations(m1_left,  side_label="L")
     m1_right_labelled = _draw_zoomed_annotations(m1_right, side_label="R")
-    m1_b64 = combine_crops_to_base64(m1_left_labelled, m1_right_labelled)
+    m1_b64 = _eye_pair_b64(m1_left_labelled, m1_right_labelled)
 
     # Step 2 — grayscale + CLAHE contrast enhancement
     m2_b64 = _generate_grayscale_clahe_crops(m1_left, m1_right)
@@ -665,12 +674,12 @@ def build_success_report(
     # Step 3 — pupil centre localisation (blue dot + iris ring)
     m3_left  = _draw_zoomed_annotations(m1_left,  pupil=pupil_result.left_pupil,  iris_r=pupil_result.left_iris_radius,  side_label="L")
     m3_right = _draw_zoomed_annotations(m1_right, pupil=pupil_result.right_pupil, iris_r=pupil_result.right_iris_radius, side_label="R")
-    m3_b64   = combine_crops_to_base64(m3_left, m3_right)
+    m3_b64   = _eye_pair_b64(m3_left, m3_right)
 
     # Step 4 — CLR bright spot detection (amber dot)
     m4_left  = _draw_zoomed_annotations(m1_left,  clr=clr_result.left_clr,  side_label="L")
     m4_right = _draw_zoomed_annotations(m1_right, clr=clr_result.right_clr, side_label="R")
-    m4_b64   = combine_crops_to_base64(m4_left, m4_right)
+    m4_b64   = _eye_pair_b64(m4_left, m4_right)
 
     # Step 5 — displacement vector with per-eye measurements
     l_disp_norm = round(displacement.left_displacement_norm,  3)
@@ -691,7 +700,7 @@ def build_success_report(
         side_label="R",
         measurement_label=f"{r_disp_norm}r",
     )
-    m5_b64 = combine_crops_to_base64(m5_left, m5_right)
+    m5_b64 = _eye_pair_b64(m5_left, m5_right)
 
     # Step 6 — final annotated full image with clinical measurements overlay
     m6_b64 = _generate_result_overlay(annotated_img, asymmetry, classification, displacement)

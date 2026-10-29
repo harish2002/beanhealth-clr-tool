@@ -60,7 +60,7 @@ interface EyeSpec {
   outline: number[];            // eye outline → module 1 crop box
   corners: [number, number];    // (inner, outer) canthus → Method B
 }
-/** The server's pairing (constants.py LEFT_* / RIGHT_*). */
+/** The server's landmark groups (constants.py RIGHT_* = OD, LEFT_* = OS). */
 const EYES: [EyeSpec, EyeSpec] = [
   { iris: [468, 469, 470, 471, 472], outline: EYE_BOUNDARY_A, corners: [133, 33]  },
   { iris: [473, 474, 475, 476, 477], outline: EYE_BOUNDARY_B, corners: [362, 263] },

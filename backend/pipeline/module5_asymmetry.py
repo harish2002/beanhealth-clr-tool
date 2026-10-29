@@ -81,10 +81,13 @@ class AsymmetryResult:
                           kappa offset.  In true strabismus the vector difference is
                           non-zero in proportion to the ocular deviation.
     bav_nasal:            Nasal component of the bilateral asymmetry vector (normalised).
-                          Positive = left eye more nasal than right (esotropia signal).
+                          Positive = the left eye's REFLEX sits more nasally than
+                          the right's. The reflex moves opposite to the eye, so
+                          this is an exo signal for the left eye.
     bav_vertical:         Vertical component of the bilateral asymmetry vector.
-                          Positive = left eye more superior than right (hypertropia signal).
-    dominant_eye:         Which eye has the larger absolute displacement.
+                          Positive = the left eye's reflex sits higher than the
+                          right's (left hypotropia, i.e. right hypertropia).
+    dominant_eye:         The patient's eye with the larger absolute displacement.
     deviation_degrees:    Hirschberg angle of the dominant eye.  Reference only — NOT
                           used for severity (includes kappa offset).
     deviation_mm:         Physical displacement of dominant eye in mm.
@@ -112,7 +115,6 @@ class AsymmetryResult:
 def compute_bilateral_asymmetry_vector(
     left_dx: float,  left_dy: float,  left_iris_radius: float,
     right_dx: float, right_dy: float, right_iris_radius: float,
-    mirror: bool = True,
 ) -> dict:
     """
     Compute the bilateral asymmetry vector (BAV) in a canonical anatomical frame.
@@ -123,26 +125,27 @@ def compute_bilateral_asymmetry_vector(
         superior+ — displacement upward (positive)
         inferior− — displacement downward
 
-    Coordinate mapping (front camera, mirrored=True):
-        Left  eye: nasal = image-right (+dx),  superior = image-up (−dy)
-        Right eye: nasal = image-left  (−dx),  superior = image-up (−dy)
+    Coordinate mapping — "left" / "right" are the PATIENT's eyes, in an
+    unmirrored image (see the laterality convention in utils/constants.py):
+        Left  eye (OS, image-right): nasal = image-left  (−dx),  superior = −dy
+        Right eye (OD, image-left):  nasal = image-right (+dx),  superior = −dy
 
     For a fixating patient with kappa angle κ:
         left_canonical  ≈ (κ, 0)
         right_canonical ≈ (κ, 0)
         BAV             ≈ (0, 0)   ← kappa cancels
 
-    For a patient with esotropia (left eye turns inward by angle α):
-        left_canonical  ≈ (κ + α, 0)
+    For a patient with esotropia (left eye turns inward by angle α, which
+    moves its reflex temporally):
+        left_canonical  ≈ (κ − α, 0)
         right_canonical ≈ (κ, 0)
-        BAV             ≈ (α, 0)   ← true deviation isolated
+        BAV             ≈ (−α, 0)  ← true deviation isolated
 
     Args:
         left_dx, left_dy:   raw pixel displacement vector for left eye (crop coords)
         left_iris_radius:   left iris radius in pixels (for normalisation)
         right_dx, right_dy: raw pixel displacement vector for right eye
         right_iris_radius:  right iris radius in pixels
-        mirror:             True for front camera (mirrored image)
 
     Returns:
         dict with keys:
@@ -158,15 +161,10 @@ def compute_bilateral_asymmetry_vector(
     rn_x = right_dx / right_iris_radius
     rn_y = right_dy / right_iris_radius
 
-    # Convert to canonical anatomical frame
-    # Front camera (mirrored): left eye nasal = image+x; right eye nasal = image−x
-    # Back camera (not mirrored): left eye nasal = image−x (TODO: flip if needed)
-    if mirror:
-        left_nasal    = +ln_x          # image-right = nasal for left eye
-        right_nasal   = -rn_x         # image-left  = nasal for right eye
-    else:
-        left_nasal    = -ln_x
-        right_nasal   = +rn_x
+    # Convert to canonical anatomical frame. Nasal faces the image centre:
+    # image-left for the patient's left eye, image-right for their right eye.
+    left_nasal    = -ln_x
+    right_nasal   = +rn_x
 
     left_vertical  = -ln_y            # image-up = superior (positive) for both eyes
     right_vertical = -rn_y
@@ -331,7 +329,6 @@ def compute_asymmetry_and_angle(
     right_dy: Optional[float] = None,
     left_iris_radius:  Optional[float] = None,
     right_iris_radius: Optional[float] = None,
-    mirror: bool = True,
 ) -> AsymmetryResult:
     """
     Full Module 5 pipeline: bilateral asymmetry vector + Hirschberg angle + severity.
@@ -352,7 +349,6 @@ def compute_asymmetry_and_angle(
         right_dx, right_dy:      raw pixel CLR displacement vector, right eye
         left_iris_radius:        left iris radius in pixels
         right_iris_radius:       right iris radius in pixels
-        mirror:                  True for front-facing (mirrored) camera
 
     Returns:
         AsymmetryResult
@@ -369,7 +365,6 @@ def compute_asymmetry_and_angle(
         bav = compute_bilateral_asymmetry_vector(
             left_dx=left_dx,   left_dy=left_dy,   left_iris_radius=left_iris_radius,   # type: ignore[arg-type]
             right_dx=right_dx, right_dy=right_dy, right_iris_radius=right_iris_radius, # type: ignore[arg-type]
-            mirror=mirror,
         )
 
         asymmetry_score  = bav["asymmetry_score"]   # legacy scalar (retained)

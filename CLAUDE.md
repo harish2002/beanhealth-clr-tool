@@ -146,9 +146,10 @@ Uses Google MediaPipe Face Mesh to detect the face and locate both eyes. Extract
 
 **Key logic:**
 - Run `mp.solutions.face_mesh` on the input image
-- Extract landmarks for left eye (indices 33–133) and right eye (indices 362–463)
+- Extract landmarks for the patient's right eye (indices 33–133) and left eye (indices 362–463)
 - Crop with 20% horizontal and 40% vertical padding
-- Extract iris landmarks (left: 468–472, right: 473–477) and store for Module 2
+- Extract iris landmarks (right: 468–472, left: 473–477) and store for Module 2
+- **Laterality:** "left"/"right" always mean the *patient's* eye (OS/OD). Input images are unmirrored, so the patient's right eye is on the image left. See `utils/constants.py`.
 - Validate crop is not too small (minimum 60×40px)
 
 **Inputs:** Raw JPEG/PNG image (bytes or numpy array)
@@ -322,14 +323,14 @@ else:                    severity = "SEVERE"
 **What it does:**
 Names the type of squint based on displacement direction, assigns ICD-10 code, determines urgency tier, and generates a referral recommendation with timeframe.
 
-**Classification table:**
-| Displacement Direction | Condition | ICD-10 |
-|---|---|---|
-| Nasal (inward) | Esotropia | H50.0x |
-| Temporal (outward) | Exotropia | H50.1x |
-| Superior (upward) | Hypertropia | H50.2x |
-| Inferior (downward) | Hypotropia | H50.2x |
-| Minimal / symmetric | Orthophoria | H50.40 |
+**Classification table** — the direction is where the *reflex* sits relative to the pupil. The reflex moves opposite to the eye (standard Hirschberg reading):
+| Reflex Direction | Eye turned | Condition | ICD-10 |
+|---|---|---|---|
+| Temporal | Inward | Esotropia | H50.0x |
+| Nasal | Outward | Exotropia | H50.1x |
+| Inferior | Upward | Hypertropia | H50.2x |
+| Superior | Downward | Hypotropia | H50.2x |
+| Minimal / symmetric | — | Orthophoria | H50.40 |
 
 **Urgency tier mapping:**
 ```python
@@ -740,6 +741,7 @@ Pass criteria:
 - Each pipeline module is a standalone function — no side effects, no global state
 - All image arrays are `np.ndarray` with `dtype=uint8` unless stated otherwise
 - Image coordinates are always `(x, y)` — x is horizontal, y is vertical
+- "left"/"right" always name the patient's eye (OS/OD), never a side of the image
 
 ### TypeScript (Frontend)
 - Strict mode enabled

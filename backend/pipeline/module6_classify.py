@@ -19,12 +19,14 @@ Classification logic:
 
     Special case: if severity is NORMAL, direction is ignored → Orthophoria.
 
-ICD-10 codes used:
-    H50.01  Esotropia   (nasal displacement — eye turns inward)
-    H50.11  Exotropia   (temporal displacement — eye turns outward)
-    H50.21  Hypertropia (superior displacement — eye turns upward)
-    H50.22  Hypotropia  (inferior displacement — eye turns downward)
-    H50.40  Orthophoria (no significant deviation)
+Reading the reflex (Hirschberg): the light reflex stays where the light is,
+so it moves on the cornea OPPOSITE to the way the eye turns.
+    Reflex temporal → eye turned in   → Esotropia   H50.01
+    Reflex nasal    → eye turned out  → Exotropia   H50.11
+    Reflex inferior → eye turned up   → Hypertropia H50.21
+    Reflex superior → eye turned down → Hypotropia  H50.22
+    No significant asymmetry          → Orthophoria H50.40
+(ICD-10 values are unchanged from utils/constants.ICD10.)
 
 Urgency mapping:
     SEVERE   → URGENT   → "Refer to ophthalmology within 1 week"
@@ -91,12 +93,13 @@ class ClassificationResult:
 # Classification tables
 # ─────────────────────────────────────────────────────────────
 
-# Direction → (condition_name, icd10_code)
+# Direction of the REFLEX on the cornea → (condition_name, icd10_code).
+# The reflex moves opposite to the eye: an eye turned in shows it temporally.
 _DIRECTION_TO_CONDITION = {
-    DIRECTION_NASAL:    ("Esotropia",   ICD10["esotropia"]),
-    DIRECTION_TEMPORAL: ("Exotropia",   ICD10["exotropia"]),
-    DIRECTION_SUPERIOR: ("Hypertropia", ICD10["hypertropia"]),
-    DIRECTION_INFERIOR: ("Hypotropia",  ICD10["hypotropia"]),
+    DIRECTION_TEMPORAL: ("Esotropia",   ICD10["esotropia"]),
+    DIRECTION_NASAL:    ("Exotropia",   ICD10["exotropia"]),
+    DIRECTION_INFERIOR: ("Hypertropia", ICD10["hypertropia"]),
+    DIRECTION_SUPERIOR: ("Hypotropia",  ICD10["hypotropia"]),
 }
 
 # Severity → (urgency_tier, referral_recommendation, timeframe)
@@ -182,7 +185,8 @@ def classify(
 
     Args:
         direction: "nasal" | "temporal" | "superior" | "inferior"
-                   (direction of CLR displacement of the dominant eye)
+                   (direction of the dominant eye's REFLEX relative to its
+                   pupil — not the direction the eye turns)
         severity:  "NORMAL" | "MILD" | "MODERATE" | "SEVERE"
 
     Returns:

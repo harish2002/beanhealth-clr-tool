@@ -44,13 +44,14 @@ from utils.constants import (
 class TestClassifyConditionMapping:
 
     @pytest.mark.parametrize("direction,expected_condition,expected_icd", [
-        (DIRECTION_NASAL,    "Esotropia",   "H50.01"),
-        (DIRECTION_TEMPORAL, "Exotropia",   "H50.11"),
-        (DIRECTION_SUPERIOR, "Hypertropia", "H50.21"),
-        (DIRECTION_INFERIOR, "Hypotropia",  "H50.22"),
+        # The reflex moves opposite to the eye (Hirschberg)
+        (DIRECTION_TEMPORAL, "Esotropia",   "H50.01"),
+        (DIRECTION_NASAL,    "Exotropia",   "H50.11"),
+        (DIRECTION_INFERIOR, "Hypertropia", "H50.21"),
+        (DIRECTION_SUPERIOR, "Hypotropia",  "H50.22"),
     ])
     def test_condition_and_icd_mapping(self, direction, expected_condition, expected_icd):
-        """Each direction maps to the correct clinical condition and ICD-10 code."""
+        """Each reflex direction maps to the correct clinical condition and ICD-10 code."""
         r = classify(direction=direction, severity=SEVERITY_MODERATE)
         assert r["condition_name"] == expected_condition, (
             f"direction={direction}: expected {expected_condition}, got {r['condition_name']}"
@@ -133,12 +134,12 @@ class TestClassifyNarrative:
 
     def test_urgent_narrative_contains_condition(self):
         """URGENT narrative should mention the condition name."""
-        r = classify(direction=DIRECTION_NASAL, severity=SEVERITY_SEVERE)
+        r = classify(direction=DIRECTION_TEMPORAL, severity=SEVERITY_SEVERE)
         assert "Esotropia" in r["narrative"]
 
     def test_routine_narrative_contains_condition(self):
         """ROUTINE narrative should mention the condition name."""
-        r = classify(direction=DIRECTION_TEMPORAL, severity=SEVERITY_MODERATE)
+        r = classify(direction=DIRECTION_NASAL, severity=SEVERITY_MODERATE)
         assert "Exotropia" in r["narrative"]
 
     def test_normal_narrative_mentions_no_asymmetry(self):
@@ -230,9 +231,9 @@ class TestClassifyStrabismus:
             assert hasattr(r, field_name), f"Missing field: {field_name}"
 
     def test_esotropia_full_pipeline(self):
-        """End-to-end: nasal + SEVERE → Esotropia, H50.01, URGENT."""
+        """End-to-end: temporal reflex + SEVERE → Esotropia, H50.01, URGENT."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_NASAL,
+            dominant_direction=DIRECTION_TEMPORAL,
             severity=SEVERITY_SEVERE,
             asymmetry_score=0.8,
         )
@@ -241,9 +242,9 @@ class TestClassifyStrabismus:
         assert r.urgency_tier   == URGENCY_URGENT
 
     def test_exotropia_full_pipeline(self):
-        """End-to-end: temporal + MODERATE → Exotropia, H50.11, ROUTINE."""
+        """End-to-end: nasal reflex + MODERATE → Exotropia, H50.11, ROUTINE."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_TEMPORAL,
+            dominant_direction=DIRECTION_NASAL,
             severity=SEVERITY_MODERATE,
             asymmetry_score=0.4,
         )
@@ -252,9 +253,9 @@ class TestClassifyStrabismus:
         assert r.urgency_tier   == URGENCY_ROUTINE
 
     def test_hypertropia_full_pipeline(self):
-        """End-to-end: superior + MILD → Hypertropia, H50.21, MONITOR."""
+        """End-to-end: inferior reflex + MILD → Hypertropia, H50.21, MONITOR."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_SUPERIOR,
+            dominant_direction=DIRECTION_INFERIOR,
             severity=SEVERITY_MILD,
             asymmetry_score=0.1,
         )
@@ -263,9 +264,9 @@ class TestClassifyStrabismus:
         assert r.urgency_tier   == URGENCY_MONITOR
 
     def test_hypotropia_full_pipeline(self):
-        """End-to-end: inferior + MILD → Hypotropia, H50.22, MONITOR."""
+        """End-to-end: superior reflex + MILD → Hypotropia, H50.22, MONITOR."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_INFERIOR,
+            dominant_direction=DIRECTION_SUPERIOR,
             severity=SEVERITY_MILD,
             asymmetry_score=0.1,
         )
@@ -353,7 +354,7 @@ class TestDirectionReliability:
     def test_asymmetry_above_threshold_not_suppressed(self):
         """asymmetry_score >= 0.05, no disagreement → direction preserved."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_NASAL,
+            dominant_direction=DIRECTION_TEMPORAL,
             severity=SEVERITY_MILD,
             asymmetry_score=0.12,
         )
@@ -365,7 +366,7 @@ class TestDirectionReliability:
         """pupil_disagreement + MODERATE severity → direction NOT suppressed.
         At 15-30°, displacement is large enough that direction is reliable."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_NASAL,
+            dominant_direction=DIRECTION_TEMPORAL,
             severity=SEVERITY_MODERATE,
             asymmetry_score=0.3,
             upstream_flags=["pupil_disagreement_left"],
@@ -376,7 +377,7 @@ class TestDirectionReliability:
     def test_pupil_disagreement_severe_not_suppressed(self):
         """pupil_disagreement + SEVERE severity → direction NOT suppressed."""
         r = classify_strabismus(
-            dominant_direction=DIRECTION_TEMPORAL,
+            dominant_direction=DIRECTION_NASAL,
             severity=SEVERITY_SEVERE,
             asymmetry_score=0.8,
             upstream_flags=["pupil_disagreement_right"],

@@ -141,9 +141,10 @@ class TestAngleToCardinal:
 
 class TestCardinalToAnatomical:
     """
-    In a front-camera (mirrored) image:
-        Left eye nasal side  = image RIGHT
-        Right eye nasal side = image LEFT
+    "left" / "right" are the patient's eyes. In the unmirrored image the
+    patient's right eye is on the image left, so:
+        Right eye nasal side = image RIGHT
+        Left eye nasal side  = image LEFT
     """
 
     def test_up_always_superior(self):
@@ -154,19 +155,19 @@ class TestCardinalToAnatomical:
         assert _cardinal_to_anatomical("down", "left")  == DIRECTION_INFERIOR
         assert _cardinal_to_anatomical("down", "right") == DIRECTION_INFERIOR
 
-    def test_left_eye_right_is_nasal(self):
-        """Front-camera: left eye's nasal side is image-right."""
-        assert _cardinal_to_anatomical("right", "left") == DIRECTION_NASAL
+    def test_right_eye_right_is_nasal(self):
+        """The patient's right eye (image-left) has its nasal side image-right."""
+        assert _cardinal_to_anatomical("right", "right") == DIRECTION_NASAL
 
-    def test_left_eye_left_is_temporal(self):
-        assert _cardinal_to_anatomical("left", "left") == DIRECTION_TEMPORAL
+    def test_right_eye_left_is_temporal(self):
+        assert _cardinal_to_anatomical("left", "right") == DIRECTION_TEMPORAL
 
-    def test_right_eye_left_is_nasal(self):
-        """Front-camera: right eye's nasal side is image-left."""
-        assert _cardinal_to_anatomical("left", "right") == DIRECTION_NASAL
+    def test_left_eye_left_is_nasal(self):
+        """The patient's left eye (image-right) has its nasal side image-left."""
+        assert _cardinal_to_anatomical("left", "left") == DIRECTION_NASAL
 
-    def test_right_eye_right_is_temporal(self):
-        assert _cardinal_to_anatomical("right", "right") == DIRECTION_TEMPORAL
+    def test_left_eye_right_is_temporal(self):
+        assert _cardinal_to_anatomical("right", "left") == DIRECTION_TEMPORAL
 
 
 # ─────────────────────────────────────────────────────────────
@@ -180,21 +181,21 @@ class TestDirectionFromCoordinates:
     """
 
     @pytest.mark.parametrize("clr_offset,eye,expected_dir", [
-        # Front-camera (mirrored) — left eye
-        ((+10,   0), "left",  DIRECTION_NASAL),     # CLR right → nasal
-        ((-10,   0), "left",  DIRECTION_TEMPORAL),  # CLR left  → temporal
+        # Patient's left eye (image-right)
+        ((-10,   0), "left",  DIRECTION_NASAL),     # CLR left  → nasal
+        ((+10,   0), "left",  DIRECTION_TEMPORAL),  # CLR right → temporal
         ((  0, -10), "left",  DIRECTION_SUPERIOR),  # CLR up    → superior
         ((  0, +10), "left",  DIRECTION_INFERIOR),  # CLR down  → inferior
-        # Right eye
-        ((-10,   0), "right", DIRECTION_NASAL),     # CLR left  → nasal
-        ((+10,   0), "right", DIRECTION_TEMPORAL),  # CLR right → temporal
+        # Patient's right eye (image-left)
+        ((+10,   0), "right", DIRECTION_NASAL),     # CLR right → nasal
+        ((-10,   0), "right", DIRECTION_TEMPORAL),  # CLR left  → temporal
         ((  0, -10), "right", DIRECTION_SUPERIOR),
         ((  0, +10), "right", DIRECTION_INFERIOR),
     ])
     def test_direction_all_quadrants(self, clr_offset, eye, expected_dir):
         pupil = (50.0, 40.0)
         clr   = (pupil[0] + clr_offset[0], pupil[1] + clr_offset[1])
-        r = measure_displacement(pupil=pupil, clr=clr, iris_radius=30.0, eye=eye, mirror=True)
+        r = measure_displacement(pupil=pupil, clr=clr, iris_radius=30.0, eye=eye)
         assert r["direction"] == expected_dir, (
             f"clr_offset={clr_offset}, eye={eye}: "
             f"expected {expected_dir}, got {r['direction']}"
