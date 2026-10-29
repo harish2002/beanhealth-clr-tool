@@ -89,23 +89,26 @@ logger = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
-# Annotation colour constants  (BGR — OpenCV convention)
+# Annotation colour constants  (RGB — every image here is drawn as RGB)
 # ─────────────────────────────────────────────────────────────
+# These were once written in OpenCV's BGR order while being drawn onto RGB
+# arrays, which swapped red and blue: the pupil dot rendered orange, the
+# reflex blue, and an URGENT border blue.
 
-_COLOUR_PUPIL    = (235, 100,  20)   # blue
-_COLOUR_CLR      = ( 20, 180, 255)   # amber / orange-yellow
+_COLOUR_PUPIL    = ( 20, 100, 235)   # blue
+_COLOUR_CLR      = (255, 180,  20)   # amber / orange-yellow
 _COLOUR_VECTOR   = (255, 255, 255)   # white
 _COLOUR_IRIS_RING = (100, 220, 100)  # soft green ring
-# Module 8 (corner alignment) palette — BGR
-_COLOUR_CANTHUS   = (200, 120, 255)  # pink/magenta — the two eye corners
+# Module 8 (corner alignment) palette
+_COLOUR_CANTHUS   = (255, 120, 200)  # pink/magenta — the two eye corners
 _COLOUR_AXIS      = (200, 200, 200)  # grey — inner->outer canthus axis
-_COLOUR_PROJ      = (120, 200, 255)  # amber — pupil projected onto the axis
+_COLOUR_PROJ      = (255, 200, 120)  # amber — pupil projected onto the axis
 
 # Border colours by urgency tier
 _BORDER_COLOUR = {
-    URGENCY_URGENT:  ( 20,  20, 220),   # red
-    URGENCY_ROUTINE: ( 20, 140, 255),   # orange
-    URGENCY_MONITOR: ( 20, 210, 255),   # yellow
+    URGENCY_URGENT:  (220,  20,  20),   # red
+    URGENCY_ROUTINE: (255, 140,  20),   # orange
+    URGENCY_MONITOR: (255, 210,  20),   # yellow
     URGENCY_NORMAL:  ( 60, 200,  60),   # green
 }
 
@@ -530,6 +533,7 @@ def relabel_annotated_image(
         arr = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_COLOR)
         if arr is None:
             return image_b64
+        arr = cv2.cvtColor(arr, cv2.COLOR_BGR2RGB)   # the palette is RGB
 
         # The border is painted INSIDE the image, so the new one overwrites the
         # old in place — no cropping (which would eat real pixels each pass).
@@ -543,7 +547,8 @@ def relabel_annotated_image(
                     scale=0.5, thickness=1)
         arr = _draw_urgency_border(arr, urgency_tier)
 
-        ok, buf = cv2.imencode(".jpg", arr, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+        ok, buf = cv2.imencode(".jpg", cv2.cvtColor(arr, cv2.COLOR_RGB2BGR),
+                               [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         if not ok:
             return image_b64
         return base64.b64encode(buf.tobytes()).decode("ascii")

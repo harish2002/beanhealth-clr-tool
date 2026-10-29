@@ -455,3 +455,38 @@ class TestGenerateReport:
         r = generate_report(**_all_outputs(urgency=urgency))
         assert r["status"] == "SUCCESS"
         assert r["result"]["urgency_tier"] == urgency
+
+
+# ─────────────────────────────────────────────────────────────
+# Rendered colours — the palette is RGB and must render as named
+# ─────────────────────────────────────────────────────────────
+
+def _decode_rgb(b64: str) -> np.ndarray:
+    import io
+    from PIL import Image
+    return np.array(Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")).astype(int)
+
+
+class TestRenderedColours:
+    """These rendered with red and blue swapped while the palette was BGR."""
+
+    @pytest.mark.parametrize("urgency,channel", [
+        (URGENCY_URGENT, 0),    # red   → R dominant
+        (URGENCY_NORMAL, 1),    # green → G dominant
+    ])
+    def test_border_renders_its_tier_colour(self, urgency, channel):
+        r = generate_report(**_all_outputs(urgency=urgency))
+        corner = _decode_rgb(r["annotated_image_b64"])[3, 3]
+        assert int(np.argmax(corner)) == channel, corner
+
+    def test_relabel_border_renders_red_for_urgent(self):
+        from pipeline.module7_report import relabel_annotated_image
+        r = generate_report(**_all_outputs(urgency=URGENCY_NORMAL))
+        relabelled = relabel_annotated_image(r["annotated_image_b64"], URGENCY_URGENT, "Esotropia", "H50.01")
+        corner = _decode_rgb(relabelled)[3, 3]
+        assert int(np.argmax(corner)) == 0, corner
+
+    def test_pupil_dot_is_blue_and_reflex_dot_is_amber(self):
+        from pipeline.module7_report import _COLOUR_CLR, _COLOUR_PUPIL
+        assert int(np.argmax(_COLOUR_PUPIL)) == 2          # blue channel highest
+        assert _COLOUR_CLR[0] > _COLOUR_CLR[2]              # amber: red over blue
