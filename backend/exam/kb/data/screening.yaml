@@ -1,0 +1,71 @@
+# Values the existing single-gaze screening pipeline uses today (backend/
+# pipeline, utils/constants.py). Recorded here so they carry provenance and
+# review status; tests/test_kb.py keeps them equal to utils/constants.py
+# until the screening pipeline reads them from the KB directly.
+
+severity_thresholds:
+  - id: severity_mild_deg
+    value: 5.0
+    unit: deg of bilateral asymmetry
+    source: "CLAUDE.md §4 module 5 (utils/constants.py SEVERITY_MILD_DEG)"
+    review_status: needs_clinician_review
+    notes: "At or above → MILD (MONITOR: re-screen in 3 months)."
+
+  - id: severity_moderate_deg
+    value: 15.0
+    unit: deg of bilateral asymmetry
+    source: "CLAUDE.md §4 module 5 (utils/constants.py SEVERITY_MODERATE_DEG)"
+    review_status: needs_clinician_review
+    notes: "At or above → MODERATE (ROUTINE: refer within 4 weeks)."
+
+  - id: severity_severe_deg
+    value: 30.0
+    unit: deg of bilateral asymmetry
+    source: "CLAUDE.md §4 module 5 (utils/constants.py SEVERITY_SEVERE_DEG)"
+    review_status: needs_clinician_review
+    notes: "At or above → SEVERE (URGENT: refer within 1 week)."
+
+# ICD-10 codes as the screening report emits them today. The notes record
+# where the code's ICD-10-CM meaning appears to differ from how it is used;
+# coding needs a clinician or clinical coder before any change.
+icd10:
+  - id: icd10_esotropia
+    value: {code: H50.01, condition: esotropia}
+    source: "CLAUDE.md §8 (utils/constants.py ICD10)"
+    review_status: needs_clinician_review
+    notes: >-
+      To verify: in ICD-10-CM, H50.01 appears to be the monocular-esotropia
+      category, with the eye given by a sixth character (H50.011 right,
+      H50.012 left). Now that laterality is reliable the eye could be coded.
+
+  - id: icd10_exotropia
+    value: {code: H50.11, condition: exotropia}
+    source: "CLAUDE.md §8 (utils/constants.py ICD10)"
+    review_status: needs_clinician_review
+    notes: >-
+      To verify: as for esotropia — H50.11 appears to be the
+      monocular-exotropia category (H50.111 right, H50.112 left).
+
+  - id: icd10_hypertropia
+    value: {code: H50.21, condition: hypertropia}
+    source: "CLAUDE.md §8 (utils/constants.py ICD10)"
+    review_status: needs_clinician_review
+    notes: >-
+      To verify: in ICD-10-CM, H50.21 / H50.22 appear to mean vertical
+      strabismus of the right / left eye, not hypertropia / hypotropia. The
+      screen currently uses them to tell hyper from hypo.
+
+  - id: icd10_hypotropia
+    value: {code: H50.22, condition: hypotropia}
+    source: "CLAUDE.md §8 (utils/constants.py ICD10)"
+    review_status: needs_clinician_review
+    notes: "To verify: see icd10_hypertropia."
+
+  - id: icd10_orthophoria
+    value: {code: H50.40, condition: orthophoria}
+    source: "CLAUDE.md §8 (utils/constants.py ICD10)"
+    review_status: needs_clinician_review
+    notes: >-
+      To verify: in ICD-10-CM, H50.40 appears to mean unspecified
+      heterotropia — a strabismus code — yet the screen emits it for a
+      normal result. A normal screen may need no strabismus code at all.

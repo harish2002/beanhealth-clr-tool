@@ -1,0 +1,44 @@
+# Physical constants used to turn pixels into millimetres and angles.
+# Where the existing screening pipeline and the Phase 3 brief disagree, the
+# value is the one in use today and the other is kept as an alternative until
+# a clinician decides. tests/test_kb.py keeps these equal to
+# utils/constants.py so the two cannot drift apart silently.
+
+entries:
+  - id: iris_diameter_mm
+    value: 11.5
+    unit: mm
+    source: "Screening pipeline (CLAUDE.md §4 module 5; utils/constants.py IRIS_RADIUS_MM = 5.75)"
+    review_status: needs_clinician_review
+    notes: >-
+      Horizontal visible iris diameter used as the scale ruler. Changing it
+      rescales every angle proportionally. Children's corneas are smaller,
+      so a fixed adult value biases paediatric measurements.
+    alternatives:
+      - value: 11.7
+        unit: mm
+        source: "Phase 3 build brief §4.4"
+
+  - id: hirschberg_ratio_deg_per_mm
+    value: 7.0
+    unit: deg/mm
+    source: "Screening pipeline (CLAUDE.md §1 and §4 module 5: 1 mm of reflex displacement ≈ 7°)"
+    review_status: needs_clinician_review
+    notes: >-
+      7°/mm ≈ 12.3 PD/mm (100·tan 7°). The brief's default of 15 PD/mm is
+      ≈ 8.5°/mm, which would raise every angle by about 22%. Phase 3 also
+      fits this per patient (brief §4.4); this is the default before a fit.
+    alternatives:
+      - value: 15
+        unit: PD/mm
+        source: "Phase 3 build brief §4.4 (KB default 15 PD/mm)"
+
+  - id: hirschberg_ratio_plausible_pd_per_mm
+    value: null
+    unit: PD/mm
+    plausible_range: [12, 22]
+    source: "Phase 3 build brief §4.4 (plausible range 12–22 PD/mm)"
+    review_status: needs_clinician_review
+    notes: >-
+      Range only. A per-patient fitted ratio outside it is flagged
+      (brief §4.4).

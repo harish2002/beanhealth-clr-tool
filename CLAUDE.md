@@ -112,6 +112,12 @@ beanstrabis/
 │   │   ├── module5_asymmetry.py     ← Hirschberg angle + asymmetry
 │   │   ├── module6_classify.py      ← Clinical classification
 │   │   └── module7_report.py        ← Report + annotated image
+│   ├── exam/                        ← Phase 3 gaze examination
+│   │   └── kb/                      ← Clinical knowledge base
+│   │       ├── data/*.yaml          ← Versioned clinical values (source + review_status)
+│   │       ├── schema.py            ← Pydantic models for every KB file
+│   │       ├── derive.py            ← Yoke pairs + Parks rows derived from the muscle table
+│   │       └── loader.py            ← load_kb(): validate, version-check, cross-check
 │   ├── utils/
 │   │   ├── image_utils.py           ← Shared image helpers
 │   │   └── constants.py             ← Thresholds, ICD codes, etc.
@@ -879,6 +885,11 @@ patient_age  : int (required, 1–120)
 ✗ Never commit .env files or secrets
 ✗ Never use any types in TypeScript
 ✗ Never auto-submit the report without the user pressing a button
+✗ Never hard-code a clinical value in exam/ — read it from the KB (exam/kb/data),
+  where it carries a source and review_status
+✗ Never edit a KB data file without bumping kb_version and running
+  `python -m exam.kb stamp` (the loader rejects unstamped content)
+✗ Never mark a KB entry approved without a named clinician reviewer
 ```
 
 ---

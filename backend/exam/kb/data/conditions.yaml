@@ -1,0 +1,322 @@
+# Feature signatures for the patterns and red flags the rules engine may
+# suggest. Wording everywhere: "measures and characterizes ocular deviation;
+# suggests likely patterns. Decision support — not a diagnosis."
+#
+# features    — measurable findings the engine computes (milestone 3 builds
+#               them; milestone 6 feeds them real measurements). Each lists the
+#               parameters it takes and the thresholds it reads.
+# conditions  — evaluated once per eye as the "affected" eye; "fellow" is the
+#               other eye. A condition is suggested only when every `required`
+#               feature holds and each `any_of` group has at least one that
+#               holds. `supporting` features strengthen the report but are not
+#               needed. Red flags are flags only, never a diagnosis.
+
+features:
+  - id: deviation_in_primary_present
+    value:
+      description: "A horizontal or vertical deviation is present in primary position."
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, primary cell"
+    source: "Phase 3 build brief §5.4 (comitant squint)"
+    review_status: needs_clinician_review
+
+  - id: deviation_stable_across_gazes
+    value:
+      description: "The horizontal deviation differs between gazes by less than the incomitance threshold."
+      uses_thresholds: [incomitance_horizontal_pd, decision_margin_k]
+      measured_from: "9-gaze grid, horizontal component"
+    source: "Phase 3 build brief §5.2, §5.4"
+    review_status: needs_clinician_review
+
+  - id: duction_limited
+    value:
+      description: "The eye's excursion in a direction falls short of what the head pose implies."
+      params:
+        eye: [affected, fellow]
+        direction: [abduction, adduction, elevation, depression]
+      uses_thresholds: [duction_limit_fraction, decision_margin_k]
+      measured_from: "per-eye duction estimate (eye-in-orbit excursion vs head pose)"
+    source: "Phase 3 build brief §4.5, §5.4"
+    review_status: needs_clinician_review
+
+  - id: horizontal_deviation_increases_toward_gaze
+    value:
+      description: "The horizontal deviation of the given kind grows on gaze toward the given side."
+      params:
+        deviation: [eso, exo]
+        side: [affected, fellow]
+      uses_thresholds: [incomitance_horizontal_pd, decision_margin_k]
+      measured_from: "9-gaze grid, right vs left gaze"
+    source: "Phase 3 build brief §5.4 (CN VI)"
+    review_status: needs_clinician_review
+
+  - id: vertical_deviation_absent
+    value:
+      description: "No vertical deviation beyond measurement error in any gaze."
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, vertical component"
+    source: "Phase 3 build brief §5.4 (CN VI: vertical normal)"
+    review_status: needs_clinician_review
+
+  - id: hypertropia_in_primary
+    value:
+      description: "The given eye is hyper in primary position."
+      params:
+        eye: [affected, fellow]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, primary cell, vertical component"
+    source: "Phase 3 build brief §5.3 step 1, §5.4 (CN IV)"
+    review_status: needs_clinician_review
+
+  - id: vertical_deviation_worse_on_gaze
+    value:
+      description: "The vertical deviation is larger in the given gaze than in primary."
+      params:
+        gaze: [toward_affected_side, toward_fellow_side, up, down]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, vertical component"
+    source: "Phase 3 build brief §5.3 step 2, §5.4 (CN IV)"
+    review_status: needs_clinician_review
+
+  - id: vertical_deviation_worse_on_head_tilt
+    value:
+      description: "The vertical deviation is larger on head tilt toward the given side."
+      params:
+        side: [affected, fellow]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "head-tilt captures (right and left tilt)"
+    source: "Phase 3 build brief §4.1, §5.3 step 3, §5.4 (CN IV)"
+    review_status: needs_clinician_review
+
+  - id: parks_isolates_muscle
+    value:
+      description: "The Parks 3-step test isolates the given muscle of the affected eye."
+      params:
+        muscle: [SR, IR, SO, IO]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "parks_3_step.yaml applied to the grid and tilt captures"
+    source: "Phase 3 build brief §5.3, §5.4 (CN IV: Parks → SO)"
+    review_status: needs_clinician_review
+
+  - id: eye_position_in_primary
+    value:
+      description: "The affected eye's resting position in primary gaze."
+      params:
+        horizontal: [eso, exo]
+        vertical: [hyper, hypo]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, primary cell, attributed to the deviating eye"
+    source: "Phase 3 build brief §5.4 (CN III: eye down and out)"
+    review_status: needs_clinician_review
+
+  - id: ptosis
+    value:
+      description: "The given eye's upper lid is lower than the fellow's (palpebral fissure narrower)."
+      params:
+        eye: [affected, fellow]
+      uses_thresholds: [decision_margin_k]
+      measured_from: "palpebral fissure height, primary gaze"
+    source: "Phase 3 build brief §4.3, §5.4 (CN III)"
+    review_status: needs_clinician_review
+
+  - id: anisocoria_beyond_tolerance
+    value:
+      description: "Pupil diameters differ by more than the physiological tolerance; the given eye's is larger."
+      params:
+        larger_pupil: [affected, fellow]
+      uses_thresholds: [anisocoria_tolerance_mm, decision_margin_k]
+      measured_from: "pupil diameter per eye"
+    source: "Phase 3 build brief §5.2, §5.4 (CN III ± dilated pupil)"
+    review_status: needs_clinician_review
+
+  - id: fissure_narrowing_on_adduction
+    value:
+      description: "The given eye's palpebral fissure narrows on adduction relative to primary."
+      params:
+        eye: [affected, fellow]
+      uses_thresholds: [duane_fissure_narrowing_ratio, decision_margin_k]
+      measured_from: "palpebral fissure height ratio, adducting gaze vs primary"
+    source: "Phase 3 build brief §4.5, §5.2, §5.4 (Duane-like)"
+    review_status: needs_clinician_review
+
+  - id: small_primary_deviation
+    value:
+      description: "The primary-position deviation is small."
+      uses_thresholds: [duane_small_primary_deviation_pd]
+      measured_from: "9-gaze grid, primary cell"
+    source: "Phase 3 build brief §5.4 (Duane-like)"
+    review_status: needs_clinician_review
+
+  - id: upper_lid_retraction
+    value:
+      description: "Sclera shows between the given eye's upper lid and limbus."
+      params:
+        eye: [affected, fellow]
+      uses_thresholds: [scleral_show_mm, decision_margin_k]
+      measured_from: "upper-lid-to-limbus distance, primary gaze"
+    source: "Phase 3 build brief §4.3, §5.4 (TED-like)"
+    review_status: needs_clinician_review
+
+  - id: a_pattern
+    value:
+      description: "Up-gaze horizontal deviation is more eso than down-gaze by at least the A-pattern threshold."
+      uses_thresholds: [a_pattern_pd, decision_margin_k]
+      measured_from: "9-gaze grid, up vs down cells"
+    source: "Phase 3 build brief §5.2"
+    review_status: needs_clinician_review
+
+  - id: v_pattern
+    value:
+      description: "Down-gaze horizontal deviation is more eso than up-gaze by at least the V-pattern threshold."
+      uses_thresholds: [v_pattern_pd, decision_margin_k]
+      measured_from: "9-gaze grid, up vs down cells"
+    source: "Phase 3 build brief §5.2"
+    review_status: needs_clinician_review
+
+  - id: oblique_overaction_in_oblique_gaze
+    value:
+      description: "Vertical deviation in the oblique gazes suggests oblique overaction."
+      uses_thresholds: [decision_margin_k]
+      measured_from: "9-gaze grid, oblique cells"
+    source: "Phase 3 build brief §5.4 (A/V pattern note)"
+    review_status: needs_clinician_review
+
+conditions:
+  - id: cn6_palsy
+    value:
+      label: CN VI (abducens) palsy pattern
+      kind: pattern
+      required:
+        - {feature: duction_limited, params: {eye: affected, direction: abduction}}
+        - {feature: horizontal_deviation_increases_toward_gaze, params: {deviation: eso, side: affected}}
+        - {feature: vertical_deviation_absent}
+      report_wording: >-
+        Limited abduction with esotropia increasing toward the affected side —
+        a pattern consistent with a CN VI (abducens) palsy.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  - id: cn4_palsy
+    value:
+      label: CN IV (trochlear) palsy pattern
+      kind: pattern
+      required:
+        - {feature: hypertropia_in_primary, params: {eye: affected}}
+        - {feature: vertical_deviation_worse_on_gaze, params: {gaze: toward_fellow_side}}
+        - {feature: vertical_deviation_worse_on_gaze, params: {gaze: down}}
+        - {feature: vertical_deviation_worse_on_head_tilt, params: {side: affected}}
+        - {feature: parks_isolates_muscle, params: {muscle: SO}}
+      report_wording: >-
+        Hypertropia worse on gaze away from the affected side, on down-gaze and
+        on head tilt toward the affected side; the 3-step test isolates the
+        superior oblique — a pattern consistent with a CN IV (trochlear) palsy.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  - id: cn3_palsy_complete
+    value:
+      label: Complete CN III (oculomotor) palsy pattern
+      kind: pattern
+      required:
+        - {feature: eye_position_in_primary, params: {horizontal: exo, vertical: hypo}}
+        - {feature: duction_limited, params: {eye: affected, direction: adduction}}
+        - {feature: duction_limited, params: {eye: affected, direction: elevation}}
+        - {feature: duction_limited, params: {eye: affected, direction: depression}}
+        - {feature: ptosis, params: {eye: affected}}
+      supporting:
+        - {feature: anisocoria_beyond_tolerance, params: {larger_pupil: affected}}
+      report_wording: >-
+        Eye down and out with limited adduction, elevation and depression and
+        ptosis — a pattern consistent with a complete CN III (oculomotor) palsy.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  - id: a_pattern_strabismus
+    value:
+      label: A pattern
+      kind: pattern
+      required:
+        - {feature: a_pattern}
+      supporting:
+        - {feature: oblique_overaction_in_oblique_gaze}
+      report_wording: Horizontal deviation more eso in up-gaze than down-gaze — an A pattern.
+    source: "Phase 3 build brief §5.2, §5.4"
+    review_status: needs_clinician_review
+
+  - id: v_pattern_strabismus
+    value:
+      label: V pattern
+      kind: pattern
+      required:
+        - {feature: v_pattern}
+      supporting:
+        - {feature: oblique_overaction_in_oblique_gaze}
+      report_wording: Horizontal deviation more eso in down-gaze than up-gaze — a V pattern.
+    source: "Phase 3 build brief §5.2, §5.4"
+    review_status: needs_clinician_review
+
+  - id: comitant_strabismus
+    value:
+      label: Comitant strabismus
+      kind: pattern
+      required:
+        - {feature: deviation_in_primary_present}
+        - {feature: deviation_stable_across_gazes}
+      report_wording: A deviation that stays stable across gaze positions — comitant strabismus.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  # ── Red flags: flag only, never a diagnosis ──
+  - id: duane_like
+    value:
+      label: Duane-like features
+      kind: red_flag
+      required:
+        - {feature: fissure_narrowing_on_adduction, params: {eye: affected}}
+        - {feature: small_primary_deviation}
+      any_of:
+        - - {feature: duction_limited, params: {eye: affected, direction: abduction}}
+          - {feature: duction_limited, params: {eye: affected, direction: adduction}}
+      report_wording: >-
+        Limited abduction and/or adduction with fissure narrowing on adduction
+        and only a small primary deviation — Duane-like features. Flag for
+        ophthalmology review.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  - id: ted_like
+    value:
+      label: Thyroid-eye-disease-like features
+      kind: red_flag
+      required:
+        - {feature: upper_lid_retraction, params: {eye: affected}}
+      any_of:
+        - - {feature: duction_limited, params: {eye: affected, direction: elevation}}
+          - {feature: duction_limited, params: {eye: affected, direction: abduction}}
+      report_wording: >-
+        Upper-lid retraction with restricted elevation or abduction —
+        thyroid-eye-disease-like features. Flag for ophthalmology review.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+
+  - id: cn3_pupil_involving
+    value:
+      label: Pupil-involving CN III pattern
+      kind: red_flag
+      urgency: URGENT
+      required:
+        - {feature: ptosis, params: {eye: affected}}
+        - {feature: anisocoria_beyond_tolerance, params: {larger_pupil: affected}}
+      any_of:
+        - - {feature: duction_limited, params: {eye: affected, direction: adduction}}
+          - {feature: duction_limited, params: {eye: affected, direction: elevation}}
+          - {feature: duction_limited, params: {eye: affected, direction: depression}}
+      report_wording: >-
+        CN III motility limitation with ptosis and a larger pupil on the same
+        side — URGENT referral.
+    source: "Phase 3 build brief §5.4"
+    review_status: needs_clinician_review
+    notes: >-
+      The brief says "CN III motility pattern"; encoded here as any CN III
+      duction limit. Whether one limit is enough, and the exact referral
+      wording and timeframe, need a clinician.

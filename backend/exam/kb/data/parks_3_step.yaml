@@ -1,0 +1,73 @@
+# Parks–Bielschowsky 3-step test for an isolated cyclovertical muscle palsy.
+# The loader re-derives every candidate set and row from muscles.yaml and
+# rejects the KB if they disagree.
+#
+#   Step 1  which eye is hyper in primary position
+#   Step 2  is the vertical deviation worse on right or left gaze
+#   Step 3  is it worse on right or left head tilt
+#
+# Sides are the patient's.
+
+step1:
+  - id: parks_step1_right_hyper
+    value: {hyper_eye: right, candidates: [R-IR, R-SO, L-SR, L-IO]}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_step1_left_hyper
+    value: {hyper_eye: left, candidates: [L-IR, L-SO, R-SR, R-IO]}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+rows:
+  - id: parks_r_so
+    value: {hyper_eye: right, worse_on_gaze: left, worse_on_tilt: right, muscle: R-SO}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_l_sr
+    value: {hyper_eye: right, worse_on_gaze: left, worse_on_tilt: left, muscle: L-SR}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_l_io
+    value: {hyper_eye: right, worse_on_gaze: right, worse_on_tilt: right, muscle: L-IO}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_r_ir
+    value: {hyper_eye: right, worse_on_gaze: right, worse_on_tilt: left, muscle: R-IR}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_l_so
+    value: {hyper_eye: left, worse_on_gaze: right, worse_on_tilt: left, muscle: L-SO}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_r_sr
+    value: {hyper_eye: left, worse_on_gaze: right, worse_on_tilt: right, muscle: R-SR}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_r_io
+    value: {hyper_eye: left, worse_on_gaze: left, worse_on_tilt: left, muscle: R-IO}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+  - id: parks_l_ir
+    value: {hyper_eye: left, worse_on_gaze: left, worse_on_tilt: right, muscle: L-IR}
+    source: "Phase 3 build brief §5.3"
+    review_status: needs_clinician_review
+
+inconclusive:
+  id: parks_inconclusive
+  value:
+    reason: >-
+      Pattern does not fit a single-muscle palsy; consider restriction,
+      multiple palsies, or skew deviation.
+  source: "Phase 3 build brief §5.3"
+  review_status: needs_clinician_review
+  notes: >-
+    Used when steps conflict, or when any step's difference is within
+    decision_margin_k × the combined measurement error.

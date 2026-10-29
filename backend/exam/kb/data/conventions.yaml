@@ -1,0 +1,43 @@
+# Conventions every module and rule shares. Definitions, not measurements —
+# but they decide what every number means, so they carry provenance too.
+
+laterality:
+  id: laterality
+  value: >-
+    "right"/"left" (R/L) always name the PATIENT's eye (OD/OS) and the
+    patient's gaze direction. Input images are unmirrored, so the patient's
+    right eye appears on the image left.
+  source: "BeanHealth engineering convention (backend/utils/constants.py); Phase 3 build brief §2"
+  review_status: needs_clinician_review
+
+sign_convention:
+  id: sign_convention
+  value:
+    horizontal_positive: eso      # negative = exo
+    vertical_positive: right_hyper  # negative = left hyper
+  source: "Phase 3 build brief §2"
+  review_status: needs_clinician_review
+
+reflex_reading:
+  id: reflex_reading
+  value:
+    temporal: eso
+    nasal: exo
+    inferior: hyper
+    superior: hypo
+  source: "Standard Hirschberg reading: the reflex moves on the cornea opposite to the eye's turn"
+  review_status: needs_clinician_review
+  notes: >-
+    Adopted 2026-10-29 at the project lead's direction; implemented in the
+    screening pipeline's module 6. Formal clinician sign-off still to record.
+
+prism_dioptre_conversion:
+  id: prism_dioptre_conversion
+  value: "PD = 100 * tan(degrees)"
+  source: "Definition of the prism dioptre; Phase 3 build brief §2 (1° ≈ 1.75 PD)"
+  review_status: needs_clinician_review
+  notes: >-
+    The brief's 1° ≈ 1.75 PD is this formula's small-angle value
+    (100·tan 1° = 1.745). Use the formula; the linear shortcut drifts at
+    large angles. The screening pipeline already does
+    (module5 degrees_to_prism_dioptres).

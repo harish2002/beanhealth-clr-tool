@@ -1,0 +1,110 @@
+# Extraocular muscles. The loader re-derives every yoke pair and every Parks
+# 3-step row from this table (exam/kb/derive.py), so this table is the single
+# point of truth for muscle actions.
+#
+# diagnostic_position is relative to the muscle's own eye: "in" = toward the
+# nose, "out" = toward the ear.
+
+muscles:
+  - id: MR
+    value:
+      name: Medial rectus
+      actions: {primary: [adduction]}
+      nerve: CN III (inferior division)
+      diagnostic_position: {horizontal: in}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: LR
+    value:
+      name: Lateral rectus
+      actions: {primary: [abduction]}
+      nerve: CN VI
+      diagnostic_position: {horizontal: out}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: SR
+    value:
+      name: Superior rectus
+      actions: {primary: [elevation], secondary: [intorsion], tertiary: [adduction]}
+      nerve: CN III (superior division)
+      diagnostic_position: {vertical: up, horizontal: out}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: IR
+    value:
+      name: Inferior rectus
+      actions: {primary: [depression], secondary: [extorsion], tertiary: [adduction]}
+      nerve: CN III (inferior division)
+      diagnostic_position: {vertical: down, horizontal: out}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: SO
+    value:
+      name: Superior oblique
+      actions: {primary: [intorsion], secondary: [depression], tertiary: [abduction]}
+      nerve: CN IV
+      diagnostic_position: {vertical: down, horizontal: in}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: IO
+    value:
+      name: Inferior oblique
+      actions: {primary: [extorsion], secondary: [elevation], tertiary: [abduction]}
+      nerve: CN III (inferior division)
+      diagnostic_position: {vertical: up, horizontal: in}
+    source: "Phase 3 build brief §5.1"
+    review_status: needs_clinician_review
+
+plane_angles:
+  - id: vertical_recti_plane_angle_deg
+    value: 23
+    unit: deg
+    source: "Phase 3 build brief §5.1 (~23°)"
+    review_status: needs_clinician_review
+    notes: Angle between the vertical recti's muscle plane and the visual axis in primary position.
+
+  - id: oblique_plane_angle_deg
+    value: 51
+    unit: deg
+    source: "Phase 3 build brief §5.1 (~51°)"
+    review_status: needs_clinician_review
+    notes: Angle between the obliques' muscle plane and the visual axis in primary position.
+
+# Yoke pairs (Hering's law): the muscle in each eye that moves the eyes into
+# each cardinal gaze. Checked against the diagnostic positions above.
+yoke_pairs:
+  - id: yoke_right
+    value: {gaze: right, muscles: [R-LR, L-MR]}
+    source: "Derived from the diagnostic positions in brief §5.1"
+    review_status: needs_clinician_review
+    notes: The brief gives only the up-right example; the other five follow from the muscle table.
+
+  - id: yoke_left
+    value: {gaze: left, muscles: [R-MR, L-LR]}
+    source: "Derived from the diagnostic positions in brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: yoke_up_right
+    value: {gaze: up_right, muscles: [R-SR, L-IO]}
+    source: "Phase 3 build brief §5.1 (example: up-right = R-SR + L-IO)"
+    review_status: needs_clinician_review
+
+  - id: yoke_up_left
+    value: {gaze: up_left, muscles: [R-IO, L-SR]}
+    source: "Derived from the diagnostic positions in brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: yoke_down_right
+    value: {gaze: down_right, muscles: [R-IR, L-SO]}
+    source: "Derived from the diagnostic positions in brief §5.1"
+    review_status: needs_clinician_review
+
+  - id: yoke_down_left
+    value: {gaze: down_left, muscles: [R-SO, L-IR]}
+    source: "Derived from the diagnostic positions in brief §5.1"
+    review_status: needs_clinician_review

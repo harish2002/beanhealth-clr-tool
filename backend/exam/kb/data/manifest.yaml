@@ -1,0 +1,18 @@
+# BeanHealth CLR clinical knowledge base — version manifest.
+#
+# Every output records kb_version and the content hash, so a result can be
+# traced to the exact values that produced it. After ANY change to a data
+# file: bump kb_version, then run `python -m exam.kb stamp` from backend/.
+# The loader refuses content that does not match content_sha256.
+
+kb_version: 0.1.0
+released: "2026-10-29"
+files:
+  - conventions.yaml
+  - measurement.yaml
+  - thresholds.yaml
+  - muscles.yaml
+  - parks_3_step.yaml
+  - conditions.yaml
+  - screening.yaml
+content_sha256: c7de783ebb79452f87cbf3c5290b5c3470c4a16d2d8b4198e714980abdeb5343

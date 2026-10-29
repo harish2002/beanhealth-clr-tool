@@ -19,6 +19,9 @@ Pillow==10.3.0
 # Data validation
 pydantic==2.7.1
 
+# Clinical knowledge base (exam/kb/data/*.yaml)
+PyYAML==6.0.3
+
 # Testing
 pytest==8.2.0
 pytest-asyncio==0.23.6

@@ -1,0 +1,90 @@
+# Decision thresholds for the rules engine.
+#
+# Every clinical threshold is needs_clinician_review: the published values
+# are defined for distance fixation (6 m) and this tool measures at near
+# (33–40 cm). A null value means nobody has set it yet — rules that need it
+# report INCONCLUSIVE ("threshold not set") rather than guess.
+
+entries:
+  # ── Error-aware decisions ──
+  - id: decision_margin_k
+    value: 2
+    unit: multiple of combined measurement error
+    source: "Phase 3 build brief §2 (default k = 2)"
+    review_status: needs_clinician_review
+    notes: >-
+      A pattern is reported only when the measured difference exceeds
+      k × combined measurement error; otherwise INCONCLUSIVE.
+
+  # ── Comitance and A/V patterns ──
+  - id: incomitance_horizontal_pd
+    value: 5
+    unit: PD
+    source: "Phase 3 build brief §5.2"
+    review_status: needs_clinician_review
+    notes: >-
+      Horizontal deviation differing between gazes by at least this much is
+      incomitant; within it, comitant. Configurable. Defined at distance.
+
+  - id: a_pattern_pd
+    value: 10
+    unit: PD
+    source: "Phase 3 build brief §5.2"
+    review_status: needs_clinician_review
+    notes: "Up-gaze horizontal deviation more eso than down-gaze by at least this. Defined at distance."
+
+  - id: v_pattern_pd
+    value: 15
+    unit: PD
+    source: "Phase 3 build brief §5.2"
+    review_status: needs_clinician_review
+    notes: "Down-gaze horizontal deviation more eso than up-gaze by at least this. Defined at distance."
+
+  # ── Not yet set — the brief names these but gives no value ──
+  - id: anisocoria_tolerance_mm
+    value: null
+    unit: mm
+    source: "Phase 3 build brief §5.2 (named, no value given)"
+    review_status: draft
+    notes: "Largest pupil-diameter difference treated as physiological. Clinician to set."
+
+  - id: duane_fissure_narrowing_ratio
+    value: null
+    unit: ratio of palpebral fissure height in adduction to primary
+    source: "Phase 3 build brief §5.2 (named, no value given)"
+    review_status: draft
+    notes: "Below this ratio, fissure narrowing on adduction counts toward the Duane-like flag. Clinician to set."
+
+  - id: duane_small_primary_deviation_pd
+    value: null
+    unit: PD
+    source: "Phase 3 build brief §5.4 (Duane-like: 'small deviation in primary despite the duction limit'; no value given)"
+    review_status: draft
+    notes: "Largest primary-position deviation still counted as 'small' for the Duane-like flag. Clinician to set."
+
+  - id: duction_limit_fraction
+    value: null
+    unit: fraction of the expected excursion
+    source: "Phase 3 build brief §4.5 / §5.4 (duction limits used; no value given)"
+    review_status: draft
+    notes: >-
+      An eye whose excursion falls below this fraction of the excursion the
+      head pose implies counts as duction-limited. Clinician to set.
+
+  - id: scleral_show_mm
+    value: null
+    unit: mm
+    source: "Phase 3 build brief §4.3 / §5.4 (TED-like: upper-lid retraction; no value given)"
+    review_status: draft
+    notes: "Upper-lid-to-limbus distance above which the upper lid counts as retracted. Clinician to set."
+
+  # ── Capture quality (engineering, not clinical) ──
+  - id: min_valid_frames_per_position
+    value: 10
+    unit: frames
+    source: "BeanHealth engineering placeholder — the brief (§4.2) requires a minimum but gives none"
+    review_status: draft
+    notes: >-
+      Fewer valid frames than this marks the position INSUFFICIENT_DATA.
+      10 is a starting point (a third of a second at 30 fps); revisit with
+      frame-QC data in milestone 4.
