@@ -70,6 +70,26 @@ class PupilError(CLRPipelineError):
         super().__init__(code, message)
 
 
+class ConfidenceError(CLRPipelineError):
+    """
+    Raised when a result would refer the patient on LOW-confidence evidence.
+    Always results in INCONCLUSIVE — the operator repeats the test instead.
+    """
+
+    CODES = {
+        "low_confidence_referral_withheld": (
+            "The reading pointed to a referral, but the measurement was too "
+            "uncertain to rely on. Please repeat the test: hold the phone "
+            "steady 30–40 cm away with the torch on, and ask the patient to "
+            "look at the light."
+        ),
+    }
+
+    def __init__(self, code: str = "low_confidence_referral_withheld"):
+        message = self.CODES.get(code, f"Confidence too low: {code}")
+        super().__init__(code, message)
+
+
 class PipelineError(CLRPipelineError):
     """
     Raised by Modules 4–7 for unexpected arithmetic or logic failures

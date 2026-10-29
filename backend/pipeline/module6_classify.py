@@ -32,6 +32,12 @@ Urgency mapping:
     MILD     → MONITOR  → "Monitor and re-screen in 3 months"
     NORMAL   → NORMAL   → "No referral required"
 
+Referral safety gate:
+    LOW confidence never issues a referral. `referral_withheld()` is the one
+    place this rule lives; every route that returns a result (/analyse,
+    /analyse-stream, /analyse-test, /analyse-batch) applies it and returns
+    INCONCLUSIVE ("repeat the test") instead.
+
 Pipeline position:  SIXTH — depends on Modules 4 & 5.
 Failure behaviour:  No failure modes — pure lookup, always returns a result.
 
@@ -141,6 +147,26 @@ _NARRATIVE_TEMPLATES = {
         "Continue routine eye health monitoring as advised by your healthcare provider."
     ),
 }
+
+
+# ─────────────────────────────────────────────────────────────
+# Referral safety gate
+# ─────────────────────────────────────────────────────────────
+
+# Tiers whose recommendation sends the patient to ophthalmology. MONITOR
+# (re-screen in 3 months) and NORMAL are not referrals.
+REFERRAL_TIERS = frozenset({URGENCY_URGENT, URGENCY_ROUTINE})
+
+
+def referral_withheld(urgency_tier: Optional[str], confidence: Optional[str]) -> bool:
+    """
+    True when a result would refer the patient on LOW-confidence evidence.
+
+    The caller must then return INCONCLUSIVE (repeat the test) rather than
+    the result. A missing confidence is not treated as LOW here — every
+    route sets one explicitly.
+    """
+    return confidence == "LOW" and urgency_tier in REFERRAL_TIERS
 
 
 # ─────────────────────────────────────────────────────────────

@@ -51,12 +51,12 @@ from pipeline.module2_pupil        import localise_pupils
 from pipeline.module3_clr          import CLRResult, detect_clr
 from pipeline.module4_displacement import compute_displacement
 from pipeline.module5_asymmetry    import compute_asymmetry_and_angle
-from pipeline.module6_classify     import classify_strabismus
-from pipeline.module7_report       import generate_report
+from pipeline.module6_classify     import classify_strabismus, referral_withheld
+from pipeline.module7_report       import build_inconclusive_report, generate_report
 from pipeline.module8_alignment    import compute_corner_alignment
 from pipeline.module_parity       import compare_with_client, parse_client_measurement
 from utils.device_fingerprint      import parse_device_model
-from utils.exceptions              import CLRPipelineError, DetectionError, CLRError
+from utils.exceptions              import CLRPipelineError, ConfidenceError, DetectionError, CLRError
 
 # ─────────────────────────────────────────────────────────────
 # Logging
@@ -271,6 +271,14 @@ async def analyse(
             asymmetry=asymmetry,
             classification=classification,
         )
+
+        # LOW confidence never issues a referral — ask for a repeat instead.
+        if referral_withheld(report["result"]["urgency_tier"], report["technical"]["confidence"]):
+            logger.warning(
+                f"[API] Referral withheld — {report['result']['urgency_tier']} "
+                f"at LOW confidence"
+            )
+            raise ConfidenceError()
 
         logger.info(
             f"[API] SUCCESS — urgency={report['result']['urgency_tier']} "
@@ -601,8 +609,10 @@ async def analyse_stream(
 
     # Explain the real cause.  When the frames were rejected because no torch
     # reflex could be found, telling the operator to "hold steadier" sends them
-    # to fix the wrong thing.
-    if aggregated.get("status") == "INCONCLUSIVE":
+    # to fix the wrong thing. Only for too-few-usable-frames: the variance and
+    # confidence gates run on frames whose reflexes WERE found, so their own
+    # reasons stand.
+    if aggregated.get("status") == "INCONCLUSIVE" and aggregated.get("reason") == "insufficient_frames":
         flags = aggregated.get("flags") or []
         light_failure = sum(
             1 for f in flags
@@ -729,6 +739,20 @@ async def analyse_test(
 
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    # LOW confidence never issues a referral, test capture or not.
+    frame_confidence = (report.get("technical") or {}).get("confidence")
+    if report.get("status") == "SUCCESS" and referral_withheld(
+        report["result"]["urgency_tier"], frame_confidence
+    ):
+        logger.warning(
+            f"[API] /analyse-test — referral withheld: "
+            f"{report['result']['urgency_tier']} at LOW confidence"
+        )
+        report = build_inconclusive_report(
+            ConfidenceError(), patient_name, patient_age,
+            extra_flags=report["technical"].get("flags", []),
+        )
+
     # ── INCONCLUSIVE / ERROR — return as-is with test_capture flag ──
     if report.get("status") != "SUCCESS":
         existing_flags = report.get("flags", []) or []
@@ -772,9 +796,9 @@ async def analyse_test(
         "asymmetry_avg":        asym_score,
         "asymmetry_avg_deg":    asym_deg,
         "asymmetry_std_deg":    0.0,
-        # Confidence is intentionally MEDIUM, not HIGH — single-frame analysis
+        # Confidence is at most MEDIUM, never HIGH — single-frame analysis
         # has no inter-frame variance evidence, so confidence is bounded.
-        "aggregate_confidence": "MEDIUM",
+        "aggregate_confidence": "LOW" if frame_confidence == "LOW" else "MEDIUM",
         # Extend result with deviation_std_deg for StreamClinicalResult shape
         "result": {**report["result"], "deviation_std_deg": 0.0},
     }
@@ -971,9 +995,13 @@ def _process_batch_item(
             asymmetry_score=asymmetry.asymmetry_score,
             upstream_flags=asymmetry.flags,
         )
+        confidence = "LOW" if "LOW" in (
+            pupil_result.left_confidence, pupil_result.right_confidence
+        ) else "MEDIUM"
         record["status"] = "SUCCESS"
         record["hirschberg"] = {
             "available":         True,
+            "confidence":        confidence,
             "urgency_tier":      classification.urgency_tier,
             "condition_name":    classification.condition_name,
             "icd10_code":        classification.icd10_code,
@@ -993,8 +1021,14 @@ def _process_batch_item(
             record["status"] = "ERROR"
 
     # ── Referral decision — either signal positive ──
+    # A batch flag is this route's referral, so a LOW-confidence Hirschberg
+    # reading never raises one (it is still listed, for review).
     hb = record["hirschberg"] or {}
-    hb_flag = bool(hb.get("available")) and hb.get("urgency_tier") not in (None, "NORMAL")
+    hb_flag = (
+        bool(hb.get("available"))
+        and hb.get("urgency_tier") not in (None, "NORMAL")
+        and hb.get("confidence") != "LOW"
+    )
     record["referral_flag"] = bool(hb_flag or alignment.referral_flag)
     return record
 

@@ -376,7 +376,8 @@ def aggregate_frame_results(
 
     # ── Step 7: Re-classify using averaged deviation ─────────
 
-    from pipeline.module6_classify import classify
+    from pipeline.module6_classify import classify, referral_withheld
+    from utils.exceptions import ConfidenceError
     from utils.constants import (
         SEVERITY_NORMAL, SEVERITY_MILD, SEVERITY_MODERATE, SEVERITY_SEVERE,
         SEVERITY_MILD_DEG, SEVERITY_MODERATE_DEG, SEVERITY_SEVERE_DEG,
@@ -484,6 +485,34 @@ def aggregate_frame_results(
             "asymmetry_avg_deg":  round(asym_deg_mean,  2),
             "asymmetry_std_deg":  round(asym_deg_std,   2),
             "flags": all_flags + ["high_variance_asymmetry"],
+        }
+
+    # ── Step 9: LOW confidence never issues a referral ────────
+    #
+    # Step 8 only catches high asymmetry variance. Confidence can also be LOW
+    # from deviation variance (Step 5) while asymmetry variance sits below the
+    # gate — that used to return ROUTINE/URGENT at LOW confidence.
+    if referral_withheld(avg_urgency, agg_confidence):
+        logger.warning(
+            f"[Aggregate] INCONCLUSIVE — referral withheld: {avg_urgency} at "
+            f"LOW confidence (asym_std={asym_deg_std:.2f}°, dev_std={dev_std:.2f}°)"
+        )
+        error = ConfidenceError()
+        return {
+            "status":       "INCONCLUSIVE",
+            "reason":       error.code,
+            "reason_human": error.human_message,
+            "frames_total":       total_frames,
+            "frames_accepted":    frames_accepted,
+            "frames_rejected":    frames_rejected,
+            "per_frame_readings": [round(v, 2) if v is not None else None
+                                   for v in per_frame_readings],
+            "per_frame_rejections": per_frame_rejections,
+            "deviation_avg_deg":  round(dev_mean,      2),
+            "deviation_std_deg":  round(dev_std,        2),
+            "asymmetry_avg_deg":  round(asym_deg_mean,  2),
+            "asymmetry_std_deg":  round(asym_deg_std,   2),
+            "flags": all_flags + [error.code],
         }
 
     # The representative frame carries the verdict IT was given individually.

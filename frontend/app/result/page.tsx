@@ -54,6 +54,7 @@ const REASON_TITLE: Record<string, string> = {
   eyes_closed:             "Eyes were not open",
   not_frontal:             "Head was turned",
   insufficient_frames:     "Not enough usable frames",
+  low_confidence_referral_withheld: "Too uncertain to refer",
 };
 
 const REASON_TIP: Record<string, string> = {
@@ -63,6 +64,7 @@ const REASON_TIP: Record<string, string> = {
   eyes_closed:             "Ask the patient to open their eyes wide and look straight ahead.",
   not_frontal:             "The patient must face the camera squarely — no tilt, no turn.",
   insufficient_frames:     "Too many frames were unusable. Most often this is a missing torch reflex rather than movement — check for a bright dot in both eyes, then hold steady.",
+  low_confidence_referral_withheld: "A low-confidence reading never triggers a referral. Repeat the test with the phone on a steady surface, and check the bright dot sits clearly in both pupils.",
 };
 
 function InconclusiveScreen({
