@@ -62,6 +62,7 @@ FILE_MODELS: Dict[str, Type[BaseModel]] = {
     "parks_3_step.yaml": ParksFile,
     "conditions.yaml":   ConditionsFile,
     "screening.yaml":    ScreeningFile,
+    "capture.yaml":      ScalarsFile,
 }
 
 # Cardinal positions with exactly one yoke pair each.
@@ -88,6 +89,7 @@ class KnowledgeBase:
     parks:       ParksFile
     conditions_file: ConditionsFile
     screening:   ScreeningFile
+    capture:     ScalarsFile
     sha256:      str
     _scalars:    Dict[str, Scalar] = field(default_factory=dict, repr=False)
 
@@ -97,6 +99,7 @@ class KnowledgeBase:
             for e in [
                 *self.measurement.entries, *self.thresholds.entries,
                 *self.muscles_file.plane_angles, *self.screening.severity_thresholds,
+                *self.capture.entries,
             ]
         }
         object.__setattr__(self, "_scalars", scalars)
@@ -244,6 +247,7 @@ def _load(kb_dir: Path, verify_hash: bool) -> KnowledgeBase:
         parks=parsed["parks_3_step.yaml"],                # type: ignore[arg-type]
         conditions_file=parsed["conditions.yaml"],        # type: ignore[arg-type]
         screening=parsed["screening.yaml"],               # type: ignore[arg-type]
+        capture=parsed["capture.yaml"],                   # type: ignore[arg-type]
         sha256=sha,
     )
     problems += cross_validate(kb)
@@ -272,6 +276,8 @@ def _entries(kb: KnowledgeBase) -> Iterator[Tuple[str, Entry[Any]]]:
         yield "conditions.yaml", e
     for e in [*kb.screening.severity_thresholds, *kb.screening.icd10]:
         yield "screening.yaml", e
+    for e in kb.capture.entries:
+        yield "capture.yaml", e
 
 
 def cross_validate(kb: KnowledgeBase) -> List[str]:

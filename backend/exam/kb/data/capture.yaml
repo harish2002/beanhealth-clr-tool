@@ -1,0 +1,188 @@
+# Capture protocol and frame-QC values (brief §4.1, §4.2).
+#
+# Protocol values come from the brief and are needs_clinician_review: the
+# eccentricity and tilt angles decide what each gaze cell measures. QC gates
+# the brief names without a number are BeanHealth engineering placeholders
+# (draft) — quality gates, not clinical thresholds — to be tuned on real
+# captures once milestone 5 produces landmarks from the phone.
+#
+# The minimum number of valid frames per position stays in thresholds.yaml
+# (min_valid_frames_per_position); the QC reads it from there.
+
+entries:
+  # ── Set-up ──
+  - id: capture_distance_min_cm
+    value: 33
+    unit: cm
+    source: "Phase 3 build brief §4.1 (phone on stand, 33–40 cm)"
+    review_status: needs_clinician_review
+    notes: "Nearest recommended camera-to-eye distance. Near fixation only (brief §11)."
+
+  - id: capture_distance_max_cm
+    value: 40
+    unit: cm
+    source: "Phase 3 build brief §4.1 (phone on stand, 33–40 cm)"
+    review_status: needs_clinician_review
+    notes: "Farthest recommended camera-to-eye distance."
+
+  - id: capture_distance_tolerance_cm
+    value: 3
+    unit: cm
+    source: "Phase 3 build brief §4.1 (±3 cm)"
+    review_status: needs_clinician_review
+    notes: "A session whose distance estimate falls outside the range by more than this is flagged."
+
+  - id: capture_min_fps
+    value: 30
+    unit: frames per second
+    source: "Phase 3 build brief §4.1 (30–60 fps)"
+    review_status: needs_clinician_review
+    notes: "Below this, saccade detection between frames is unreliable; the session is flagged."
+
+  - id: capture_max_exposure_s
+    value: 0.004
+    unit: s
+    source: "Phase 3 build brief §4.1 (shutter ≤ 1/250 s)"
+    review_status: needs_clinician_review
+    notes: >-
+      Longest exposure that keeps small eye movements sharp. Most phone
+      browsers do not report exposure; when unreported the session says so
+      and per-frame sharpness carries the check.
+
+  - id: capture_recommended_frame_height_px
+    value: 2160
+    unit: px
+    source: "Phase 3 build brief §4.1 (4K)"
+    review_status: needs_clinician_review
+    notes: >-
+      4K. Lower resolutions are accepted but flagged: fewer pixels across the
+      iris raise the per-frame error, which the measurement uncertainty then
+      carries.
+
+  # ── Gaze and tilt targets ──
+  - id: gaze_eccentricity_deg
+    value: 25
+    unit: deg
+    source: "Phase 3 build brief §4.1 (9-gaze at ~25°)"
+    review_status: needs_clinician_review
+    notes: >-
+      Eye-in-orbit angle for each eccentric position, reached by turning the
+      head the opposite way while the patient fixates the phone. Oblique
+      positions use this angle on both axes (horizontal and vertical); the
+      brief does not say whether ~25° is per axis or along the diagonal, so
+      a clinician should confirm.
+
+  - id: head_tilt_min_deg
+    value: 30
+    unit: deg
+    source: "Phase 3 build brief §4.1 (head tilt ~30–45°)"
+    review_status: needs_clinician_review
+    notes: "Smallest head roll accepted for the Parks step-3 tilt captures."
+
+  - id: head_tilt_max_deg
+    value: 45
+    unit: deg
+    source: "Phase 3 build brief §4.1 (head tilt ~30–45°)"
+    review_status: needs_clinician_review
+    notes: "Largest head roll accepted for the tilt captures."
+
+  - id: hold_duration_s
+    value: 2
+    unit: s
+    source: "Phase 3 build brief §4.1 (hold ~2 s per position)"
+    review_status: needs_clinician_review
+    notes: "How long the operator holds each position. At 30 fps that is about 60 frames."
+
+  # ── Frame QC gates (engineering placeholders) ──
+  - id: qc_head_pose_tolerance_deg
+    value: 5
+    unit: deg
+    source: "BeanHealth engineering placeholder — the brief (§4.2) says 'off-target by > tolerance' with no value"
+    review_status: draft
+    notes: >-
+      Largest head yaw / pitch error from the position's target (and, on
+      tilt captures, yaw / pitch away from straight ahead) before a frame is
+      rejected. Face-mesh head pose is itself only good to a few degrees.
+
+  - id: qc_blink_openness_ratio
+    value: 0.35
+    unit: palpebral fissure height ÷ iris diameter
+    source: "BeanHealth engineering placeholder — the brief (§4.2) lists blink with no criterion"
+    review_status: draft
+    notes: >-
+      An eye whose fissure height is below this fraction of its iris
+      diameter is treated as mid-blink. Scale-free, so independent of
+      distance. Tune on captures; ptosis lowers the ratio too, so a ptotic
+      eye may need a per-patient baseline.
+
+  - id: qc_max_limbus_covered_fraction
+    value: 0.4
+    unit: fraction of the limbus perimeter
+    source: "BeanHealth engineering placeholder — the brief (§4.2) says 'eyelid covering > X% of limbus'"
+    review_status: draft
+    notes: >-
+      Above this, too little limbus is visible for a reliable ellipse fit
+      (milestone 5). The upper lid normally covers a little of the limbus,
+      so this cannot be near zero.
+
+  - id: qc_sharpness_canonical_iris_radius_px
+    value: 32
+    unit: px
+    source: "BeanHealth engineering — definition of the sharpness measure, not a threshold"
+    review_status: draft
+    notes: >-
+      Eye crops are rescaled so the iris radius is this many pixels before
+      the Laplacian variance is taken, so sharpness means the same at any
+      resolution or distance. The phone must compute it the same way
+      (exam.qc.sharpness).
+
+  - id: qc_sharpness_reference_percentile
+    value: 90
+    unit: percentile
+    source: "BeanHealth engineering — definition of the blur reference, not a threshold"
+    review_status: draft
+    notes: >-
+      Each position's reference sharpness is this percentile of its frames'
+      sharpness, so a few very sharp outliers do not set the bar.
+
+  - id: qc_min_relative_sharpness
+    value: 0.6
+    unit: fraction of the position's reference sharpness
+    source: "BeanHealth engineering placeholder — the brief (§4.2) says 'Laplacian variance threshold' with no value"
+    review_status: draft
+    notes: >-
+      A frame sharper than this fraction of its position's reference passes;
+      below it, it is rejected as motion-blurred. Relative, because no fixed
+      Laplacian variance separates sharp from blurred across phones and
+      lighting: on the repository's test images sharp eye regions scored
+      6–92 while 7-px motion blurs scored 3–54. Within one image, motion blur
+      cut the score to 55–83% (3 px), 39–69% (5 px) and 33–58% (7 px) of the
+      sharp value, so 0.6 rejects most 5-px and all 7-px blurs. A position
+      blurred in every frame passes this check — the per-frame landmark
+      errors then widen its uncertainty instead. Tune on real captures.
+
+  - id: qc_saccade_velocity_deg_s
+    value: 40
+    unit: deg/s
+    source: "BeanHealth engineering placeholder — the brief (§4.2) lists 'saccade in progress' with no criterion"
+    review_status: draft
+    notes: >-
+      Floor of the saccade threshold. A frame whose gaze (reflex-to-pupil
+      vector, in degrees via the Hirschberg ratio) moves faster than the
+      threshold in either eye is rejected. Landmark jitter alone produces
+      apparent speeds of this order (0.5 px of jitter on a 4K iris is about
+      18°/s on average at 30 fps), so the threshold is raised per position
+      by qc_saccade_noise_factor. Tune on captures.
+
+  - id: qc_saccade_noise_factor
+    value: 3
+    unit: multiple of the position's median frame-to-frame gaze speed
+    source: "BeanHealth engineering — noise floor for the saccade threshold"
+    review_status: draft
+    notes: >-
+      Per position the saccade threshold is the larger of
+      qc_saccade_velocity_deg_s and this multiple of the median gaze speed.
+      For pure landmark jitter the speed is Rayleigh-distributed and 3 × its
+      median is exceeded by about 0.2% of comparisons, so steady frames are
+      rarely rejected. A noisy capture therefore misses small saccades; its
+      wider per-frame scatter shows up in the measurement error instead.

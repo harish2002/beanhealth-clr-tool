@@ -114,6 +114,9 @@ beanstrabis/
 │   │   └── module7_report.py        ← Report + annotated image
 │   ├── exam/                        ← Phase 3 gaze examination
 │   │   ├── models.py                ← Measurements: 9-gaze grid, tilt, lids/pupils/ductions
+│   │   ├── api.py                   ← GET /exam/protocol/{protocol}, POST /exam/qc
+│   │   ├── capture/                 ← Capture plan (head-pose targets) + session upload format
+│   │   ├── qc/                      ← Frame QC: per-frame reject reasons, per-position sufficiency
 │   │   ├── kb/                      ← Clinical knowledge base
 │   │   │   ├── data/*.yaml          ← Versioned clinical values (source + review_status)
 │   │   │   ├── schema.py            ← Pydantic models for every KB file
@@ -124,7 +127,7 @@ beanstrabis/
 │   │   │   ├── features.py          ← One evaluator per conditions.yaml feature
 │   │   │   ├── parks.py             ← Parks–Bielschowsky 3-step test
 │   │   │   └── engine.py            ← Rule order, finding assembly, referral gate
-│   │   └── sim/                     ← Synthetic muscle-model cases (test fixture, not physiology)
+│   │   └── sim/                     ← Synthetic cases + frame tracks (test fixture, not physiology)
 │   ├── utils/
 │   │   ├── image_utils.py           ← Shared image helpers
 │   │   └── constants.py             ← Thresholds, ICD codes, etc.
@@ -900,6 +903,10 @@ patient_age  : int (required, 1–120)
 ✗ Never let a LOW-confidence finding refer — it asks for a repeat test
   (tests/test_engine.py TestReferral guards this)
 ✗ Never read exam/sim values into the KB — they are fixture numbers, not clinical data
+✗ Never let a frame-QC check pass a frame when its input is missing — a check
+  that cannot run rejects the frame (missing_observation)
+✗ Never upload video frames in a capture session — landmark tracks only,
+  unless the patient has consented to raw video
 ```
 
 ---

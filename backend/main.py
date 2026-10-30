@@ -40,6 +40,7 @@ from models.response import (
     SuccessResponse,
 )
 from models.stream_response import StreamAnalyseResponse
+from exam.api import router as exam_router
 from pipeline.module_aggregate  import aggregate_frame_results
 from pipeline.module_calibrate  import (
     CalibrationMeasurement,
@@ -91,6 +92,8 @@ app.add_middleware(
     allow_headers=["*"],
     allow_credentials=False,
 )
+
+app.include_router(exam_router)
 
 
 # ─────────────────────────────────────────────────────────────
