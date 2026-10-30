@@ -28,6 +28,14 @@ features:
     source: "Phase 3 build brief §5.2, §5.4"
     review_status: needs_clinician_review
 
+  - id: vertical_deviation_stable_across_gazes
+    value:
+      description: "The vertical deviation differs between gazes by less than the vertical incomitance threshold."
+      uses_thresholds: [incomitance_vertical_pd, decision_margin_k]
+      measured_from: "9-gaze grid, vertical component"
+    source: "Phase 3 build brief §5.4 (comitant squint: deviation stable across gazes)"
+    review_status: needs_clinician_review
+
   - id: duction_limited
     value:
       description: "The eye's excursion in a direction falls short of what the head pose implies."
@@ -80,7 +88,7 @@ features:
 
   - id: vertical_deviation_worse_on_head_tilt
     value:
-      description: "The vertical deviation is larger on head tilt toward the given side."
+      description: "The vertical deviation is larger on head tilt toward the given side than toward the other side."
       params:
         side: [affected, fellow]
       uses_thresholds: [decision_margin_k]
@@ -111,10 +119,10 @@ features:
 
   - id: ptosis
     value:
-      description: "The given eye's upper lid is lower than the fellow's (palpebral fissure narrower)."
+      description: "The given eye's palpebral fissure is narrower than the fellow's by at least the ptosis threshold."
       params:
         eye: [affected, fellow]
-      uses_thresholds: [decision_margin_k]
+      uses_thresholds: [ptosis_fissure_difference_mm, decision_margin_k]
       measured_from: "palpebral fissure height, primary gaze"
     source: "Phase 3 build brief §4.3, §5.4 (CN III)"
     review_status: needs_clinician_review
@@ -262,6 +270,9 @@ conditions:
       required:
         - {feature: deviation_in_primary_present}
         - {feature: deviation_stable_across_gazes}
+      any_of:
+        - - {feature: vertical_deviation_absent}
+          - {feature: vertical_deviation_stable_across_gazes}
       report_wording: A deviation that stays stable across gaze positions — comitant strabismus.
     source: "Phase 3 build brief §5.4"
     review_status: needs_clinician_review

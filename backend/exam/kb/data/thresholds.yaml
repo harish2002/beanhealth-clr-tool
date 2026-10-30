@@ -26,6 +26,17 @@ entries:
       Horizontal deviation differing between gazes by at least this much is
       incomitant; within it, comitant. Configurable. Defined at distance.
 
+  - id: incomitance_vertical_pd
+    value: null
+    unit: PD
+    source: "BeanHealth engineering — the brief (§5.2) gives a horizontal incomitance threshold only"
+    review_status: draft
+    notes: >-
+      Vertical deviation differing between gazes by at least this much is
+      incomitant. Needed so a deviation is only called comitant when its
+      vertical part is stable too (a CN IV palsy has a stable horizontal
+      but an incomitant vertical deviation). Clinician to set.
+
   - id: a_pattern_pd
     value: 10
     unit: PD
@@ -47,6 +58,17 @@ entries:
     source: "Phase 3 build brief §5.2 (named, no value given)"
     review_status: draft
     notes: "Largest pupil-diameter difference treated as physiological. Clinician to set."
+
+  - id: ptosis_fissure_difference_mm
+    value: null
+    unit: mm
+    source: "BeanHealth engineering — the brief (§5.4) uses ptosis but gives no threshold"
+    review_status: draft
+    notes: >-
+      Smallest primary-gaze palpebral-fissure difference (fellow minus
+      affected eye) counted as ptosis. Fissures are rarely exactly equal, so
+      "any difference beyond measurement error" would over-call ptosis.
+      Clinician to set.
 
   - id: duane_fissure_narrowing_ratio
     value: null

@@ -113,11 +113,18 @@ beanstrabis/
 │   │   ├── module6_classify.py      ← Clinical classification
 │   │   └── module7_report.py        ← Report + annotated image
 │   ├── exam/                        ← Phase 3 gaze examination
-│   │   └── kb/                      ← Clinical knowledge base
-│   │       ├── data/*.yaml          ← Versioned clinical values (source + review_status)
-│   │       ├── schema.py            ← Pydantic models for every KB file
-│   │       ├── derive.py            ← Yoke pairs + Parks rows derived from the muscle table
-│   │       └── loader.py            ← load_kb(): validate, version-check, cross-check
+│   │   ├── models.py                ← Measurements: 9-gaze grid, tilt, lids/pupils/ductions
+│   │   ├── kb/                      ← Clinical knowledge base
+│   │   │   ├── data/*.yaml          ← Versioned clinical values (source + review_status)
+│   │   │   ├── schema.py            ← Pydantic models for every KB file
+│   │   │   ├── derive.py            ← Yoke pairs + Parks rows derived from the muscle table
+│   │   │   └── loader.py            ← load_kb(): validate, version-check, cross-check
+│   │   ├── engine/                  ← Rules engine: evaluate(measurements, kb) → findings + referral
+│   │   │   ├── decide.py            ← Error-aware three-valued decisions (k × error)
+│   │   │   ├── features.py          ← One evaluator per conditions.yaml feature
+│   │   │   ├── parks.py             ← Parks–Bielschowsky 3-step test
+│   │   │   └── engine.py            ← Rule order, finding assembly, referral gate
+│   │   └── sim/                     ← Synthetic muscle-model cases (test fixture, not physiology)
 │   ├── utils/
 │   │   ├── image_utils.py           ← Shared image helpers
 │   │   └── constants.py             ← Thresholds, ICD codes, etc.
@@ -890,6 +897,9 @@ patient_age  : int (required, 1–120)
 ✗ Never edit a KB data file without bumping kb_version and running
   `python -m exam.kb stamp` (the loader rejects unstamped content)
 ✗ Never mark a KB entry approved without a named clinician reviewer
+✗ Never let a LOW-confidence finding refer — it asks for a repeat test
+  (tests/test_engine.py TestReferral guards this)
+✗ Never read exam/sim values into the KB — they are fixture numbers, not clinical data
 ```
 
 ---
