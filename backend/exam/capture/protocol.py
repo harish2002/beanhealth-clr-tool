@@ -109,6 +109,8 @@ class SettingsPlan(Strict):
     min_fps: float
     max_exposure_s: float
     recommended_frame_height_px: int
+    # The phone computes frame sharpness at this iris radius (exam.qc.sharpness).
+    sharpness_canonical_iris_radius_px: float
     camera: Literal["rear"] = "rear"
     light: str = "light source next to the lens"
 
@@ -214,6 +216,7 @@ def build_plan(protocol: Protocol = "nine_gaze", include_tilt: bool = True,
         min_fps=_required(kb, "capture_min_fps"),
         max_exposure_s=_required(kb, "capture_max_exposure_s"),
         recommended_frame_height_px=int(_required(kb, "capture_recommended_frame_height_px")),
+        sharpness_canonical_iris_radius_px=_required(kb, "qc_sharpness_canonical_iris_radius_px"),
     )
     return ProtocolPlan(protocol_version=CAPTURE_PROTOCOL_VERSION, protocol=protocol,
                         settings=settings, positions=positions, conventions=CONVENTIONS,

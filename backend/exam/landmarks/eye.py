@@ -10,7 +10,8 @@ The phone port (frontend/lib/examLandmarks.ts) follows the same steps.
                   own frame (canthus to canthus = horizontal), so it holds on
                   a tilted head
   fit_limbus      limbus ellipse: radial edge search inside the lid opening,
-                  RANSAC over a least-squares conic fit
+                  robust conic fit (MSAC start, Tukey-weighted refinement),
+                  refused when independent restarts disagree
   find_pupil      dark pupil inside the limbus (None when the iris is too dark
                   to separate it, as is common under visible light)
   lid_metrics     fissure height, scleral show and the share of the limbus the
@@ -25,7 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Optional, Sequence, Tuple
+from typing import Callable, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -47,9 +48,16 @@ LIMBUS_SEARCH_BAND = (0.6, 1.5)           # × the radius guess
 LIMBUS_SAMPLE_STEP_PX = 0.5
 LIMBUS_MIN_EDGE_SHARE = 0.25              # edge weaker than this × the median edge is ignored
 LIMBUS_LID_MARGIN_IRIS_RADII = 0.04       # edge points this close to a lid are dropped
-LIMBUS_INLIER_IRIS_RADII = 0.02           # RANSAC inlier distance (min 0.75 px)
-LIMBUS_RANSAC_ITERATIONS = 300
+LIMBUS_INLIER_IRIS_RADII = 0.02           # inlier distance (min 0.75 px)
+LIMBUS_RANSAC_ITERATIONS = 200            # per restart
 LIMBUS_MIN_INLIERS = 16
+# Independent restarts that must converge on the same limbus. With the top
+# and bottom behind the lids, a lid shadow can leave two ellipses fitting
+# the visible arcs about equally well; the frame then has no trustworthy
+# reference and gets no limbus (on a real photo the two lay 2 px apart).
+LIMBUS_RESTARTS = 3
+LIMBUS_TUKEY_FACTOR = 2.5                 # Tukey biweight cut-off, × the inlier distance
+LIMBUS_REFINE_ITERATIONS = 15
 # The eye faces the camera (it fixes the light, or deviates from it by at most
 # a few tens of degrees: cos 25° ≈ 0.9), so a flatter fit has caught a lid.
 LIMBUS_MAX_AXIS_RATIO = 1.2
@@ -68,19 +76,24 @@ PUPIL_DIAMETER_RANGE_IRIS_RADII = (0.15, 1.3)
 # Conic fitting (shared by limbus and pupil)
 # ─────────────────────────────────────────────────────────────
 
-def fit_conic_ellipse(points: np.ndarray) -> Optional[Ellipse]:
+def fit_conic_ellipse(points: np.ndarray, weights: Optional[np.ndarray] = None) -> Optional[Ellipse]:
     """
-    Least-squares ellipse through ≥ 5 points: A x² + B xy + C y² + D x + E y = 1
-    in coordinates centred on the points' mean (so the conic cannot pass
-    through the origin). None when the conic is not a real ellipse.
+    (Weighted) least-squares ellipse through ≥ 5 points:
+    A x² + B xy + C y² + D x + E y = 1 in coordinates centred on the points'
+    (weighted) mean, so the conic cannot pass through the origin. None when
+    the conic is not a real ellipse.
     """
     if len(points) < 5:
         return None
-    origin = points.mean(axis=0)
+    w = np.ones(len(points)) if weights is None else np.asarray(weights, dtype=float)
+    if np.count_nonzero(w) < 5:
+        return None
+    origin = (points * w[:, None]).sum(axis=0) / w.sum()
     x, y = (points - origin).T
-    design = np.stack([x * x, x * y, y * y, x, y], axis=1)
+    sw = np.sqrt(w)
+    design = np.stack([x * x, x * y, y * y, x, y], axis=1) * sw[:, None]
     try:
-        coef, _, rank, _ = np.linalg.lstsq(design, np.ones(len(points)), rcond=None)
+        coef, _, rank, _ = np.linalg.lstsq(design, sw, rcond=None)
     except np.linalg.LinAlgError:
         return None
     if rank < 5:                              # collinear or repeated points: no unique conic
@@ -147,7 +160,8 @@ def refine_reflex(gray: np.ndarray, approx: Point, iris_radius_px: float) -> Opt
     h, w = img.shape
     for half in (REFLEX_WINDOW_IRIS_RADII * iris_radius_px, 2 * REFLEX_WINDOW_IRIS_RADII * iris_radius_px):
         r = max(3, int(math.ceil(half)))
-        x0, y0 = int(round(approx[0])) - r, int(round(approx[1])) - r
+        # floor(v + 0.5), not round(): Python rounds halves to even, the phone does not.
+        x0, y0 = math.floor(approx[0] + 0.5) - r, math.floor(approx[1] + 0.5) - r
         x1, y1 = x0 + 2 * r + 1, y0 + 2 * r + 1
         if x0 < 0 or y0 < 0 or x1 > w or y1 > h:
             return None
@@ -242,12 +256,28 @@ class LimbusFit:
     rays: int
 
 
-def _edge_points(img: np.ndarray, centre: Point, radius: float, aperture: Optional[LidAperture]) -> np.ndarray:
+def blurred_region(gray: np.ndarray, centre: Point, radius: float, sigma: float
+                   ) -> Tuple[np.ndarray, int, int]:
+    """
+    Gaussian-blurred float copy of the square round an eye, and its origin.
+    Only this region is blurred (reflect-101 at its edges, which the ray
+    search never reaches), so the phone can reproduce it exactly.
+    """
+    half = int(math.ceil(2.2 * radius + 4 * sigma)) + 2
+    h, w = gray.shape
+    x0, y0 = max(0, math.floor(centre[0]) - half), max(0, math.floor(centre[1]) - half)
+    x1, y1 = min(w, math.floor(centre[0]) + half + 1), min(h, math.floor(centre[1]) + half + 1)
+    crop = np.ascontiguousarray(gray[y0:y1, x0:x1], dtype=np.float32)
+    return cv2.GaussianBlur(crop, (0, 0), sigma), x0, y0
+
+
+def _edge_points(img: np.ndarray, origin: Tuple[int, int], centre: Point, radius: float,
+                 aperture: Optional[LidAperture]) -> np.ndarray:
     """Strongest dark-to-bright step along each ray from the centre (sub-pixel), inside the lids."""
     theta = np.linspace(0, 2 * math.pi, LIMBUS_RAYS, endpoint=False)
     radii = np.arange(LIMBUS_SEARCH_BAND[0] * radius, LIMBUS_SEARCH_BAND[1] * radius, LIMBUS_SAMPLE_STEP_PX)
-    map_x = (centre[0] + np.outer(np.cos(theta), radii)).astype(np.float32)
-    map_y = (centre[1] + np.outer(np.sin(theta), radii)).astype(np.float32)
+    map_x = (centre[0] - origin[0] + np.outer(np.cos(theta), radii)).astype(np.float32)
+    map_y = (centre[1] - origin[1] + np.outer(np.sin(theta), radii)).astype(np.float32)
     prof = cv2.remap(img, map_x, map_y, interpolation=cv2.INTER_LINEAR, borderMode=cv2.BORDER_REPLICATE)
     grad = np.gradient(prof.astype(np.float64), LIMBUS_SAMPLE_STEP_PX, axis=1)
     k = np.argmax(grad, axis=1)
@@ -269,29 +299,83 @@ def _edge_points(img: np.ndarray, centre: Point, radius: float, aperture: Option
     return pts[keep]
 
 
-def _ransac_ellipse(pts: np.ndarray, radius: float, rng: np.random.Generator
-                    ) -> Optional[Tuple[Ellipse, np.ndarray]]:
-    tol = max(0.75, LIMBUS_INLIER_IRIS_RADII * radius)
-    best: Optional[np.ndarray] = None
-    best_rms = math.inf
+def mulberry32(seed: int) -> Callable[[], float]:
+    """
+    Small seeded PRNG (uniform [0, 1)), bit-identical to the phone's, so the
+    RANSAC samples — and therefore the fits — match exactly.
+    """
+    m = 0xFFFFFFFF
+    state = seed & m
+
+    def draw() -> float:
+        nonlocal state
+        state = (state + 0x6D2B79F5) & m
+        t = ((state ^ (state >> 15)) * (state | 1)) & m
+        t = ((t + (((t ^ (t >> 7)) * (t | 61)) & m)) & m) ^ t
+        return ((t ^ (t >> 14)) & m) / 4294967296.0
+    return draw
+
+
+def _sample(n: int, k: int, rand: Callable[[], float]) -> List[int]:
+    """k distinct indices below n (partial Fisher–Yates)."""
+    idx = list(range(n))
+    for j in range(k):
+        r = j + int(rand() * (n - j))
+        idx[j], idx[r] = idx[r], idx[j]
+    return idx[:k]
+
+
+def _msac_start(pts: np.ndarray, radius: float, tol: float, rand: Callable[[], float]) -> Optional[Ellipse]:
+    """The 5-point hypothesis with the lowest truncated squared distance (MSAC)."""
+    best: Optional[Ellipse] = None
+    best_cost = math.inf
     for _ in range(LIMBUS_RANSAC_ITERATIONS):
-        sample = pts[rng.choice(len(pts), 5, replace=False)]
-        ell = fit_conic_ellipse(sample)
+        ell = fit_conic_ellipse(pts[_sample(len(pts), 5, rand)])
         if ell is None or not _plausible(ell, radius):
             continue
-        d = np.abs(ellipse_distance(ell, pts))
-        inl = d < tol
-        n = int(inl.sum())
-        rms = float(np.sqrt(np.mean(d[inl] ** 2))) if n else math.inf
-        if best is None or n > int(best.sum()) or (n == int(best.sum()) and rms < best_rms):
-            best, best_rms = inl, rms
-    if best is None or best.sum() < LIMBUS_MIN_INLIERS:
+        d = ellipse_distance(ell, pts)
+        cost = float(np.minimum(d * d, tol * tol).sum())
+        if cost < best_cost:
+            best, best_cost = ell, cost
+    return best
+
+
+def _refine(pts: np.ndarray, ell: Ellipse, radius: float, tol: float) -> Optional[Ellipse]:
+    """Tukey-biweight reweighted conic fits until the ellipse stops moving."""
+    cut = LIMBUS_TUKEY_FACTOR * tol
+    for _ in range(LIMBUS_REFINE_ITERATIONS):
+        u = ellipse_distance(ell, pts) / cut
+        w = np.where(np.abs(u) < 1, (1 - u * u) ** 2, 0.0)
+        if np.count_nonzero(w) < LIMBUS_MIN_INLIERS:
+            return None
+        nxt = fit_conic_ellipse(pts, w)
+        if nxt is None or not _plausible(nxt, radius):
+            break
+        moved = max(math.dist(nxt.centre_px, ell.centre_px), abs(nxt.semi_major_px - ell.semi_major_px))
+        ell = nxt
+        if moved < 1e-4:
+            break
+    return ell
+
+
+def robust_ellipse(pts: np.ndarray, radius: float, rand: Callable[[], float]) -> Optional[Ellipse]:
+    """
+    LIMBUS_RESTARTS independent MSAC starts, each refined; the first result
+    when all agree to within the inlier distance, else None (ambiguous).
+    """
+    tol = max(0.75, LIMBUS_INLIER_IRIS_RADII * radius)
+    fits: List[Ellipse] = []
+    for _ in range(LIMBUS_RESTARTS):
+        start = _msac_start(pts, radius, tol, rand)
+        ell = None if start is None else _refine(pts, start, radius, tol)
+        if ell is None:
+            return None
+        fits.append(ell)
+    first = fits[0]
+    if any(math.dist(f.centre_px, first.centre_px) > tol or abs(f.semi_major_px - first.semi_major_px) > tol
+           for f in fits[1:]):
         return None
-    ell = fit_conic_ellipse(pts[best])
-    if ell is None or not _plausible(ell, radius):
-        return None
-    inl = np.abs(ellipse_distance(ell, pts)) < tol
-    return ell, inl
+    return first
 
 
 def _plausible(ell: Ellipse, radius: float) -> bool:
@@ -312,12 +396,13 @@ def fit_limbus(gray: np.ndarray, centre_guess: Point, radius_guess: float,
     """
     Fit the limbus as an ellipse. Two passes: rays from the face-mesh iris
     centre, then again from the first fit's centre so the rays cross the
-    edge square-on. None when too few edge points survive, or none survive
-    on one side of the horizontal diameter (the scale ruler).
+    edge square-on. None when too few edge points survive, when the fit is
+    ambiguous (restarts disagree), or when no inlier lies on one side of the
+    horizontal diameter (the scale ruler).
     """
     sigma = max(1.0, radius_guess / 40.0)
-    img = cv2.GaussianBlur(gray.astype(np.float32), (0, 0), sigma)
-    rng = np.random.default_rng(seed)
+    img, x0, y0 = blurred_region(gray, centre_guess, radius_guess, sigma)
+    rand = mulberry32(seed)
     horizontal: Point = (1.0, 0.0)
     if aperture is not None:
         down = aperture.vertical()
@@ -325,14 +410,14 @@ def fit_limbus(gray: np.ndarray, centre_guess: Point, radius_guess: float,
     centre, radius = centre_guess, radius_guess
     result: Optional[LimbusFit] = None
     for _ in range(2):
-        pts = _edge_points(img, centre, radius, aperture)
+        pts = _edge_points(img, (x0, y0), centre, radius, aperture)
         if len(pts) < LIMBUS_MIN_INLIERS:
             return None
-        found = _ransac_ellipse(pts, radius, rng)
-        if found is None:
+        ell = robust_ellipse(pts, radius, rand)
+        if ell is None:
             return None
-        ell, inl = found
-        if not _both_sides(ell, pts[inl], horizontal):
+        inl = np.abs(ellipse_distance(ell, pts)) < max(0.75, LIMBUS_INLIER_IRIS_RADII * radius)
+        if inl.sum() < LIMBUS_MIN_INLIERS or not _both_sides(ell, pts[inl], horizontal):
             return None
         d = ellipse_distance(ell, pts[inl])
         result = LimbusFit(ellipse=ell, rms_px=float(np.sqrt(np.mean(d ** 2))),
@@ -368,7 +453,7 @@ def find_pupil(gray: np.ndarray, limbus: Ellipse, reflex: Optional[Point] = None
     r = limbus.semi_major_px
     cx, cy = limbus.centre_px
     half = int(math.ceil(r)) + 2
-    x0, y0 = int(round(cx)) - half, int(round(cy)) - half
+    x0, y0 = math.floor(cx) - half, math.floor(cy) - half
     h, w = gray.shape
     if x0 < 0 or y0 < 0 or x0 + 2 * half + 1 > w or y0 + 2 * half + 1 > h:
         return None

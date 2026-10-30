@@ -83,15 +83,19 @@ beanstrabis/
 │   │   ├── page.tsx                 ← Home / patient entry
 │   │   ├── capture/page.tsx         ← Camera + torch capture
 │   │   ├── result/page.tsx          ← Triage report display
+│   │   ├── exam/page.tsx            ← Phase 3 guided gaze-exam capture
 │   │   └── layout.tsx
 │   ├── components/
 │   │   ├── CameraCapture.tsx        ← Camera + torch UI
 │   │   ├── PatientForm.tsx          ← Name, age input
 │   │   ├── TriageReport.tsx         ← Result card with urgency
 │   │   ├── AnnotatedEye.tsx         ← Canvas overlay component
+│   │   ├── GuidedExam.tsx           ← Head-pose guidance, on-phone landmarks, QC + calibration upload
 │   │   └── UrgencyBadge.tsx         ← URGENT / NORMAL badge
 │   ├── lib/
 │   │   ├── api.ts                   ← Axios API calls to FastAPI
+│   │   ├── examLandmarks.ts         ← Port of backend/exam/landmarks (parity: tests/examLandmarks.test.ts)
+│   │   ├── examGuidance.ts          ← Operator hints + session assembly
 │   │   └── types.ts                 ← Shared TypeScript types
 │   ├── store/
 │   │   └── useAppStore.ts           ← Zustand global state
@@ -918,6 +922,11 @@ patient_age  : int (required, 1–120)
   precise than the default — fall back to the default and flag why
 ✗ Never accept a limbus fit flatter than an eye facing the camera can look
   (LIMBUS_MAX_AXIS_RATIO) — it has caught a lid; return no limbus
+✗ Never accept a limbus fit whose independent restarts disagree — the image
+  is ambiguous; return no limbus
+✗ Never change exam/landmarks without the same change in
+  frontend/lib/examLandmarks.ts and regenerated parity fixtures
+  (tools/parity/dump_exam_fixtures.py)
 ```
 
 ---

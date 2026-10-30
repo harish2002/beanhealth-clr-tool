@@ -10,7 +10,17 @@
  */
 
 import axios, { AxiosError } from "axios";
-import type { AnalyseResponse, BatchResponse, ClientMeasurement, StreamAnalyseResponse } from "./types";
+import type {
+  AnalyseResponse,
+  BatchResponse,
+  ClientMeasurement,
+  ExamCalibration,
+  ExamCaptureSession,
+  ExamProtocol,
+  ExamProtocolPlan,
+  ExamSessionQC,
+  StreamAnalyseResponse,
+} from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 const USE_MOCK = process.env.NEXT_PUBLIC_USE_MOCK_API === "true";
@@ -237,6 +247,46 @@ export async function analyseBatch(
       throw new Error("TIMEOUT");
     }
     throw new Error("NETWORK_ERROR");
+  }
+}
+
+// ─── Phase 3 gaze examination ──────────────────────────────────────────────
+//
+// The phone fetches the capture plan, records landmark tracks (never images)
+// and uploads the session for frame QC and calibration.
+
+function examError(err: unknown): Error {
+  const axiosErr = err as AxiosError<{ detail?: unknown }>;
+  if (axiosErr.response) return new Error(`SERVER_${axiosErr.response.status}`);
+  if (axiosErr.code === "ECONNABORTED" || axiosErr.message.toLowerCase().includes("timeout")) return new Error("TIMEOUT");
+  return new Error("NETWORK_ERROR");
+}
+
+export async function getExamProtocol(protocol: ExamProtocol, tilt = true): Promise<ExamProtocolPlan> {
+  try {
+    const r = await axios.get<ExamProtocolPlan>(`${API_URL}/exam/protocol/${protocol}`,
+                                                { params: { tilt }, timeout: 10_000 });
+    return r.data;
+  } catch (err) {
+    throw examError(err);
+  }
+}
+
+export async function postExamQC(session: ExamCaptureSession, tilt = true): Promise<ExamSessionQC> {
+  try {
+    const r = await axios.post<ExamSessionQC>(`${API_URL}/exam/qc`, session, { params: { tilt }, timeout: 30_000 });
+    return r.data;
+  } catch (err) {
+    throw examError(err);
+  }
+}
+
+export async function postExamCalibrate(session: ExamCaptureSession): Promise<ExamCalibration> {
+  try {
+    const r = await axios.post<ExamCalibration>(`${API_URL}/exam/calibrate`, session, { timeout: 30_000 });
+    return r.data;
+  } catch (err) {
+    throw examError(err);
   }
 }
 

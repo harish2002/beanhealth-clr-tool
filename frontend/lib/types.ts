@@ -281,6 +281,135 @@ export interface BatchResponse {
   timestamp:       string;
 }
 
+// ─── Phase 3 gaze examination (/exam) ────────────────────────────────────────
+// Mirrors backend/exam/capture, exam/qc and exam/calibration. "R" / "L" are the
+// PATIENT's eyes; pixel coordinates are in the full, unmirrored frame.
+
+export type ExamEye        = "R" | "L";
+export type ExamProtocol   = "nine_gaze" | "five_gaze";
+export type ExamConfidence = "HIGH" | "MODERATE" | "LOW";
+export type XY = [number, number];
+
+export interface ExamMeasured { value: number; error: number; confidence: ExamConfidence }
+
+export interface ExamEllipse {
+  centre_px:     XY;
+  semi_major_px: number;
+  semi_minor_px: number;
+  angle_deg:     number;      // major axis, image coordinates, [0, 180)
+}
+
+export interface ExamEyeObservation {
+  reflex_px:               XY | null;
+  limbus:                  ExamEllipse | null;
+  pupil_px:                XY | null;
+  pupil_diameter_px:       number | null;
+  iris_radius_px:          number | null;
+  fissure_height_px:       number | null;
+  scleral_show_px:         number | null;
+  limbus_covered_fraction: number | null;
+}
+
+export interface ExamHeadPose { yaw_deg: number; pitch_deg: number; roll_deg: number }
+
+export interface ExamFrameObservation {
+  index:      number;
+  t_ms:       number;
+  head_pose:  ExamHeadPose | null;   // null = no face
+  sharpness:  number | null;
+  eyes:       Partial<Record<ExamEye, ExamEyeObservation>>;
+}
+
+export interface ExamPositionCapture { position: string; frames: ExamFrameObservation[] }
+
+export interface ExamSessionHeader {
+  session_id:       string;
+  protocol_version: string;
+  protocol:         ExamProtocol;
+  tier:             1;
+  device:           { model: string; lens: string | null; calibration_profile_id: string | null };
+  settings:         { width_px: number; height_px: number; fps: number; exposure_s: number | null };
+  distance_cm:      ExamMeasured | null;
+  started_at:       string;
+}
+
+export interface ExamCaptureSession { header: ExamSessionHeader; captures: ExamPositionCapture[] }
+
+export interface ExamRange { min: number; max: number }
+
+export interface ExamPositionPlan {
+  position:          string;
+  kind:              "calibration" | "gaze" | "tilt";
+  eye_in_orbit_deg:  XY;
+  head:              { yaw_deg: number; pitch_deg: number; tolerance_deg: number; roll_deg: ExamRange | null };
+  hold_s:            number;
+  min_valid_frames:  number;
+  instruction:       string;
+  fixing_eye:        ExamEye | null;
+  target_offset_cm:  number;
+}
+
+export interface ExamProtocolPlan {
+  protocol_version: string;
+  protocol:         ExamProtocol;
+  settings: {
+    distance_cm: ExamRange; distance_tolerance_cm: number; min_fps: number;
+    max_exposure_s: number; recommended_frame_height_px: number;
+    sharpness_canonical_iris_radius_px: number; camera: "rear"; light: string;
+  };
+  positions:   ExamPositionPlan[];
+  conventions: string;
+  kb_version:  string;
+  kb_sha256:   string;
+}
+
+export interface ExamRejection { code: string; eye: ExamEye | null; detail: string }
+
+export interface ExamPositionQC {
+  position:         string;
+  kind:             ExamPositionPlan["kind"];
+  status:           "OK" | "INSUFFICIENT_DATA";
+  reason:           "not_captured" | "too_few_valid_frames" | null;
+  frames_total:     number;
+  frames_valid:     number;
+  min_valid_frames: number;
+  reject_counts:    Record<string, number>;
+  frames:           { index: number; valid: boolean; reasons: ExamRejection[] }[];
+}
+
+export interface ExamSessionQC {
+  session_id:             string;
+  protocol:               ExamProtocol;
+  positions:              ExamPositionQC[];
+  session_flags:          { code: string; detail: string }[];
+  insufficient_positions: string[];
+  qc_version:             string;
+  kb_version:             string;
+  kb_sha256:              string;
+}
+
+export interface ExamCalibration {
+  session_id:       string;
+  iris_diameter_mm: number;
+  hirschberg: {
+    pd_per_mm:       ExamMeasured;
+    source:          "fitted" | "kb_default";
+    fitted:          ExamMeasured | null;
+    residual_rms_mm: number | null;
+    points:          number;
+  };
+  kappa: Record<ExamEye, { temporal_mm: ExamMeasured; inferior_mm: ExamMeasured; frames: number } | null>;
+  points: {
+    position: string; eye: ExamEye; rotation_asked_pd: number;
+    temporal_mm: ExamMeasured; inferior_mm: ExamMeasured; frames: number;
+  }[];
+  flags:               { code: string; eye: ExamEye | null; detail: string }[];
+  calibration_version: string;
+  qc_version:          string;
+  kb_version:          string;
+  kb_sha256:           string;
+}
+
 // ─── UI state ────────────────────────────────────────────────────────────────
 
 export interface AppState {

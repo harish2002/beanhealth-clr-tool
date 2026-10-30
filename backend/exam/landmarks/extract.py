@@ -17,6 +17,7 @@ nothing is guessed.
 from __future__ import annotations
 
 import logging
+import math
 from typing import Dict, List, Optional, Tuple
 
 import cv2
@@ -76,9 +77,11 @@ def _coarse_reflex(image_rgb: np.ndarray, centre: Tuple[float, float], radius: f
                    eye: Eye) -> Optional[Tuple[float, float]]:
     """Module 3's reflex detection (percentile threshold + 3-way filter) on a crop round the iris."""
     h, w = image_rgb.shape[:2]
-    half = int(round(2 * radius))
-    x0, y0 = max(0, int(round(centre[0])) - half), max(0, int(round(centre[1])) - half)
-    x1, y1 = min(w, int(round(centre[0])) + half + 1), min(h, int(round(centre[1])) + half + 1)
+    # floor(v + 0.5) rounds halves up, as the phone does (Python's round() goes to even).
+    half = math.floor(2 * radius + 0.5)
+    cx, cy = math.floor(centre[0] + 0.5), math.floor(centre[1] + 0.5)
+    x0, y0 = max(0, cx - half), max(0, cy - half)
+    x1, y1 = min(w, cx + half + 1), min(h, cy + half + 1)
     crop = np.ascontiguousarray(image_rgb[y0:y1, x0:x1])
     flags: List[str] = []
     try:

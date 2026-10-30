@@ -39,13 +39,16 @@ from exam.calibration import (  # noqa: E402
 )
 from exam.capture import CALIBRATION_POSITIONS, CaptureSession, Ellipse, EyeObservation, build_plan  # noqa: E402
 from exam.kb import load_kb  # noqa: E402
+import exam.landmarks.eye as eye_module  # noqa: E402
 from exam.landmarks.eye import (  # noqa: E402
     ellipse_points,
     find_pupil,
     fit_conic_ellipse,
     fit_limbus,
     lid_metrics,
+    mulberry32,
     refine_reflex,
+    robust_ellipse,
 )
 from exam.landmarks.extract import IRIS, extract_frame, face_landmarks  # noqa: E402
 from exam.landmarks.head_pose import (  # noqa: E402
@@ -162,6 +165,30 @@ class TestLimbus:
                                         angle_deg=0), upper_lid=70, lower_lid=75)
         c, r = guess(scene)
         assert fit_limbus(render_eye(scene), c, r, scene.aperture()) is None
+
+    def test_restarts_that_disagree_give_no_limbus(self, monkeypatch):
+        # Two ellipses fit the arcs about equally well: whichever a restart lands on,
+        # the reference is not trustworthy, so there is no limbus at all.
+        small = Ellipse(centre_px=(100.0, 100.0), semi_major_px=30, semi_minor_px=29, angle_deg=0)
+        large = Ellipse(centre_px=(100.0, 102.5), semi_major_px=32, semi_minor_px=31, angle_deg=0)
+        pts = np.vstack([ellipse_points(small, 40), ellipse_points(large, 40)])
+        starts = iter([small, large, small])
+        monkeypatch.setattr(eye_module, "_msac_start", lambda *a: next(starts))
+        assert robust_ellipse(pts, 31.0, mulberry32(0)) is None
+        # The same points, every restart in one basin: a fit.
+        starts = iter([small, small, small])
+        assert robust_ellipse(pts, 31.0, mulberry32(0)) is not None
+
+    def test_real_eye_does_not_depend_on_the_seed(self):
+        image = rgb(first_image("success_reference"))
+        gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY)
+        points = face_landmarks(image)
+        from exam.landmarks.extract import aperture_for
+        iris = points[list(IRIS["R"]), :2]
+        radius = float(np.mean(np.hypot(*(iris[1:] - iris[0]).T)))
+        fits = [fit_limbus(gray, tuple(iris[0]), radius, aperture_for(points, "R"), seed=s) for s in range(5)]
+        assert all(f is not None for f in fits)
+        assert max(math.dist(f.ellipse.centre_px, fits[0].ellipse.centre_px) for f in fits) < 0.01
 
     def test_misplaced_lid_contour_never_flattens_the_fit(self):
         # Face-mesh lid contours drawn too high let lid-edge points in; the fit must
