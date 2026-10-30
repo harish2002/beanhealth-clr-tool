@@ -13,7 +13,17 @@ video. Raw frames never leave the phone unless the patient consents (brief §7).
 Coordinates are pixels in the full, unmirrored frame (x right, y down).
 "R" / "L" are the PATIENT's eyes; head pose follows exam.capture.protocol.
 Any observation the phone could not make is null — the QC treats a missing
-value as a failed check, never as a pass.
+value as a failed check, never as a pass. exam.landmarks is the reference
+implementation of every per-eye value; the phone must compute them the same
+way.
+
+The reflex is measured against the LIMBUS centre, not the pupil: in dark
+irises under visible light the pupil edge is often invisible, while the
+limbus is not. The constant offset between the two centres cancels when the
+eye's own kappa (measured against the same centre) is subtracted.
+
+On a calibration position one eye is covered; only the fixing eye need be
+observed.
 """
 
 from __future__ import annotations
@@ -22,7 +32,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 
 from pydantic import Field, model_validator
 
-from exam.capture.protocol import CAPTURE_PROTOCOL_VERSION, TILT_POSITIONS
+from exam.capture.protocol import CALIBRATION_POSITIONS, CAPTURE_PROTOCOL_VERSION, TILT_POSITIONS
 from exam.kb.schema import Eye
 from exam.models import PROTOCOL_POSITIONS, Measured, Protocol, Strict
 
@@ -37,11 +47,28 @@ class HeadPose(Strict):
     roll_deg: float
 
 
+class Ellipse(Strict):
+    centre_px: Point
+    semi_major_px: float = Field(gt=0)
+    semi_minor_px: float = Field(gt=0)
+    angle_deg: float = Field(ge=0, lt=180)      # direction of the major axis, image coordinates
+
+    @model_validator(mode="after")
+    def _axes_ordered(self) -> "Ellipse":
+        if self.semi_minor_px > self.semi_major_px:
+            raise ValueError("semi_minor_px must not exceed semi_major_px")
+        return self
+
+
 class EyeObservation(Strict):
-    reflex_px: Optional[Point] = None          # corneal light reflex centroid; null = not found
-    pupil_px: Optional[Point] = None           # pupil centre
-    iris_radius_px: Optional[float] = Field(default=None, gt=0)
+    reflex_px: Optional[Point] = None          # corneal light reflex, sub-pixel; null = not found
+    limbus: Optional[Ellipse] = None           # limbus ellipse; its centre is the reflex reference
+    pupil_px: Optional[Point] = None           # pupil centre (often not found in dark irises)
+    pupil_diameter_px: Optional[float] = Field(default=None, gt=0)
+    iris_radius_px: Optional[float] = Field(default=None, gt=0)   # limbus semi-major axis
     fissure_height_px: Optional[float] = Field(default=None, ge=0)
+    # Upper lid to the top of the limbus; + = sclera visible above it, − = lid over the iris.
+    scleral_show_px: Optional[float] = None
     # Fraction of the limbus perimeter hidden by the lids.
     limbus_covered_fraction: Optional[float] = Field(default=None, ge=0, le=1)
 
@@ -107,7 +134,7 @@ class CaptureSession(Strict):
 
     @model_validator(mode="after")
     def _positions_belong_to_protocol(self) -> "CaptureSession":
-        allowed = set(PROTOCOL_POSITIONS[self.header.protocol]) | set(TILT_POSITIONS)
+        allowed = set(PROTOCOL_POSITIONS[self.header.protocol]) | set(TILT_POSITIONS) | set(CALIBRATION_POSITIONS)
         seen = set()
         for c in self.captures:
             if c.position not in allowed:

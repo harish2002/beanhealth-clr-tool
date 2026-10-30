@@ -9,9 +9,12 @@ A frame is rejected — with every reason logged — for:
   no_face               face mesh found no face (head_pose null)
   eye_not_found         an eye has no observation
   missing_observation   a value a check needs is null (a check that cannot
-                        run counts as failed, never as passed)
+                        run counts as failed, never as passed) — including
+                        the limbus, the reference every reflex is read against
   blink                 fissure height ÷ iris diameter below the blink ratio
   lid_covers_limbus     lids hide more of the limbus than allowed
+  limbus_size_mismatch  the two limbus fits differ in size more than two irises
+                        can (one fit caught a lid or the pupil)
   reflex_not_found      no corneal light reflex in an eye
   motion_blur           eye-region sharpness well below the position's own
                         sharp frames (relative: no fixed value works across
@@ -21,9 +24,11 @@ A frame is rejected — with every reason logged — for:
   saccade_unverifiable  no neighbouring frame close enough in time to tell
 
 Both eyes must pass: the deviation is the difference between the two eyes.
+On a calibration position one eye is covered and only the fixing eye is
+checked. The pupil is not required (it is often invisible in dark irises).
 
 Saccade test: each eye's gaze direction relative to the camera is its
-reflex-to-pupil vector, converted to degrees with the iris-diameter scale
+reflex-to-limbus-centre vector, converted to degrees with the iris-diameter scale
 and the Hirschberg ratio from the KB. While the patient fixates the phone this
 vector stays put even as the head turns (the eyes counter-rotate), so a fast
 change means the eyes jumped. Velocity is taken to both neighbours and the
@@ -54,7 +59,7 @@ from exam.kb.loader import KnowledgeBase
 from exam.kb.schema import Eye
 from exam.models import Strict
 
-QC_VERSION = "1.0.0"
+QC_VERSION = "1.1.0"
 EYES: Tuple[Eye, Eye] = ("R", "L")
 # A neighbour further away than this many frame periods is too far apart to
 # measure a saccade against.
@@ -62,7 +67,7 @@ MAX_NEIGHBOUR_GAP_FRAMES = 3
 
 RejectCode = Literal[
     "no_face", "eye_not_found", "missing_observation", "blink", "lid_covers_limbus",
-    "reflex_not_found", "motion_blur", "head_pose_off_target", "saccade",
+    "limbus_size_mismatch", "reflex_not_found", "motion_blur", "head_pose_off_target", "saccade",
     "saccade_unverifiable",
 ]
 
@@ -81,7 +86,7 @@ class FrameVerdict(Strict):
 
 class PositionQC(Strict):
     position: str
-    kind: Literal["gaze", "tilt"]
+    kind: Literal["calibration", "gaze", "tilt"]
     status: Literal["OK", "INSUFFICIENT_DATA"]
     reason: Optional[Literal["not_captured", "too_few_valid_frames"]] = None
     frames_total: int
@@ -157,6 +162,7 @@ class _Gates:
     def __init__(self, kb: KnowledgeBase):
         self.blink_ratio = _required(kb, "qc_blink_openness_ratio")
         self.max_covered = _required(kb, "qc_max_limbus_covered_fraction")
+        self.max_size_difference = _required(kb, "qc_max_limbus_size_difference")
         self.sharpness_percentile = _required(kb, "qc_sharpness_reference_percentile")
         self.min_relative_sharpness = _required(kb, "qc_min_relative_sharpness")
         self.saccade_deg_s = _required(kb, "qc_saccade_velocity_deg_s")
@@ -173,10 +179,10 @@ class _Gates:
 def _gaze_deg(frame: FrameObservation, eye: Eye, gates: _Gates) -> Optional[Tuple[float, float]]:
     """The eye's gaze direction relative to the camera, in degrees, if measurable."""
     obs = frame.eyes.get(eye)
-    if obs is None or obs.reflex_px is None or obs.pupil_px is None or obs.iris_radius_px is None:
+    if obs is None or obs.reflex_px is None or obs.limbus is None:
         return None
-    k = gates.deg_per_iris_radius / obs.iris_radius_px
-    return ((obs.reflex_px[0] - obs.pupil_px[0]) * k, (obs.reflex_px[1] - obs.pupil_px[1]) * k)
+    (cx, cy), k = obs.limbus.centre_px, gates.deg_per_iris_radius / obs.limbus.semi_major_px
+    return ((obs.reflex_px[0] - cx) * k, (obs.reflex_px[1] - cy) * k)
 
 
 def _static_checks(frame: FrameObservation, plan: PositionPlan, gates: _Gates,
@@ -185,11 +191,14 @@ def _static_checks(frame: FrameObservation, plan: PositionPlan, gates: _Gates,
         return [Rejection(code="no_face", detail="no face found")]
     out: List[Rejection] = []
 
-    for eye in EYES:
+    for eye in plan.observed_eyes:
         obs = frame.eyes.get(eye)
         if obs is None:
             out.append(Rejection(code="eye_not_found", eye=eye, detail=f"{eye} eye not observed"))
             continue
+        if obs.limbus is None:
+            out.append(Rejection(code="missing_observation", eye=eye,
+                                 detail="limbus not fitted; no reference for the reflex"))
         if obs.fissure_height_px is None or obs.iris_radius_px is None:
             out.append(Rejection(code="missing_observation", eye=eye,
                                  detail="fissure height or iris radius missing; blink check cannot run"))
@@ -207,8 +216,14 @@ def _static_checks(frame: FrameObservation, plan: PositionPlan, gates: _Gates,
                                         f"> {gates.max_covered:.0%}"))
         if obs.reflex_px is None:
             out.append(Rejection(code="reflex_not_found", eye=eye, detail=f"no corneal reflex in {eye} eye"))
-        if obs.pupil_px is None:
-            out.append(Rejection(code="missing_observation", eye=eye, detail="pupil centre missing"))
+
+    limbi = [frame.eyes[e].limbus for e in plan.observed_eyes if e in frame.eyes]
+    if len(plan.observed_eyes) == 2 and len(limbi) == 2 and all(limbi):
+        big, small = sorted((l.semi_major_px for l in limbi), reverse=True)   # type: ignore[union-attr]
+        if (big - small) / big > gates.max_size_difference:
+            out.append(Rejection(code="limbus_size_mismatch",
+                                 detail=f"limbus radii {big:.1f} and {small:.1f} px differ by "
+                                        f"{(big - small) / big:.0%} > {gates.max_size_difference:.0%}"))
 
     if frame.sharpness is None:
         out.append(Rejection(code="missing_observation", detail="sharpness missing; blur check cannot run"))
@@ -230,10 +245,11 @@ def _static_checks(frame: FrameObservation, plan: PositionPlan, gates: _Gates,
     return out
 
 
-def _saccade_checks(frames: List[FrameObservation], gates: _Gates, fps: float) -> List[List[Rejection]]:
+def _saccade_checks(frames: List[FrameObservation], gates: _Gates, fps: float,
+                    eyes: Tuple[Eye, ...] = EYES) -> List[List[Rejection]]:
     max_gap_ms = MAX_NEIGHBOUR_GAP_FRAMES * 1000.0 / fps
-    gaze = [{eye: _gaze_deg(f, eye, gates) for eye in EYES} for f in frames]
-    measurable = [all(g[eye] is not None for eye in EYES) for g in gaze]
+    gaze = [{eye: _gaze_deg(f, eye, gates) for eye in eyes} for f in frames]
+    measurable = [all(g[eye] is not None for eye in eyes) for g in gaze]
 
     # Fastest gaze speed to either neighbour, per frame (None: no neighbour).
     fastest: List[Optional[Tuple[float, Eye]]] = []
@@ -246,7 +262,7 @@ def _saccade_checks(frames: List[FrameObservation], gates: _Gates, fps: float) -
             dt_s = abs(frames[j].t_ms - f.t_ms) / 1000.0
             if dt_s * 1000.0 > max_gap_ms:
                 continue
-            for eye in EYES:
+            for eye in eyes:
                 (x0, y0), (x1, y1) = gaze[i][eye], gaze[j][eye]   # type: ignore[misc]
                 speeds.append((math.hypot(x1 - x0, y1 - y0) / dt_s, eye))
         all_speeds += [v for v, _ in speeds]
@@ -259,7 +275,7 @@ def _saccade_checks(frames: List[FrameObservation], gates: _Gates, fps: float) -
     out: List[List[Rejection]] = []
     for i, top in enumerate(fastest):
         if not measurable[i]:
-            out.append([])   # already rejected for the missing reflex / pupil
+            out.append([])   # already rejected for the missing reflex / limbus
         elif top is None:
             out.append([Rejection(code="saccade_unverifiable",
                                   detail=f"no measurable neighbouring frame within {max_gap_ms:.0f} ms")])
@@ -281,7 +297,7 @@ def qc_position(capture: Optional[PositionCapture], plan: PositionPlan, fps: flo
         return PositionQC(position=plan.position, kind=plan.kind, status="INSUFFICIENT_DATA",
                           reason="not_captured", frames_total=0, frames_valid=0,
                           min_valid_frames=plan.min_valid_frames)
-    saccades = _saccade_checks(capture.frames, gates, fps)
+    saccades = _saccade_checks(capture.frames, gates, fps, plan.observed_eyes)
     scores = [f.sharpness for f in capture.frames if f.sharpness is not None and f.head_pose is not None]
     min_sharpness = (gates.min_relative_sharpness * float(np.percentile(scores, gates.sharpness_percentile))
                      if scores else None)
@@ -327,10 +343,11 @@ def _session_flags(session: CaptureSession, plan: ProtocolPlan) -> List[SessionF
 
 
 def run_qc(session: CaptureSession, kb: Optional[KnowledgeBase] = None,
-           include_tilt: bool = True) -> SessionQC:
+           include_tilt: bool = True, include_calibration: bool = True) -> SessionQC:
     """QC every planned position of a session (a planned position not captured is INSUFFICIENT_DATA)."""
     kb = kb or load_kb()
-    plan = build_plan(session.header.protocol, include_tilt=include_tilt, kb=kb)
+    plan = build_plan(session.header.protocol, include_tilt=include_tilt, kb=kb,
+                      include_calibration=include_calibration)
     gates = _Gates(kb)
     positions = [qc_position(session.capture(p.position), p, session.header.settings.fps, gates)
                  for p in plan.positions]

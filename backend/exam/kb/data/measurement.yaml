@@ -42,3 +42,15 @@ entries:
     notes: >-
       Range only. A per-patient fitted ratio outside it is flagged
       (brief §4.4).
+
+  - id: hirschberg_ratio_default_sd_pd_per_mm
+    value: 2.5
+    unit: PD/mm
+    source: "BeanHealth engineering — the plausible range 12–22 PD/mm (brief §4.4) read as about ±2 SD"
+    review_status: draft
+    notes: >-
+      Uncertainty carried by the default Hirschberg ratio when no per-patient
+      fit is available (or the fit is implausible or less precise than this).
+      It scales a measured deviation's error, not whether a deviation is
+      present: zero stays zero whatever the ratio. Replace with a published
+      population spread once a clinician supplies one.

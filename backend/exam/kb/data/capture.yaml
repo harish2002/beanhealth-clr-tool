@@ -93,6 +93,21 @@ entries:
     review_status: needs_clinician_review
     notes: "How long the operator holds each position. At 30 fps that is about 60 frames."
 
+  # ── Calibration captures (brief §4.4) ──
+  - id: calibration_target_offset_cm
+    value: 7
+    unit: cm
+    source: "BeanHealth engineering placeholder — the brief (§4.4) asks for targets at known angles without giving them"
+    review_status: draft
+    notes: >-
+      Horizontal distance of the two Hirschberg calibration targets from the
+      lens, one to the patient's right and one to the left (on a card fixed
+      to the stand). At distance d the target sits 100·offset/d PD from the
+      light: 7 cm at 36 cm is about 19 PD (11°), a reflex shift of roughly
+      1.5 mm — large enough to fit, small enough to stay in the range where
+      the Hirschberg relation is close to linear. The fit ignores the eye's
+      own sideways offset from the lens (about 1% at these distances).
+
   # ── Frame QC gates (engineering placeholders) ──
   - id: qc_head_pose_tolerance_deg
     value: 5
@@ -124,6 +139,18 @@ entries:
       Above this, too little limbus is visible for a reliable ellipse fit
       (milestone 5). The upper lid normally covers a little of the limbus,
       so this cannot be near zero.
+
+  - id: qc_max_limbus_size_difference
+    value: 0.15
+    unit: fraction of the larger limbus semi-major axis
+    source: "BeanHealth engineering placeholder — not in the brief"
+    review_status: draft
+    notes: >-
+      The two irises are nearly the same size, so limbus fits whose major
+      axes differ by more than this share mean one fit is wrong (it caught a
+      lid or the pupil) and the frame's scale cannot be trusted. Not zero:
+      with the head turned 25° the eyes sit at different distances from the
+      camera (about 7% apart in size at 36 cm). Binocular positions only.
 
   - id: qc_sharpness_canonical_iris_radius_px
     value: 32

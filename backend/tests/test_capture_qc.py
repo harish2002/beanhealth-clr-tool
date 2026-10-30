@@ -104,12 +104,14 @@ class TestPlan:
     def test_nine_gaze_order_with_tilts(self):
         plan = build_plan("nine_gaze")
         assert [p.position for p in plan.positions] == [
+            "calib_R_lens", "calib_R_right", "calib_R_left", "calib_L_lens", "calib_L_right", "calib_L_left",
             "primary", "right", "left", "up", "down",
             "up_right", "up_left", "down_right", "down_left", "tilt_right", "tilt_left"]
         assert plan.protocol_version == CAPTURE_PROTOCOL_VERSION
 
     def test_kids_mode_and_no_tilt(self):
-        assert [p.position for p in build_plan("five_gaze", include_tilt=False).positions] == [
+        assert [p.position for p in build_plan("five_gaze", include_tilt=False,
+                                               include_calibration=False).positions] == [
             "primary", "right", "left", "up", "down"]
 
     @pytest.mark.parametrize("position", list(GAZE_DIRECTION))
@@ -261,16 +263,23 @@ class TestFailClosed:
 
     def _session_with(self, change):
         raw = simulate_session(SessionSpec(n_frames=12)).model_dump()
-        change(raw["captures"][0]["frames"][6])
+        primary = next(c for c in raw["captures"] if c["position"] == "primary")
+        change(primary["frames"][6])
         return CaptureSession.model_validate(raw)
 
     def _primary(self, session):
         return next(p for p in run_qc(session).positions if p.position == "primary")
 
-    @pytest.mark.parametrize("field", ["fissure_height_px", "limbus_covered_fraction", "pupil_px"])
+    @pytest.mark.parametrize("field", ["fissure_height_px", "limbus_covered_fraction", "limbus"])
     def test_missing_eye_value(self, field):
         pqc = self._primary(self._session_with(lambda f: f["eyes"]["L"].update({field: None})))
         assert "missing_observation" in rejected(pqc)[6]
+
+    def test_missing_pupil_is_not_a_rejection(self):
+        # The reflex is read against the limbus; dark irises often hide the pupil.
+        pqc = self._primary(self._session_with(
+            lambda f: f["eyes"]["L"].update(pupil_px=None, pupil_diameter_px=None)))
+        assert 6 not in rejected(pqc)
 
     def test_missing_sharpness(self):
         pqc = self._primary(self._session_with(lambda f: f.update(sharpness=None)))
@@ -426,7 +435,7 @@ class TestAPI:
         return TestClient(app)
 
     def test_protocol_endpoint(self, client):
-        r = client.get("/exam/protocol/five_gaze", params={"tilt": "false"})
+        r = client.get("/exam/protocol/five_gaze", params={"tilt": "false", "calibration": "false"})
         assert r.status_code == 200
         assert [p["position"] for p in r.json()["positions"]] == ["primary", "right", "left", "up", "down"]
 

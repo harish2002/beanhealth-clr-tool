@@ -18,6 +18,12 @@ Head-pose convention (face mesh, relative to the camera, phone upright):
 Eye-in-orbit angles use the same signs: + horizontal = the patient's right,
 + vertical = up.
 
+Calibration (brief §4.4) comes first: with one eye covered, the other fixes
+the light at the lens (its kappa: where the reflex sits when the eye looks
+straight at the light), then a target to the patient's right and one to the
+left at calibration_target_offset_cm (its Hirschberg ratio: how far the
+reflex moves per prism dioptre of eye rotation). Both eyes take a turn.
+
 Known limitations (brief §11): near fixation only; fixation compliance in
 children is not guaranteed — the QC rejects frames with a saccade, but cannot
 prove a child was looking at the target between them.
@@ -31,12 +37,23 @@ from pydantic import Field
 
 from exam.kb import load_kb
 from exam.kb.loader import KnowledgeBase
+from exam.kb.schema import Eye
 from exam.models import PROTOCOL_POSITIONS, Protocol, Strict
 
-CAPTURE_PROTOCOL_VERSION = "1.0.0"
+CAPTURE_PROTOCOL_VERSION = "1.1.0"
 
 TiltPosition = Literal["tilt_right", "tilt_left"]
 TILT_POSITIONS: Tuple[str, ...] = ("tilt_right", "tilt_left")
+
+# (fixing eye, target) for each calibration position; the other eye is covered.
+# target: "lens" or the side of the lens the card target sits on.
+CALIBRATION_TARGETS: Dict[str, Tuple[Eye, str]] = {
+    f"calib_{eye}_{target}": (eye, target)            # type: ignore[misc]
+    for eye in ("R", "L") for target in ("lens", "right", "left")
+}
+CALIBRATION_POSITIONS: Tuple[str, ...] = tuple(CALIBRATION_TARGETS)
+_OTHER_EYE = {"R": "L", "L": "R"}
+_EYE_WORD = {"R": "right", "L": "left"}
 
 # Unit eye-in-orbit direction of each gaze position: (horizontal, vertical),
 # + = patient's right, up.
@@ -68,13 +85,22 @@ class HeadPoseTarget(Strict):
 
 class PositionPlan(Strict):
     position: str
-    kind: Literal["gaze", "tilt"]
+    kind: Literal["calibration", "gaze", "tilt"]
     # Eye-in-orbit angle the head pose produces (deg; + = right / up).
     eye_in_orbit_deg: Tuple[float, float]
     head: HeadPoseTarget
     hold_s: float
     min_valid_frames: int
     instruction: str
+    # Calibration only: the eye that fixes (the other is covered) and how far
+    # the fixation target sits from the lens (cm; + = the patient's right).
+    fixing_eye: Optional[Eye] = None
+    target_offset_cm: float = 0.0
+
+    @property
+    def observed_eyes(self) -> Tuple[Eye, ...]:
+        """The eyes QC and measurement need in every frame of this position."""
+        return (self.fixing_eye,) if self.fixing_eye else ("R", "L")
 
 
 class SettingsPlan(Strict):
@@ -130,9 +156,17 @@ def _gaze_instruction(position: str, h: int, v: int, angle: float) -> str:
             f"(eyes end up looking {eyes}).")
 
 
+def _calibration_instruction(eye: Eye, target: str, offset: float) -> str:
+    cover = f"Cover the patient's {_EYE_WORD[_OTHER_EYE[eye]]} eye; head straight."
+    if target == "lens":
+        return f"{cover} The {_EYE_WORD[eye]} eye looks at the light next to the lens."
+    return (f"{cover} The {_EYE_WORD[eye]} eye looks at the card target {offset:g} cm to the "
+            f"patient's {target} of the lens.")
+
+
 def build_plan(protocol: Protocol = "nine_gaze", include_tilt: bool = True,
-               kb: Optional[KnowledgeBase] = None) -> ProtocolPlan:
-    """The ordered capture plan: primary, the other gaze positions, then the head tilts."""
+               kb: Optional[KnowledgeBase] = None, include_calibration: bool = True) -> ProtocolPlan:
+    """The ordered capture plan: calibration, primary, the other gaze positions, then the head tilts."""
     kb = kb or load_kb()
     angle = _required(kb, "gaze_eccentricity_deg")
     tol = _required(kb, "qc_head_pose_tolerance_deg")
@@ -140,6 +174,17 @@ def build_plan(protocol: Protocol = "nine_gaze", include_tilt: bool = True,
     min_frames = int(_required(kb, "min_valid_frames_per_position"))
 
     positions: List[PositionPlan] = []
+    if include_calibration:
+        offset = _required(kb, "calibration_target_offset_cm")
+        for name, (eye, target) in CALIBRATION_TARGETS.items():
+            positions.append(PositionPlan(
+                position=name, kind="calibration", eye_in_orbit_deg=(0.0, 0.0),
+                head=HeadPoseTarget(yaw_deg=0.0, pitch_deg=0.0, tolerance_deg=tol),
+                hold_s=hold, min_valid_frames=min_frames,
+                instruction=_calibration_instruction(eye, target, offset),
+                fixing_eye=eye,
+                target_offset_cm={"lens": 0.0, "right": offset, "left": -offset}[target],
+            ))
     for name in PROTOCOL_POSITIONS[protocol]:
         h, v = GAZE_DIRECTION[name]
         positions.append(PositionPlan(

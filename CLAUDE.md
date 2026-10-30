@@ -114,9 +114,14 @@ beanstrabis/
 │   │   └── module7_report.py        ← Report + annotated image
 │   ├── exam/                        ← Phase 3 gaze examination
 │   │   ├── models.py                ← Measurements: 9-gaze grid, tilt, lids/pupils/ductions
-│   │   ├── api.py                   ← GET /exam/protocol/{protocol}, POST /exam/qc
-│   │   ├── capture/                 ← Capture plan (head-pose targets) + session upload format
+│   │   ├── api.py                   ← /exam/protocol, /exam/qc, /exam/calibrate, /exam/landmarks
+│   │   ├── capture/                 ← Capture plan (calibration, gaze, tilt) + session upload format
 │   │   ├── qc/                      ← Frame QC: per-frame reject reasons, per-position sufficiency
+│   │   ├── landmarks/               ← Reference per-frame extraction (the phone port must match)
+│   │   │   ├── eye.py               ← Sub-pixel reflex, limbus ellipse, pupil, lid measures
+│   │   │   ├── head_pose.py         ← Yaw/pitch/roll from face-mesh axes
+│   │   │   └── extract.py           ← Frame → FrameObservation
+│   │   ├── calibration/             ← Scale, per-patient Hirschberg ratio, kappa per eye
 │   │   ├── kb/                      ← Clinical knowledge base
 │   │   │   ├── data/*.yaml          ← Versioned clinical values (source + review_status)
 │   │   │   ├── schema.py            ← Pydantic models for every KB file
@@ -127,7 +132,7 @@ beanstrabis/
 │   │   │   ├── features.py          ← One evaluator per conditions.yaml feature
 │   │   │   ├── parks.py             ← Parks–Bielschowsky 3-step test
 │   │   │   └── engine.py            ← Rule order, finding assembly, referral gate
-│   │   └── sim/                     ← Synthetic cases + frame tracks (test fixture, not physiology)
+│   │   └── sim/                     ← Synthetic cases, frame tracks, eye images (test fixtures, not physiology)
 │   ├── utils/
 │   │   ├── image_utils.py           ← Shared image helpers
 │   │   └── constants.py             ← Thresholds, ICD codes, etc.
@@ -907,6 +912,12 @@ patient_age  : int (required, 1–120)
   that cannot run rejects the frame (missing_observation)
 ✗ Never upload video frames in a capture session — landmark tracks only,
   unless the patient has consented to raw video
+✗ Never measure an eye's rotation without that eye's kappa — eye_rotation_pd
+  returns None rather than measure from zero
+✗ Never use a fitted Hirschberg ratio outside the KB plausible range or less
+  precise than the default — fall back to the default and flag why
+✗ Never accept a limbus fit flatter than an eye facing the camera can look
+  (LIMBUS_MAX_AXIS_RATIO) — it has caught a lid; return no limbus
 ```
 
 ---
