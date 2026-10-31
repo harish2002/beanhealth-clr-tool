@@ -317,7 +317,8 @@ export async function postExamReport(
 
 export async function checkHealth(): Promise<boolean> {
   try {
-    const r = await axios.get(`${API_URL}/health`, { timeout: 5_000 });
+    // The first request from far regions (India → Railway sfo) can take ~5 s.
+    const r = await axios.get(`${API_URL}/health`, { timeout: 15_000 });
     return r.data?.status === "ok";
   } catch {
     return false;

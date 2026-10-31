@@ -6,5 +6,11 @@
   "env": {
     "NEXT_PUBLIC_API_URL": "https://beanhealth-clr-tool-production.up.railway.app",
     "NEXT_PUBLIC_USE_MOCK_API": "false"
+  },
+  "build": {
+    "env": {
+      "NEXT_PUBLIC_API_URL": "https://beanhealth-clr-tool-production.up.railway.app",
+      "NEXT_PUBLIC_USE_MOCK_API": "false"
+    }
   }
 }
