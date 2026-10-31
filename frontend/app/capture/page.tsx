@@ -105,9 +105,14 @@ export default function CapturePage() {
             </div>
           </div>
 
-          <Link href="/live" className="btn-secondary btn-sm whitespace-nowrap shrink-0">
-            Live eye view
-          </Link>
+          <div className="flex gap-2 shrink-0">
+            <Link href="/exam" className="btn-secondary btn-sm whitespace-nowrap">
+              Gaze exam
+            </Link>
+            <Link href="/live" className="btn-secondary btn-sm whitespace-nowrap">
+              Live eye view
+            </Link>
+          </div>
         </div>
       </div>
 

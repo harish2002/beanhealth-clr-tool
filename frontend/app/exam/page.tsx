@@ -5,8 +5,8 @@ import { TopBar } from "@/components/ui/Chrome";
 
 /**
  * Gaze examination — guided multi-position capture (Phase 3).
- * Captures and quality-checks the landmark tracks; the gaze grid and the
- * clinician report are built from them in later milestones.
+ * Captures the landmark tracks, then shows the gaze grid, findings and
+ * referral from /exam/evaluate and opens the clinician report.
  */
 export default function ExamPage() {
   return (

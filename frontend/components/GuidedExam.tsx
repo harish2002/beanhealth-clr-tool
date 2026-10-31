@@ -20,14 +20,15 @@
  *     engine's findings and referral decision. Positions without enough
  *     valid frames can be retaken.
  *
- * Decision support — not a diagnosis. The clinician report is the next
- * milestone; this screen shows the grid and findings to the operator.
+ * Decision support — not a diagnosis. This screen shows the grid and findings
+ * to the operator and opens the clinician report (/exam/report/pdf|html).
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FaceMesh, Results } from "@mediapipe/face_mesh";
 import { getExamProtocol, postExamEvaluate, postExamReport } from "@/lib/api";
 import { rgbaToGray } from "@/lib/eyeVision";
+import { useAppStore } from "@/store/useAppStore";
 import { eyeObservation, eyeRegionHalf, headPose, irisGuess } from "@/lib/examLandmarks";
 import type { GrayRegion } from "@/lib/examLandmarks";
 import { buildSession, deviceModel, effectiveFps, poseGuidance } from "@/lib/examGuidance";
@@ -588,8 +589,10 @@ function Results({ result, plan, onRetake, onReport }: {
   result: ExamResult; plan: ExamProtocolPlan | null; onRetake: (position: string) => void;
   onReport: (format: "pdf" | "html", label: string, age: string) => Promise<string | null>;
 }) {
-  const [patientLabel, setPatientLabel] = useState("");
-  const [age, setAge] = useState("");
+  // Prefilled from the patient form when the exam was reached from it; still only sent with the report.
+  const { patientName, patientAge } = useAppStore();
+  const [patientLabel, setPatientLabel] = useState(patientName);
+  const [age, setAge] = useState(patientAge === null ? "" : String(patientAge));
   const [busy, setBusy] = useState<"pdf" | "html" | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
   const report = async (format: "pdf" | "html") => {

@@ -129,10 +129,17 @@ export default function LandingPage() {
                 Start screening
                 <ArrowRight />
               </Link>
+              <Link href="/exam" className="btn-secondary">
+                Gaze examination
+              </Link>
               <a href="#method" className="btn-secondary">
                 How the measurement works
               </a>
             </div>
+            <p className="mt-3 text-[12.5px] text-ink-400 max-w-xl">
+              Gaze examination: phone on a stand, 9 gaze positions and head tilts, deviation in
+              prism dioptres with a clinician report.
+            </p>
 
             <div className="mt-10 pt-8 border-t border-ink-100">
               <p className="eyebrow-muted mb-3">Built for</p>
