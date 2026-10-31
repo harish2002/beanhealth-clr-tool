@@ -129,6 +129,9 @@ beanstrabis/
 │   │   ├── calibration/             ← Scale, per-patient Hirschberg ratio, kappa per eye
 │   │   ├── measurement/             ← Per-gaze grid (PD ± error, confidence), tilt, ductions, lids, pupils
 │   │   ├── report/                  ← Clinician report: build (JSON), html, pdf (golden files in tests/golden)
+│   │   ├── db/                      ← Pseudonymized SQLite store (schema.sql portable to Postgres), consent, erasure
+│   │   ├── validation/              ← Bland–Altman, pattern agreement, per-device errors (python -m exam.validation)
+│   │   ├── tier2/                   ← Tier 2 interfaces + stubs: cover-test session, 240 fps movement, saccades
 │   │   ├── kb/                      ← Clinical knowledge base
 │   │   │   ├── data/*.yaml          ← Versioned clinical values (source + review_status)
 │   │   │   ├── schema.py            ← Pydantic models for every KB file
@@ -936,6 +939,9 @@ patient_age  : int (required, 1–120)
 ✗ Never change the report output without reviewing the golden-file diff
   (UPDATE_GOLDEN=1 pytest tests/test_report.py) — and never store the
   report's patient label anywhere
+✗ Never add a name, birth date, image or video column to the exam database —
+  patients are pseudo IDs + age band; storing needs consent.store_measurements,
+  validation uses only research-consented patients
 ✗ Never treat correlated frames as independent — fuse with the effective
   frame count (exam.measurement.effective_n)
 ```

@@ -8,6 +8,7 @@ BeanHealth CLR — Gaze examination API (Phase 3)
     POST /exam/measure               the per-gaze grid with errors (QC and calibration included)
     POST /exam/evaluate              the whole exam: QC, calibration, grid and rules-engine findings
     POST /exam/report[/html|/pdf]    the clinician report (JSON, HTML page or PDF)
+    POST /exam/sessions              examine and store a session (pseudonymized; needs consent and EXAM_DB_PATH)
     POST /exam/landmarks             one frame's landmarks, computed on the server
 
 Sessions carry landmark tracks only, never images (brief §7). /exam/landmarks
@@ -17,6 +18,7 @@ processed in memory and discarded with the request.
 
 from __future__ import annotations
 
+import os
 from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
@@ -24,6 +26,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from exam.calibration import Calibration, calibrate
 from exam.capture import CaptureSession, FrameObservation, ProtocolPlan, build_plan
+from exam.db import PatientRecord, StoredSession, connect, store_exam
 from exam.examine import ExamResult, examine
 from exam.landmarks.eye import LANDMARKS_VERSION
 from exam.landmarks.extract import extract_frame
@@ -110,6 +113,37 @@ def post_report_pdf(req: ReportRequest, tilt: bool = Query(True, description=_TI
     name = "".join(c if c.isalnum() or c in "-_" else "_" for c in report.session.session_id)[:60]
     return Response(render_pdf(report), media_type="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="gaze-exam-{name}.pdf"'})
+
+
+class StoreRequest(Strict):
+    session: CaptureSession
+    patient: PatientRecord
+
+
+class StoreResponse(Strict):
+    stored: StoredSession
+    result: ExamResult
+
+
+@router.post("/sessions", response_model=StoreResponse, status_code=status.HTTP_201_CREATED)
+def post_session(req: StoreRequest, tilt: bool = Query(True, description=_TILT)) -> StoreResponse:
+    """Examine a session and store it with its patient's pseudo ID (no names, no images)."""
+    path = os.environ.get("EXAM_DB_PATH")
+    if not path:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                            detail="Session storage is not configured on this server.")
+    if not req.patient.consent.store_measurements:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="The patient has not consented to storing measurements.")
+    result = examine(req.session, include_tilt=tilt)
+    conn = connect(path)
+    try:
+        stored = store_exam(conn, req.session, result, req.patient)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    finally:
+        conn.close()
+    return StoreResponse(stored=stored, result=result)
 
 
 @router.post("/landmarks", response_model=FrameLandmarks)

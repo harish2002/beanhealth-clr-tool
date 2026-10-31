@@ -47,3 +47,7 @@ backend/tests/test_images/
 
 # macOS
 .DS_Store
+
+# Gaze-exam databases (patient data, even pseudonymized)
+*.sqlite
+*.sqlite3
