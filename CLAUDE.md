@@ -90,12 +90,13 @@ beanstrabis/
 │   │   ├── PatientForm.tsx          ← Name, age input
 │   │   ├── TriageReport.tsx         ← Result card with urgency
 │   │   ├── AnnotatedEye.tsx         ← Canvas overlay component
-│   │   ├── GuidedExam.tsx           ← Head-pose guidance, on-phone landmarks, QC + calibration upload
+│   │   ├── GuidedExam.tsx           ← Head-pose guidance, on-phone landmarks, /exam/evaluate, grid, report
 │   │   └── UrgencyBadge.tsx         ← URGENT / NORMAL badge
 │   ├── lib/
 │   │   ├── api.ts                   ← Axios API calls to FastAPI
 │   │   ├── examLandmarks.ts         ← Port of backend/exam/landmarks (parity: tests/examLandmarks.test.ts)
 │   │   ├── examGuidance.ts          ← Operator hints + session assembly
+│   │   ├── examResults.ts           ← Grid layout and labels for the exam results
 │   │   └── types.ts                 ← Shared TypeScript types
 │   ├── store/
 │   │   └── useAppStore.ts           ← Zustand global state

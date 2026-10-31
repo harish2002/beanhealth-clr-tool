@@ -22,6 +22,9 @@ pydantic==2.7.1
 # Clinical knowledge base (exam/kb/data/*.yaml)
 PyYAML==6.0.3
 
+# Gaze-exam clinician report PDF (exam/report/pdf.py); also pulled in by mediapipe
+matplotlib==3.9.4
+
 # Testing
 pytest==8.2.0
 pytest-asyncio==0.23.6
