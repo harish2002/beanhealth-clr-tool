@@ -1,0 +1,685 @@
+{
+ "report_version": "1.0.0",
+ "generated_at": "2026-10-31T12:00:00Z",
+ "title": "Gaze examination report",
+ "positioning": "Measures and characterizes ocular deviation; suggests likely patterns. Decision support — not a diagnosis.",
+ "conventions": "Right / left are the patient's. Horizontal: + = eso, − = exo. Vertical: + = right hyper, − = left hyper. Prism dioptres (PD), one-sigma error; degrees = atan(PD / 100). The grid is drawn as the examiner faces the patient: the patient's right gaze is on the left.",
+ "patient": null,
+ "session": {
+  "session_id": "sim-session",
+  "started_at": "2026-10-30T10:00:00Z",
+  "protocol": "nine_gaze",
+  "device": "Simulated phone (main)",
+  "resolution": "3840×2160",
+  "fps": 30.0,
+  "distance_cm": {
+   "value": 36.0,
+   "error": 1.0,
+   "confidence": "HIGH"
+  }
+ },
+ "red_flags": [],
+ "urgent_unconfirmed": false,
+ "referral": {
+  "decision": "REPEAT_TEST",
+  "urgent": false,
+  "urgent_unconfirmed": false,
+  "advice": "Repeat the examination. The findings are LOW confidence or borderline, which cannot support a referral.",
+  "because": [
+   "Eso deviation in primary",
+   "Comitant strabismus"
+  ]
+ },
+ "grid_layout": [
+  [
+   "up_right",
+   "up",
+   "up_left"
+  ],
+  [
+   "right",
+   "primary",
+   "left"
+  ],
+  [
+   "down_right",
+   "down",
+   "down_left"
+  ]
+ ],
+ "grid": {
+  "primary": {
+   "gaze": "primary",
+   "name": "Primary",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.81,
+    "error": 1.15,
+    "confidence": "LOW"
+   },
+   "vertical_pd": {
+    "value": 0.59,
+    "error": 1.01,
+    "confidence": "LOW"
+   },
+   "horizontal_deg": 11.2,
+   "vertical_deg": 0.3,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "LOW",
+   "valid_frames": 13,
+   "reason": null
+  },
+  "right": {
+   "gaze": "right",
+   "name": "Right",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.8,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": -0.05,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.2,
+   "vertical_deg": 0.0,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "left": {
+   "gaze": "left",
+   "name": "Left",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.91,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": -0.06,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.3,
+   "vertical_deg": 0.0,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "up": {
+   "gaze": "up",
+   "name": "Up",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.92,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.08,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.3,
+   "vertical_deg": 0.0,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "down": {
+   "gaze": "down",
+   "name": "Down",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.82,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.05,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.2,
+   "vertical_deg": 0.0,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "up_right": {
+   "gaze": "up_right",
+   "name": "Up right",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.84,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.13,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.2,
+   "vertical_deg": 0.1,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "up_left": {
+   "gaze": "up_left",
+   "name": "Up left",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.98,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.1,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.3,
+   "vertical_deg": 0.1,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "down_right": {
+   "gaze": "down_right",
+   "name": "Down right",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.96,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.15,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.3,
+   "vertical_deg": 0.1,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  },
+  "down_left": {
+   "gaze": "down_left",
+   "name": "Down left",
+   "status": "OK",
+   "cls": "beyond_error",
+   "horizontal_pd": {
+    "value": 19.83,
+    "error": 1.15,
+    "confidence": "HIGH"
+   },
+   "vertical_pd": {
+    "value": 0.02,
+    "error": 1.01,
+    "confidence": "HIGH"
+   },
+   "horizontal_deg": 11.2,
+   "vertical_deg": 0.0,
+   "horizontal_label": "eso",
+   "vertical_label": "within error",
+   "confidence": "HIGH",
+   "valid_frames": 60,
+   "reason": null
+  }
+ },
+ "tilt": [
+  {
+   "side": "right",
+   "vertical_pd": null,
+   "label": null
+  },
+  {
+   "side": "left",
+   "vertical_pd": null,
+   "label": null
+  }
+ ],
+ "findings": [
+  {
+   "rule_id": "direction_horizontal",
+   "label": "Eso deviation in primary",
+   "kind": "measurement",
+   "affected_eye": null,
+   "status": "REPORTED",
+   "confidence": "LOW",
+   "urgency": null,
+   "muscle": null,
+   "wording": "Eso deviation of 19.8 ± 1.2 PD (11.2°) in primary position.",
+   "margin_over_threshold": 17.16,
+   "evidence": [
+    "H[primary] = 19.81 ± 1.16 PD [LOW]"
+   ],
+   "reasons": [],
+   "unapproved_kb": [
+    "decision_margin_k (needs_clinician_review)"
+   ]
+  },
+  {
+   "rule_id": "comitant_strabismus",
+   "label": "Comitant strabismus",
+   "kind": "pattern",
+   "affected_eye": null,
+   "status": "REPORTED",
+   "confidence": "LOW",
+   "urgency": null,
+   "muscle": null,
+   "wording": "A deviation that stays stable across gaze positions — comitant strabismus.",
+   "margin_over_threshold": 2.97,
+   "evidence": [
+    "H[primary] = 19.81 ± 1.16 PD [LOW]",
+    "V[primary] = 0.59 ± 1.01 PD [LOW]",
+    "H[up_left] − H[right] = 0.18 ± 1.62 PD vs 5 (incomitance_horizontal_pd)",
+    "V[right] = -0.05 ± 1.01 PD",
+    "V[left] = -0.06 ± 1.01 PD",
+    "V[up] = 0.08 ± 1.01 PD",
+    "V[down] = 0.05 ± 1.00 PD",
+    "V[up_right] = 0.13 ± 1.01 PD",
+    "V[up_left] = 0.10 ± 1.01 PD",
+    "V[down_right] = 0.15 ± 1.01 PD",
+    "V[down_left] = 0.02 ± 1.01 PD"
+   ],
+   "reasons": [],
+   "unapproved_kb": [
+    "comitant_strabismus (needs_clinician_review)",
+    "deviation_in_primary_present (needs_clinician_review)",
+    "decision_margin_k (needs_clinician_review)",
+    "deviation_stable_across_gazes (needs_clinician_review)",
+    "incomitance_horizontal_pd (needs_clinician_review)",
+    "vertical_deviation_absent (needs_clinician_review)",
+    "vertical_deviation_stable_across_gazes (needs_clinician_review)",
+    "incomitance_vertical_pd (draft)"
+   ]
+  }
+ ],
+ "inconclusive": [],
+ "normal": [
+  {
+   "rule_id": "direction_vertical",
+   "label": "No vertical deviation beyond measurement error",
+   "kind": "measurement",
+   "affected_eye": null,
+   "status": "REPORTED",
+   "confidence": "LOW",
+   "urgency": null,
+   "muscle": null,
+   "wording": "Vertical deviation in primary 0.6 ± 1.0 PD — not distinguishable from zero at k = 2.",
+   "margin_over_threshold": 0.59,
+   "evidence": [
+    "V[primary] = 0.59 ± 1.01 PD [LOW]"
+   ],
+   "reasons": [],
+   "unapproved_kb": [
+    "decision_margin_k (needs_clinician_review)"
+   ]
+  },
+  {
+   "rule_id": "comitance",
+   "label": "Horizontal deviation comitant",
+   "kind": "measurement",
+   "affected_eye": null,
+   "status": "REPORTED",
+   "confidence": "HIGH",
+   "urgency": null,
+   "muscle": null,
+   "wording": "Horizontal deviation stable across gazes (horizontal comitant: H[up_left] − H[right] = 0.2 ± 1.6 PD vs 5 (k = 2)).",
+   "margin_over_threshold": 2.97,
+   "evidence": [
+    "H[up_left] − H[right] = 0.18 ± 1.62 PD vs 5 (incomitance_horizontal_pd)"
+   ],
+   "reasons": [],
+   "unapproved_kb": [
+    "incomitance_horizontal_pd (needs_clinician_review)",
+    "decision_margin_k (needs_clinician_review)"
+   ]
+  }
+ ],
+ "not_evaluated": [
+  "duane_like (right eye): KB threshold duane_fissure_narrowing_ratio has no value yet; KB threshold duane_small_primary_deviation_pd has no value yet; KB threshold duction_limit_fraction has no value yet",
+  "duane_like (left eye): KB threshold duane_fissure_narrowing_ratio has no value yet; KB threshold duane_small_primary_deviation_pd has no value yet; KB threshold duction_limit_fraction has no value yet",
+  "ted_like (right eye): KB threshold scleral_show_mm has no value yet; KB threshold duction_limit_fraction has no value yet",
+  "ted_like (left eye): KB threshold scleral_show_mm has no value yet; KB threshold duction_limit_fraction has no value yet",
+  "cn3_pupil_involving (right eye): KB threshold ptosis_fissure_difference_mm has no value yet; KB threshold anisocoria_tolerance_mm has no value yet; KB threshold duction_limit_fraction has no value yet",
+  "cn3_pupil_involving (left eye): KB threshold ptosis_fissure_difference_mm has no value yet; KB threshold anisocoria_tolerance_mm has no value yet; KB threshold duction_limit_fraction has no value yet"
+ ],
+ "eyes": [
+  {
+   "eye": "R",
+   "ductions": {
+    "abduction": {
+     "value": 1.0,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "adduction": {
+     "value": 1.0,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "elevation": {
+     "value": 0.99,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "depression": {
+     "value": 1.01,
+     "error": 0.02,
+     "confidence": "LOW"
+    }
+   },
+   "fissure_height_mm": {
+    "value": 10.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   },
+   "fissure_ratio_adduction": {
+    "value": 1.0,
+    "error": 0.01,
+    "confidence": "LOW"
+   },
+   "pupil_diameter_mm": {
+    "value": 4.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   },
+   "scleral_show_mm": {
+    "value": 0.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   }
+  },
+  {
+   "eye": "L",
+   "ductions": {
+    "abduction": {
+     "value": 1.0,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "adduction": {
+     "value": 1.0,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "elevation": {
+     "value": 1.01,
+     "error": 0.02,
+     "confidence": "LOW"
+    },
+    "depression": {
+     "value": 0.99,
+     "error": 0.02,
+     "confidence": "LOW"
+    }
+   },
+   "fissure_height_mm": {
+    "value": 10.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   },
+   "fissure_ratio_adduction": {
+    "value": 1.0,
+    "error": 0.01,
+    "confidence": "LOW"
+   },
+   "pupil_diameter_mm": {
+    "value": 4.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   },
+   "scleral_show_mm": {
+    "value": 0.0,
+    "error": 0.1,
+    "confidence": "LOW"
+   }
+  }
+ ],
+ "calibration": {
+  "hirschberg_pd_per_mm": {
+   "value": 15.99,
+   "error": 0.44,
+   "confidence": "HIGH"
+  },
+  "hirschberg_source": "fitted",
+  "kappa": {
+   "R": [
+    {
+     "value": 0.302,
+     "error": 0.003,
+     "confidence": "HIGH"
+    },
+    {
+     "value": 0.095,
+     "error": 0.004,
+     "confidence": "HIGH"
+    }
+   ],
+   "L": [
+    {
+     "value": 0.252,
+     "error": 0.003,
+     "confidence": "HIGH"
+    },
+    {
+     "value": -0.051,
+     "error": 0.004,
+     "confidence": "HIGH"
+    }
+   ]
+  },
+  "flags": []
+ },
+ "quality": [
+  {
+   "position": "calib_R_lens",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "calib_R_right",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "calib_R_left",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "calib_L_lens",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "calib_L_right",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "calib_L_left",
+   "kind": "calibration",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "primary",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 13,
+   "frames_total": 43,
+   "rejections": [
+    "blink ×30"
+   ],
+   "note": "confidence lowered: unsteady fixation"
+  },
+  {
+   "position": "right",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "left",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "up",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "down",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "up_right",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "up_left",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "down_right",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "down_left",
+   "kind": "gaze",
+   "status": "OK",
+   "frames_valid": 60,
+   "frames_total": 60,
+   "rejections": [],
+   "note": null
+  },
+  {
+   "position": "tilt_right",
+   "kind": "tilt",
+   "status": "INSUFFICIENT_DATA",
+   "frames_valid": 0,
+   "frames_total": 0,
+   "rejections": [],
+   "note": "not captured"
+  },
+  {
+   "position": "tilt_left",
+   "kind": "tilt",
+   "status": "INSUFFICIENT_DATA",
+   "frames_valid": 0,
+   "frames_total": 0,
+   "rejections": [],
+   "note": "not captured"
+  }
+ ],
+ "session_flags": [],
+ "measurement_flags": [
+  "QC kept 13 of 43 frames; cell at LOW confidence"
+ ],
+ "unapproved_kb_entries": 8,
+ "limitations": [
+  "Near fixation only (33–40 cm); no 6 m distance measurement.",
+  "No phoria or intermittent deviation detection in Tier 1.",
+  "Torsion is not measured.",
+  "Clinical thresholds are defined at distance and are not validated at near.",
+  "Paralytic and restrictive causes cannot be separated in Tier 1.",
+  "Fixation compliance in children is not guaranteed."
+ ],
+ "versions": {
+  "capture_protocol": "1.1.0",
+  "qc": "1.1.0",
+  "calibration": "1.0.0",
+  "measurement": "1.0.0",
+  "engine": "0.1.0",
+  "kb": "0.5.0",
+  "kb_sha256": "1e9e5f7aaf05eb4ada5c41a4622a0c05f6a862cf0095ae2ececc30dc2a7e2c1a",
+  "report": "1.0.0"
+ }
+}

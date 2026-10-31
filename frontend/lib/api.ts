@@ -18,6 +18,7 @@ import type {
   ExamCaptureSession,
   ExamProtocol,
   ExamProtocolPlan,
+  ExamReportPatient,
   ExamResult,
   ExamSessionQC,
   StreamAnalyseResponse,
@@ -295,6 +296,19 @@ export async function postExamCalibrate(session: ExamCaptureSession): Promise<Ex
 export async function postExamEvaluate(session: ExamCaptureSession, tilt = true): Promise<ExamResult> {
   try {
     const r = await axios.post<ExamResult>(`${API_URL}/exam/evaluate`, session, { params: { tilt }, timeout: 30_000 });
+    return r.data;
+  } catch (err) {
+    throw examError(err);
+  }
+}
+
+/** The clinician report for a session, as a PDF or a self-contained HTML page. */
+export async function postExamReport(
+  session: ExamCaptureSession, format: "pdf" | "html", patient: ExamReportPatient | null, tilt = true,
+): Promise<Blob> {
+  try {
+    const r = await axios.post<Blob>(`${API_URL}/exam/report/${format}`, { session, patient },
+                                     { params: { tilt }, timeout: 60_000, responseType: "blob" });
     return r.data;
   } catch (err) {
     throw examError(err);

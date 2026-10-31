@@ -7,6 +7,7 @@ BeanHealth CLR — Gaze examination API (Phase 3)
     POST /exam/calibrate             kappa and Hirschberg ratio from its calibration captures
     POST /exam/measure               the per-gaze grid with errors (QC and calibration included)
     POST /exam/evaluate              the whole exam: QC, calibration, grid and rules-engine findings
+    POST /exam/report[/html|/pdf]    the clinician report (JSON, HTML page or PDF)
     POST /exam/landmarks             one frame's landmarks, computed on the server
 
 Sessions carry landmark tracks only, never images (brief §7). /exam/landmarks
@@ -16,7 +17,10 @@ processed in memory and discarded with the request.
 
 from __future__ import annotations
 
+from typing import Optional
+
 from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import HTMLResponse, Response
 
 from exam.calibration import Calibration, calibrate
 from exam.capture import CaptureSession, FrameObservation, ProtocolPlan, build_plan
@@ -25,6 +29,7 @@ from exam.landmarks.eye import LANDMARKS_VERSION
 from exam.landmarks.extract import extract_frame
 from exam.measurement import GridMeasurement, measure
 from exam.models import Protocol, Strict
+from exam.report import ExamReport, ReportPatient, build_report, render_html, render_pdf
 from exam.qc import SessionQC, run_qc
 from utils.image_utils import downscale_if_needed, load_image_from_bytes
 
@@ -73,6 +78,38 @@ def post_measure(session: CaptureSession) -> GridMeasurement:
 def post_evaluate(session: CaptureSession, tilt: bool = Query(True, description=_TILT)) -> ExamResult:
     """QC → calibration → measurement → rules engine: findings, referral decision and every version."""
     return examine(session, include_tilt=tilt)
+
+
+class ReportRequest(Strict):
+    session: CaptureSession
+    # Printed on the report only; never stored (brief §7).
+    patient: Optional[ReportPatient] = None
+
+
+def _report(req: ReportRequest, tilt: bool) -> ExamReport:
+    return build_report(req.session, examine(req.session, include_tilt=tilt), patient=req.patient)
+
+
+@router.post("/report", response_model=ExamReport)
+def post_report(req: ReportRequest, tilt: bool = Query(True, description=_TILT)) -> ExamReport:
+    """The clinician report as JSON: red flags, referral, grid, findings, quality, calibration, versions."""
+    return _report(req, tilt)
+
+
+@router.post("/report/html", response_class=HTMLResponse)
+def post_report_html(req: ReportRequest, tilt: bool = Query(True, description=_TILT)) -> HTMLResponse:
+    """The clinician report as one self-contained HTML page (print it to PDF from the browser)."""
+    return HTMLResponse(render_html(_report(req, tilt)))
+
+
+@router.post("/report/pdf", response_class=Response,
+             responses={200: {"content": {"application/pdf": {}}}})
+def post_report_pdf(req: ReportRequest, tilt: bool = Query(True, description=_TILT)) -> Response:
+    """The clinician report as an A4 PDF."""
+    report = _report(req, tilt)
+    name = "".join(c if c.isalnum() or c in "-_" else "_" for c in report.session.session_id)[:60]
+    return Response(render_pdf(report), media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="gaze-exam-{name}.pdf"'})
 
 
 @router.post("/landmarks", response_model=FrameLandmarks)

@@ -495,6 +495,9 @@ export interface ExamEngineResult {
   engine_version: string;
 }
 
+/** Printed on the clinician report only; never stored. */
+export interface ExamReportPatient { label: string | null; age_years: number | null }
+
 /** POST /exam/evaluate — QC, calibration, grid and findings, with every version. */
 export interface ExamResult {
   session_id:  string;

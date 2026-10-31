@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FaceMesh, Results } from "@mediapipe/face_mesh";
-import { getExamProtocol, postExamEvaluate } from "@/lib/api";
+import { getExamProtocol, postExamEvaluate, postExamReport } from "@/lib/api";
 import { rgbaToGray } from "@/lib/eyeVision";
 import { eyeObservation, eyeRegionHalf, headPose, irisGuess } from "@/lib/examLandmarks";
 import type { GrayRegion } from "@/lib/examLandmarks";
@@ -42,6 +42,7 @@ import type {
   ExamMeasured,
   ExamPositionPlan,
   ExamProtocol,
+  ExamCaptureSession,
   ExamProtocolPlan,
   ExamResult,
 } from "@/lib/types";
@@ -99,6 +100,7 @@ export default function GuidedExam() {
   const [torch, setTorch] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<ExamResult | null>(null);
+  const uploadedRef = useRef<ExamCaptureSession | null>(null);
   const qc = result?.qc ?? null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -382,6 +384,7 @@ export default function GuidedExam() {
     setError(null);
     try {
       setResult(await postExamEvaluate(session, tilt));
+      uploadedRef.current = session;
       setStage("results");
     } catch (e) {
       setError(e instanceof Error && e.message === "TIMEOUT" ? "The server took too long. Try again."
@@ -389,6 +392,28 @@ export default function GuidedExam() {
       setStage("review");
     }
   }, [plan, distanceCm, tilt]);
+
+  /** Open the clinician report in a new tab (opened before the request, so pop-up blockers allow it). */
+  const openReport = useCallback(async (format: "pdf" | "html", label: string, age: string): Promise<string | null> => {
+    const session = uploadedRef.current;
+    if (!session) return "Upload the session first.";
+    const tab = window.open("", "_blank");
+    const ageYears = Number(age);
+    try {
+      const blob = await postExamReport(session, format, {
+        label: label.trim() || null, age_years: age.trim() && Number.isFinite(ageYears) ? Math.round(ageYears) : null,
+      }, tilt);
+      const url = URL.createObjectURL(blob);
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      return null;
+    } catch (e) {
+      tab?.close();
+      return e instanceof Error && e.message === "TIMEOUT" ? "The report took too long. Try again."
+        : "The report could not be made. Check the connection and try again.";
+    }
+  }, [tilt]);
 
   // ── Render ──────────────────────────────────────────────────────────────
 
@@ -446,7 +471,7 @@ export default function GuidedExam() {
           )}
         </div>
 
-        {stage === "results" && result && <Results result={result} plan={plan} onRetake={retake} />}
+        {stage === "results" && result && <Results result={result} plan={plan} onRetake={retake} onReport={openReport} />}
 
         {(stage === "review" || stage === "uploading") && (
           <div className="surface-raised p-5 space-y-3">
@@ -559,9 +584,19 @@ const DECISION_STYLE: Record<ExamResult["engine"]["referral"]["decision"], strin
   NO_REFERRAL: "bg-emerald-50 border-emerald-200 text-emerald-800",
 };
 
-function Results({ result, plan, onRetake }: {
+function Results({ result, plan, onRetake, onReport }: {
   result: ExamResult; plan: ExamProtocolPlan | null; onRetake: (position: string) => void;
+  onReport: (format: "pdf" | "html", label: string, age: string) => Promise<string | null>;
 }) {
+  const [patientLabel, setPatientLabel] = useState("");
+  const [age, setAge] = useState("");
+  const [busy, setBusy] = useState<"pdf" | "html" | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
+  const report = async (format: "pdf" | "html") => {
+    setBusy(format);
+    setReportError(await onReport(format, patientLabel, age));
+    setBusy(null);
+  };
   const { qc, calibration: cal, measurement, engine } = result;
   const label = (name: string) => {
     const p = plan?.positions.find((q) => q.position === name);
@@ -581,6 +616,26 @@ function Results({ result, plan, onRetake }: {
         {referral.urgent_unconfirmed && (
           <p className="text-[13px] mt-1 font-semibold">A possible URGENT red flag was seen at low confidence.</p>
         )}
+      </div>
+
+      <div className="rounded-md border border-ink-100 p-3 space-y-2">
+        <p className="eyebrow">Clinician report</p>
+        <div className="flex flex-wrap gap-2">
+          <input className="flex-1 min-w-[10rem] border border-ink-200 rounded-md px-3 py-2 text-[13.5px]" placeholder="Patient name or ID (optional)" value={patientLabel}
+                 maxLength={120} onChange={(e) => setPatientLabel(e.target.value)} />
+          <input className="w-24 border border-ink-200 rounded-md px-3 py-2 text-[13.5px]" placeholder="Age" inputMode="numeric" value={age}
+                 onChange={(e) => setAge(e.target.value.replace(/[^0-9]/g, "").slice(0, 3))} />
+        </div>
+        <p className="text-[11.5px] text-ink-400">Printed on the report only — never stored.</p>
+        <div className="flex flex-wrap gap-2">
+          <button className="btn-primary" disabled={busy !== null} onClick={() => report("pdf")}>
+            {busy === "pdf" ? "Preparing…" : "Open PDF report"}
+          </button>
+          <button className="btn-secondary" disabled={busy !== null} onClick={() => report("html")}>
+            {busy === "html" ? "Preparing…" : "Open HTML report"}
+          </button>
+        </div>
+        {reportError && <p className="text-[13px] text-red-600">{reportError}</p>}
       </div>
 
       <div>

@@ -118,7 +118,7 @@ beanstrabis/
 │   │   └── module7_report.py        ← Report + annotated image
 │   ├── exam/                        ← Phase 3 gaze examination
 │   │   ├── models.py                ← Measurements: 9-gaze grid, tilt, lids/pupils/ductions
-│   │   ├── api.py                   ← /exam/protocol, /qc, /calibrate, /measure, /evaluate, /landmarks
+│   │   ├── api.py                   ← /exam/protocol, /qc, /calibrate, /measure, /evaluate, /report, /landmarks
 │   │   ├── examine.py               ← examine(session): QC → calibration → measurement → engine
 │   │   ├── capture/                 ← Capture plan (calibration, gaze, tilt) + session upload format
 │   │   ├── qc/                      ← Frame QC: per-frame reject reasons, per-position sufficiency
@@ -128,6 +128,7 @@ beanstrabis/
 │   │   │   └── extract.py           ← Frame → FrameObservation
 │   │   ├── calibration/             ← Scale, per-patient Hirschberg ratio, kappa per eye
 │   │   ├── measurement/             ← Per-gaze grid (PD ± error, confidence), tilt, ductions, lids, pupils
+│   │   ├── report/                  ← Clinician report: build (JSON), html, pdf (golden files in tests/golden)
 │   │   ├── kb/                      ← Clinical knowledge base
 │   │   │   ├── data/*.yaml          ← Versioned clinical values (source + review_status)
 │   │   │   ├── schema.py            ← Pydantic models for every KB file
@@ -932,6 +933,9 @@ patient_age  : int (required, 1–120)
 ✗ Never report a measured value without its error, and never drop a term from
   it (frame scatter, kappa, Hirschberg ratio, method error) — the engine's
   k × error decisions are only as honest as these errors
+✗ Never change the report output without reviewing the golden-file diff
+  (UPDATE_GOLDEN=1 pytest tests/test_report.py) — and never store the
+  report's patient label anywhere
 ✗ Never treat correlated frames as independent — fuse with the effective
   frame count (exam.measurement.effective_n)
 ```
