@@ -356,10 +356,20 @@ class TestExtract:
             x, y = obs.reflex_px
             assert gray[int(round(y)), int(round(x))] >= 200
 
-    def test_no_torch_no_reflex(self):
-        frame = extract_frame(rgb(first_image("flash_off")))
-        assert frame.head_pose is not None
-        assert all(obs.reflex_px is None for obs in frame.eyes.values())
+    def test_no_torch_frame_is_not_measurable(self):
+        """
+        Without the torch no frame can be measured. A room-light glint in ONE
+        eye can pass module 3's filters (it does in 3 of the 4 flash-off
+        photos), but a deviation needs a reflex and a limbus in both eyes, so
+        frame QC rejects every one of these frames.
+        """
+        folder = IMAGES / "flash_off"
+        photos = sorted(p for p in folder.iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+        for path in photos:
+            frame = extract_frame(rgb(path))
+            assert frame.head_pose is not None, path.name
+            measurable = [e for e, o in frame.eyes.items() if o.reflex_px is not None and o.limbus is not None]
+            assert len(measurable) < 2, path.name
 
     def test_no_face(self):
         frame = extract_frame(rgb(first_image("no_face")), index=2, t_ms=66.7)

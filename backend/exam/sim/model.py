@@ -98,7 +98,7 @@ def strength(case: SimCase, eye: str, muscle: str) -> float:
     return case.weak.get(f"{eye}-{muscle}", 1.0)
 
 
-def _eye_position(case: SimCase, eye: str, h: float, v: float) -> Tuple[float, float]:
+def eye_position(case: SimCase, eye: str, h: float, v: float) -> Tuple[float, float]:
     """(outward, upward) eye-relative position in degrees for gaze target (h, v)."""
     s = {m: strength(case, eye, m) for m in MUSCLES}
     A = case.amplitude_deg
@@ -117,7 +117,7 @@ def _eye_position(case: SimCase, eye: str, h: float, v: float) -> Tuple[float, f
     return out_move + out_drift, up_move + up_drift
 
 
-def _tilt_shift(case: SimCase, eye: str, tilt_side: str) -> float:
+def tilt_shift(case: SimCase, eye: str, tilt_side: str) -> float:
     """Upward shift of this eye on head tilt toward tilt_side."""
     s = {m: strength(case, eye, m) for m in MUSCLES}
     eye_side = "right" if eye == "R" else "left"
@@ -134,7 +134,7 @@ def true_deviation(case: SimCase, gaze: str) -> Tuple[float, float]:
     err = {}
     for eye in ("R", "L"):
         out_target = h if eye == "R" else -h
-        out_pos, up_pos = _eye_position(case, eye, h, v)
+        out_pos, up_pos = eye_position(case, eye, h, v)
         err[eye] = (out_pos - out_target, up_pos - v)
     eso_deg = -(err["R"][0] + err["L"][0])
     hyper_deg = err["R"][1] - err["L"][1]
@@ -145,7 +145,7 @@ def true_deviation(case: SimCase, gaze: str) -> Tuple[float, float]:
 
 def true_tilt(case: SimCase, side: str) -> float:
     _, primary_v = true_deviation(case, "primary")
-    shift = _tilt_shift(case, "R", side) - _tilt_shift(case, "L", side)
+    shift = tilt_shift(case, "R", side) - tilt_shift(case, "L", side)
     return primary_v + degrees_to_pd(shift)
 
 
@@ -159,8 +159,8 @@ def true_duction(case: SimCase, eye: str, direction: str) -> float:
         "elevation": (0.0, A),
         "depression": (0.0, -A),
     }[direction]
-    p_out, p_up = _eye_position(case, eye, 0.0, 0.0)
-    g_out, g_up = _eye_position(case, eye, *gaze)
+    p_out, p_up = eye_position(case, eye, 0.0, 0.0)
+    g_out, g_up = eye_position(case, eye, *gaze)
     excursion = {
         "abduction": g_out - p_out, "adduction": p_out - g_out,
         "elevation": g_up - p_up, "depression": p_up - g_up,

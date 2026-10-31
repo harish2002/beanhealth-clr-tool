@@ -54,3 +54,55 @@ entries:
       It scales a measured deviation's error, not whether a deviation is
       present: zero stays zero whatever the ratio. Replace with a published
       population spread once a clinician supplies one.
+
+  # ── Measurement error model (milestone 6) ──
+  - id: measurement_method_error_pd
+    value: 1.0
+    unit: PD
+    source: "BeanHealth engineering placeholder — replace with the device-vs-orthoptist Bland–Altman SD (milestone 8 validation)"
+    review_status: draft
+    notes: >-
+      Unmodelled error of the method itself (landmark bias the frame-to-frame
+      scatter cannot show: a limbus fit pulled by a lid, a reflex centroid
+      skewed by a tear film), added in quadrature to every deviation's
+      error. Without it, 60 steady frames give errors of a tenth of a PD,
+      and any sub-PD offset would count as a deviation. 1 PD is about
+      1.2 px of reflex-to-limbus offset on a 4K frame at 36 cm, just above
+      the limbus restart agreement the fitter accepts (0.75 px).
+
+  - id: measurement_method_error_mm
+    value: 0.1
+    unit: mm
+    source: "BeanHealth engineering placeholder — not in the brief"
+    review_status: draft
+    notes: >-
+      The same for lid and pupil measures in millimetres (fissure height,
+      scleral show, pupil diameter). The pupil diameter reads about 0.6 px
+      (≈ 0.04 mm) small on synthetic eyes (milestone 5); real lid contours
+      are less certain than that. These measures share the frame's iris
+      scale, so the KB iris diameter assumption cancels when the two eyes
+      are compared.
+
+  - id: head_pose_excursion_error_deg
+    value: 2.5
+    unit: deg
+    source: "BeanHealth engineering placeholder — face-mesh head pose has not been checked against a reference"
+    review_status: draft
+    notes: >-
+      Error of the head rotation between primary and an eccentric position
+      as the face mesh reports it. A duction is the eye's excursion over the
+      excursion the head rotation asks for, so this error sets how well a
+      duction fraction is known (2.5° of 25° is 0.1). Milestone 5 saw head
+      pitch read 5–8° on frontal photos; a constant offset cancels between
+      positions, a scale error does not.
+
+  - id: measurement_low_confidence_valid_fraction
+    value: 0.5
+    unit: fraction of a position's frames
+    source: "BeanHealth engineering placeholder — the brief (§11) notes fixation compliance in children is not guaranteed"
+    review_status: draft
+    notes: >-
+      A position where frame QC rejected more than half the frames (blinks,
+      saccades, head off target) had unsteady fixation, and the frames that
+      passed may not have been on the target either. Its cell is reported
+      at LOW confidence, which asks for a repeat instead of a referral.

@@ -15,6 +15,12 @@ default ratio, the inverse of what frame QC does.
 
 The simulated patient fixes with the right eye; the left eye carries the
 deviation. On a calibration position the fellow eye is covered and absent.
+
+With a muscle-model case (exam.sim.model.SimCase) each eye instead carries
+its own error from the gaze target, position by position, and on head tilt
+— so the measured grid can be checked against the case's true grid. Both
+eyes may then be off target at once; a real patient fixes with one. Lids and
+pupils follow the case's millimetre values.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from exam.capture.session import (
 from exam.kb import load_kb
 from exam.kb.loader import KnowledgeBase
 from exam.models import Measured, Protocol, degrees_to_pd
+from exam.sim.model import SimCase, eye_position, tilt_shift
 
 EYE_CENTRE_PX = {"R": (1700.0, 1080.0), "L": (2140.0, 1080.0)}
 
@@ -73,6 +80,8 @@ class SimEyes:
     kappa_mm: Dict[str, Tuple[float, float]] = field(default_factory=dict)
     # Deviation on binocular positions: (horizontal, vertical) PD, + = eso / right hyper.
     deviation_pd: Tuple[float, float] = (0.0, 0.0)
+    # A muscle-model patient: per-eye, per-position errors (added to deviation_pd).
+    case: Optional[SimCase] = None
 
 
 def default_hirschberg_pd_per_mm(kb: KnowledgeBase) -> float:
@@ -87,7 +96,30 @@ def _rotations_pd(plan: PositionPlan, sim: SimEyes, distance_cm: float) -> Dict[
         # Looking to the patient's right turns the right eye out and the left eye in.
         return {plan.fixing_eye: (-target_pd if plan.fixing_eye == "R" else target_pd, 0.0)}
     h, v = sim.deviation_pd
-    return {"R": (0.0, 0.0), "L": (h, -v)}
+    rot = {"R": (0.0, 0.0), "L": (h, -v)}
+    if sim.case is not None:
+        rot = {e: (a + b, c + d) for e, ((a, c), (b, d)) in
+               {e: (rot[e], _case_rotation_pd(sim.case, plan, e)) for e in rot}.items()}
+    return rot
+
+
+def _case_rotation_pd(case: SimCase, plan: PositionPlan, eye: str) -> Tuple[float, float]:
+    """A muscle-model eye's (nasal, up) error from the target at this position, PD."""
+    if plan.kind == "tilt":
+        h = v = 0.0
+    else:
+        h, v = plan.eye_in_orbit_deg
+    out, up = eye_position(case, eye, h, v)
+    out_err, up_err = out - (h if eye == "R" else -h), up - v
+    if plan.kind == "tilt":
+        assert plan.head.roll_deg is not None
+        up_err += tilt_shift(case, eye, "right" if plan.head.roll_deg.min > 0 else "left")
+    nasal, rise = degrees_to_pd(-out_err), degrees_to_pd(up_err)
+    if eye == "L":    # the model's added PD terms sit on the left eye
+        dv = 0 if plan.kind == "tilt" else (v > 0) - (v < 0)
+        nasal += case.comitant_pd[0] + case.h_per_up_pd * dv
+        rise -= case.comitant_pd[1]
+    return nasal, rise
 
 
 def _to_image(temporal_mm: float, inferior_mm: float, eye: str, roll_deg: float) -> Tuple[float, float]:
@@ -144,15 +176,20 @@ def simulate_position(plan: PositionPlan, n_frames: int = 60, fps: float = 30.0,
             dx, dy = _to_image(kt + nasal_pd / ratio, ki + up_pd / ratio, eye, frame_roll)
             reflex = (centre[0] + dx * px_per_mm + glance * px_per_deg + rng.normal(0, noise.landmark_px),
                       centre[1] + dy * px_per_mm + rng.normal(0, noise.landmark_px))
-            open_ratio = 0.1 if i in ev.blink else 0.8
+            fissure, scleral, pupil = 0.8 * 2 * iris_radius_px, 0.05 * iris_radius_px, 0.35 * iris_radius_px
+            if sim.case is not None:
+                c = sim.case
+                adducting = (eye == "R" and plan.position == "left") or (eye == "L" and plan.position == "right")
+                fissure = c.fissure_mm[eye] * px_per_mm * (c.fissure_ratio_adduction[eye] if adducting else 1.0)
+                scleral, pupil = c.scleral_show_mm[eye] * px_per_mm, c.pupil_mm[eye] * px_per_mm
             eyes[eye] = EyeObservation(
                 reflex_px=None if (eye == "R" and i in ev.no_reflex_right) else reflex,
                 limbus=Ellipse(centre_px=centre, semi_major_px=iris_radius_px,
                                semi_minor_px=iris_radius_px, angle_deg=0.0),
-                pupil_px=centre, pupil_diameter_px=0.35 * iris_radius_px,
+                pupil_px=centre, pupil_diameter_px=pupil,
                 iris_radius_px=iris_radius_px,
-                fissure_height_px=open_ratio * 2 * iris_radius_px,
-                scleral_show_px=0.05 * iris_radius_px,
+                fissure_height_px=fissure * (0.125 if i in ev.blink else 1.0),
+                scleral_show_px=scleral,
                 limbus_covered_fraction=0.6 if i in ev.lid_low else 0.15,
             )
         sharp = max(0.0, 40.0 + rng.normal(0, noise.sharpness)) * (0.4 if i in ev.blur else 1.0)

@@ -5,7 +5,7 @@
 # file: bump kb_version, then run `python -m exam.kb stamp` from backend/.
 # The loader refuses content that does not match content_sha256.
 
-kb_version: 0.4.0
+kb_version: 0.5.0
 released: "2026-10-31"
 files:
   - conventions.yaml
@@ -16,4 +16,4 @@ files:
   - conditions.yaml
   - screening.yaml
   - capture.yaml
-content_sha256: b18c32795fa3685bf32a7b62e2dc4fb1b5b3ebed350148b8c26ba2a5a4a80e13
+content_sha256: 1e9e5f7aaf05eb4ada5c41a4622a0c05f6a862cf0095ae2ececc30dc2a7e2c1a

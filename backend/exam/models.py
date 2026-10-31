@@ -3,8 +3,9 @@ BeanHealth CLR — Examination Measurements
 ==========================================
 
 The measurements the rules engine reads: a per-gaze deviation grid, head-tilt
-captures and per-eye lid / pupil / duction measures. Milestone 6 fills these
-from real frames; until then the synthetic generator (exam.sim) does.
+captures and per-eye lid / pupil / duction measures. exam.measurement fills
+these from a capture session's frames; the synthetic generator (exam.sim)
+fills them directly for engine tests.
 
 Conventions (shared with the KB's conventions.yaml):
   • "R" / "L" and "right" / "left" are always the PATIENT's eye and side.

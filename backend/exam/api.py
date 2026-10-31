@@ -5,6 +5,8 @@ BeanHealth CLR — Gaze examination API (Phase 3)
     GET  /exam/protocol/{protocol}   the capture plan the phone follows
     POST /exam/qc                    frame QC of an uploaded capture session
     POST /exam/calibrate             kappa and Hirschberg ratio from its calibration captures
+    POST /exam/measure               the per-gaze grid with errors (QC and calibration included)
+    POST /exam/evaluate              the whole exam: QC, calibration, grid and rules-engine findings
     POST /exam/landmarks             one frame's landmarks, computed on the server
 
 Sessions carry landmark tracks only, never images (brief §7). /exam/landmarks
@@ -18,8 +20,10 @@ from fastapi import APIRouter, File, HTTPException, Query, UploadFile, status
 
 from exam.calibration import Calibration, calibrate
 from exam.capture import CaptureSession, FrameObservation, ProtocolPlan, build_plan
+from exam.examine import ExamResult, examine
 from exam.landmarks.eye import LANDMARKS_VERSION
 from exam.landmarks.extract import extract_frame
+from exam.measurement import GridMeasurement, measure
 from exam.models import Protocol, Strict
 from exam.qc import SessionQC, run_qc
 from utils.image_utils import downscale_if_needed, load_image_from_bytes
@@ -57,6 +61,18 @@ def post_qc(session: CaptureSession, tilt: bool = Query(True, description=_TILT)
 def post_calibrate(session: CaptureSession) -> Calibration:
     """Kappa per eye and the Hirschberg ratio in use (fitted or KB default, with the reason)."""
     return calibrate(session)
+
+
+@router.post("/measure", response_model=GridMeasurement)
+def post_measure(session: CaptureSession) -> GridMeasurement:
+    """Deviation (PD ± error, confidence) per gaze and head tilt; ductions, lids and pupils per eye."""
+    return measure(session)
+
+
+@router.post("/evaluate", response_model=ExamResult)
+def post_evaluate(session: CaptureSession, tilt: bool = Query(True, description=_TILT)) -> ExamResult:
+    """QC → calibration → measurement → rules engine: findings, referral decision and every version."""
+    return examine(session, include_tilt=tilt)
 
 
 @router.post("/landmarks", response_model=FrameLandmarks)
