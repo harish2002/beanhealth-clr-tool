@@ -942,6 +942,8 @@ patient_age  : int (required, 1–120)
 ✗ Never add a name, birth date, image or video column to the exam database —
   patients are pseudo IDs + age band; storing needs consent.store_measurements,
   validation uses only research-consented patients
+✗ Never let the Tier 2 cover-test module name a tropia / phoria — it measures
+  movements only until clinician-defined criteria are in the KB
 ✗ Never treat correlated frames as independent — fuse with the effective
   frame count (exam.measurement.effective_n)
 ```

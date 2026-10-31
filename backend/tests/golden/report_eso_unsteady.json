@@ -678,8 +678,8 @@
   "calibration": "1.0.0",
   "measurement": "1.0.0",
   "engine": "0.1.0",
-  "kb": "0.5.0",
-  "kb_sha256": "1e9e5f7aaf05eb4ada5c41a4622a0c05f6a862cf0095ae2ececc30dc2a7e2c1a",
+  "kb": "0.6.0",
+  "kb_sha256": "39b9af7dcbf13105cf4d95f910428e15a1573dab308779fb4696e63bfd4934d6",
   "report": "1.0.0"
  }
 }

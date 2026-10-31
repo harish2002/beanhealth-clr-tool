@@ -9,6 +9,7 @@ BeanHealth CLR — Gaze examination API (Phase 3)
     POST /exam/evaluate              the whole exam: QC, calibration, grid and rules-engine findings
     POST /exam/report[/html|/pdf]    the clinician report (JSON, HTML page or PDF)
     POST /exam/sessions              examine and store a session (pseudonymized; needs consent and EXAM_DB_PATH)
+    POST /exam/tier2/cover-test      Tier 2 stub: eye movements per cover / uncover window (no interpretation)
     POST /exam/landmarks             one frame's landmarks, computed on the server
 
 Sessions carry landmark tracks only, never images (brief §7). /exam/landmarks
@@ -34,6 +35,7 @@ from exam.measurement import GridMeasurement, measure
 from exam.models import Protocol, Strict
 from exam.report import ExamReport, ReportPatient, build_report, render_html, render_pdf
 from exam.qc import SessionQC, run_qc
+from exam.tier2 import CoverTestResult, CoverTestSession, analyse_cover_test
 from utils.image_utils import downscale_if_needed, load_image_from_bytes
 
 router = APIRouter(prefix="/exam", tags=["Gaze examination"])
@@ -144,6 +146,12 @@ def post_session(req: StoreRequest, tilt: bool = Query(True, description=_TILT))
     finally:
         conn.close()
     return StoreResponse(stored=stored, result=result)
+
+
+@router.post("/tier2/cover-test", response_model=CoverTestResult)
+def post_cover_test(session: CoverTestSession) -> CoverTestResult:
+    """Tier 2 (IR clip) stub: saccades and net movement of each eye on cover and uncover; never a diagnosis."""
+    return analyse_cover_test(session)
 
 
 @router.post("/landmarks", response_model=FrameLandmarks)

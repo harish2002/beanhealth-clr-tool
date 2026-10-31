@@ -213,3 +213,59 @@ entries:
       median is exceeded by about 0.2% of comparisons, so steady frames are
       rarely rejected. A noisy capture therefore misses small saccades; its
       wider per-frame scatter shows up in the measurement error instead.
+
+  # ── Tier 2: IR clip cover test (brief §3, §4.1) — interfaces and stubs only ──
+  - id: cover_test_min_cover_s
+    value: 2
+    unit: s
+    source: "Phase 3 build brief §4.1 (Tier 2 stub: cover ≥ 2–3 s)"
+    review_status: needs_clinician_review
+    notes: >-
+      Shortest occlusion accepted before the uncover. The brief gives 2–3 s;
+      the lower bound is used for validation, the operator is asked for 3.
+
+  - id: cover_test_record_after_uncover_s
+    value: 1
+    unit: s
+    source: "Phase 3 build brief §4.1 (Tier 2 stub: uncover, record 1 s)"
+    review_status: needs_clinician_review
+    notes: Recording kept after the occluder is removed, to catch the refixation movement.
+
+  - id: cover_test_min_fps
+    value: 240
+    unit: frames/s
+    source: "Phase 3 build brief §4.1 (Tier 2 stub: 240 fps @ 1080p)"
+    review_status: draft
+    notes: Frame rate needed to sample a refixation saccade (tens of milliseconds) with several points.
+
+  - id: cover_test_min_frame_height_px
+    value: 1080
+    unit: px
+    source: "Phase 3 build brief §4.1 (Tier 2 stub: 240 fps @ 1080p)"
+    review_status: draft
+    notes: Short side of the frame at 240 fps.
+
+  - id: saccade_velocity_floor_deg_s
+    value: 30
+    unit: deg/s
+    source: "BeanHealth engineering placeholder — velocity-threshold (I-VT) saccade detection; not in the brief"
+    review_status: draft
+    notes: >-
+      Floor of the Tier 2 saccade velocity threshold. As in frame QC, the
+      threshold is raised per trace to saccade_noise_factor × the trace's
+      median speed, because tracker noise alone produces apparent speeds of
+      this order at 240 fps. Tune on IR captures.
+
+  - id: saccade_noise_factor
+    value: 5
+    unit: multiple of the trace's median sample-to-sample speed
+    source: "BeanHealth engineering — noise floor for the Tier 2 saccade threshold"
+    review_status: draft
+    notes: Larger than frame QC's factor because 240 fps differentiation amplifies noise more.
+
+  - id: saccade_min_duration_ms
+    value: 8
+    unit: ms
+    source: "BeanHealth engineering placeholder — rejects single-sample velocity spikes"
+    review_status: draft
+    notes: About two samples at 240 fps. A crossing shorter than this is treated as noise.
