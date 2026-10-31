@@ -3,26 +3,51 @@
   "configurations": [
     {
       "name": "FastAPI Backend",
-      "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd backend && exec venv/bin/python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000"],
+      "runtimeExecutable": "/Users/harish/Desktop/SIDE PROJECTS/beanstrabis/backend/venv/bin/python",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "main:app",
+        "--app-dir",
+        "/Users/harish/Desktop/SIDE PROJECTS/beanstrabis/backend",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "FastAPI Backend (running in terminal)",
+      "url": "http://localhost:8000"
     },
     {
       "name": "CLR Visualiser",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-l", "5500", "."],
+      "runtimeArgs": [
+        "serve",
+        "-l",
+        "5500",
+        "."
+      ],
       "port": 5500
     },
     {
       "name": "BeanHealth Frontend",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd frontend && npm run dev -- -H 0.0.0.0 -p 3000"],
+      "runtimeArgs": [
+        "-c",
+        "cd frontend && npm run dev -- -H 0.0.0.0 -p 3000"
+      ],
       "port": 3000
     },
     {
       "name": "BeanHealth Frontend (local API)",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "cd frontend && NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev -- -H 0.0.0.0 -p 3000"],
+      "runtimeArgs": [
+        "-c",
+        "cd \"/Users/harish/Desktop/SIDE PROJECTS/beanstrabis/frontend\" && NEXT_PUBLIC_API_URL=http://localhost:8000 exec npm run dev -- -H 0.0.0.0 -p 3000"
+      ],
       "port": 3000
     }
   ]
