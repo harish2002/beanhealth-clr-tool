@@ -410,6 +410,102 @@ export interface ExamCalibration {
   kb_sha256:           string;
 }
 
+export type ExamGaze = "primary" | "right" | "left" | "up" | "down" | "up_right" | "up_left" | "down_right" | "down_left";
+export type ExamDuction = "abduction" | "adduction" | "elevation" | "depression";
+
+export interface ExamGazeCell {
+  status:        "OK" | "INSUFFICIENT_DATA";
+  horizontal_pd: ExamMeasured | null;   // + = eso, − = exo
+  vertical_pd:   ExamMeasured | null;   // + = right hyper, − = left hyper
+  valid_frames:  number;
+}
+
+export interface ExamEyeMeasures {
+  ductions:                Partial<Record<ExamDuction, ExamMeasured>>;
+  fissure_height_mm:       ExamMeasured | null;
+  fissure_ratio_adduction: ExamMeasured | null;
+  pupil_diameter_mm:       ExamMeasured | null;
+  scleral_show_mm:         ExamMeasured | null;
+}
+
+export interface ExamMeasurements {
+  grid: { protocol: ExamProtocol; cells: Partial<Record<ExamGaze, ExamGazeCell>> };
+  tilt: { right: ExamMeasured | null; left: ExamMeasured | null } | null;
+  eyes: Partial<Record<ExamEye, ExamEyeMeasures>>;
+}
+
+export interface ExamPositionMeasurement {
+  position:           string;
+  kind:               "gaze" | "tilt";
+  status:             "OK" | "INSUFFICIENT_DATA";
+  reason:             "not_captured" | "too_few_valid_frames" | "kappa_not_measured" | null;
+  frames_total:       number;
+  frames_valid:       number;
+  frames_used:        number;
+  min_valid_frames:   number;
+  horizontal_pd:      ExamMeasured | null;
+  vertical_pd:        ExamMeasured | null;
+  horizontal_deg:     number | null;
+  vertical_deg:       number | null;
+  head_pose:          ExamHeadPose | null;
+  confidence_reasons: string[];
+}
+
+export interface ExamGridMeasurement {
+  session_id:   string;
+  protocol:     ExamProtocol;
+  positions:    ExamPositionMeasurement[];
+  measurements: ExamMeasurements;
+  flags:        { code: string; position: string | null; eye: ExamEye | null; detail: string }[];
+  measurement_version: string;
+  kb_version:   string;
+}
+
+export interface ExamReason { code: string; detail: string; repeatable: boolean }
+
+export interface ExamFinding {
+  rule_id:      string;
+  label:        string;
+  kind:         "measurement" | "pattern" | "red_flag";
+  affected_eye: ExamEye | null;
+  status:       "REPORTED" | "INCONCLUSIVE";
+  abnormal:     boolean;
+  urgency:      "URGENT" | null;
+  confidence:   ExamConfidence;
+  margin_over_threshold: number | null;
+  wording:      string;
+  reasons:      ExamReason[];
+  muscle:       string | null;
+}
+
+export interface ExamReferral {
+  decision:           "REFER" | "REPEAT_TEST" | "NO_REFERRAL";
+  urgent:             boolean;
+  urgent_unconfirmed: boolean;
+  because:            string[];
+  advice:             string;
+}
+
+export interface ExamEngineResult {
+  findings:       ExamFinding[];
+  not_evaluated:  { rule_id: string; affected_eye: ExamEye | null; reasons: ExamReason[] }[];
+  referral:       ExamReferral;
+  positioning:    string;
+  limitations:    string[];
+  engine_version: string;
+}
+
+/** POST /exam/evaluate — QC, calibration, grid and findings, with every version. */
+export interface ExamResult {
+  session_id:  string;
+  positioning: string;
+  qc:          ExamSessionQC;
+  calibration: ExamCalibration;
+  measurement: ExamGridMeasurement;
+  engine:      ExamEngineResult;
+  versions:    Record<string, string>;
+}
+
 // ─── UI state ────────────────────────────────────────────────────────────────
 
 export interface AppState {

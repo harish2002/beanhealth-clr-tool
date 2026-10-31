@@ -15,30 +15,35 @@
  *     (lib/examLandmarks — limbus, reflex, pupil, lids, sharpness) for the
  *     position's hold time. Only these numbers are kept; no image is stored
  *     or uploaded.
- *  4. On the operator's request the landmark tracks go to /exam/qc and
- *     /exam/calibrate; positions without enough valid frames can be retaken.
+ *  4. On the operator's request the landmark tracks go to /exam/evaluate:
+ *     frame QC, calibration, the per-gaze grid (PD ± error) and the rules
+ *     engine's findings and referral decision. Positions without enough
+ *     valid frames can be retaken.
  *
- * Decision support — not a diagnosis. Measuring the gaze grid and reporting
- * findings come in the next milestones; this screen captures and checks.
+ * Decision support — not a diagnosis. The clinician report is the next
+ * milestone; this screen shows the grid and findings to the operator.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FaceMesh, Results } from "@mediapipe/face_mesh";
-import { getExamProtocol, postExamCalibrate, postExamQC } from "@/lib/api";
+import { getExamProtocol, postExamEvaluate } from "@/lib/api";
 import { rgbaToGray } from "@/lib/eyeVision";
 import { eyeObservation, eyeRegionHalf, headPose, irisGuess } from "@/lib/examLandmarks";
 import type { GrayRegion } from "@/lib/examLandmarks";
 import { buildSession, deviceModel, effectiveFps, poseGuidance } from "@/lib/examGuidance";
+import {
+  findingsToShow, gazeName, gridLayout, horizontalKind, REFERRAL_TITLE, sizeParts, verticalKind, verticalLabel,
+} from "@/lib/examResults";
 import type {
-  ExamCalibration,
   ExamEye,
   ExamEyeObservation,
   ExamFrameObservation,
   ExamHeadPose,
+  ExamMeasured,
   ExamPositionPlan,
   ExamProtocol,
   ExamProtocolPlan,
-  ExamSessionQC,
+  ExamResult,
 } from "@/lib/types";
 
 type Stage = "setup" | "capture" | "review" | "uploading" | "results";
@@ -93,8 +98,8 @@ export default function GuidedExam() {
   const [recProgress, setRecProgress] = useState<number | null>(null);
   const [torch, setTorch] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [qc, setQc] = useState<ExamSessionQC | null>(null);
-  const [cal, setCal] = useState<ExamCalibration | null>(null);
+  const [result, setResult] = useState<ExamResult | null>(null);
+  const qc = result?.qc ?? null;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLCanvasElement>(null);
@@ -341,8 +346,7 @@ export default function GuidedExam() {
       setIdx(0);
       capturesRef.current = {};
       setCaptures({});
-      setQc(null);
-      setCal(null);
+      setResult(null);
       sessionRef.current = { ...sessionRef.current, id: crypto.randomUUID(), startedAt: new Date().toISOString() };
       setStage("capture");
     } catch (e) {
@@ -377,9 +381,7 @@ export default function GuidedExam() {
     setStage("uploading");
     setError(null);
     try {
-      const [q, c] = await Promise.all([postExamQC(session, tilt), postExamCalibrate(session)]);
-      setQc(q);
-      setCal(c);
+      setResult(await postExamEvaluate(session, tilt));
       setStage("results");
     } catch (e) {
       setError(e instanceof Error && e.message === "TIMEOUT" ? "The server took too long. Try again."
@@ -444,18 +446,19 @@ export default function GuidedExam() {
           )}
         </div>
 
-        {stage === "results" && qc && cal && <Results qc={qc} cal={cal} plan={plan} onRetake={retake} />}
+        {stage === "results" && result && <Results result={result} plan={plan} onRetake={retake} />}
 
         {(stage === "review" || stage === "uploading") && (
           <div className="surface-raised p-5 space-y-3">
             <h3 className="display-md text-[20px]">{done} of {plan?.positions.length} positions recorded</h3>
             <p className="lede text-[13.5px]">
-              Upload the measurements to check every frame and fit the calibration. Nothing is sent until you press the button.
+              Upload the measurements to check every frame, fit the calibration and measure each gaze. Only landmark
+              numbers are sent, never images — and nothing until you press the button.
             </p>
             {error && <p className="text-[13px] text-red-600">{error}</p>}
             <div className="flex gap-2">
               <button className="btn-primary" onClick={upload} disabled={stage === "uploading" || done === 0}>
-                {stage === "uploading" ? "Checking…" : "Check capture quality"}
+                {stage === "uploading" ? "Measuring…" : "Measure and evaluate"}
               </button>
               <button className="btn-secondary" onClick={() => setStage("capture")}>Back to capture</button>
             </div>
@@ -539,22 +542,113 @@ function fmt(m: { value: number; error: number }, digits = 2): string {
   return `${m.value.toFixed(digits)} ± ${m.error.toFixed(digits)}`;
 }
 
-function Results({ qc, cal, plan, onRetake }: {
-  qc: ExamSessionQC; cal: ExamCalibration; plan: ExamProtocolPlan | null; onRetake: (position: string) => void;
+function CellValue({ m, kind }: { m: ExamMeasured; kind: string }) {
+  const [v, e] = sizeParts(m);
+  return (
+    <div>
+      <span className="font-mono text-[13px] text-ink-900">{v}</span>
+      <span className="font-mono text-ink-400"> ±{e}</span>
+      <div className="text-ink-600">{kind}</div>
+    </div>
+  );
+}
+
+const DECISION_STYLE: Record<ExamResult["engine"]["referral"]["decision"], string> = {
+  REFER: "bg-red-50 border-red-200 text-red-800",
+  REPEAT_TEST: "bg-amber-50 border-amber-200 text-amber-900",
+  NO_REFERRAL: "bg-emerald-50 border-emerald-200 text-emerald-800",
+};
+
+function Results({ result, plan, onRetake }: {
+  result: ExamResult; plan: ExamProtocolPlan | null; onRetake: (position: string) => void;
 }) {
+  const { qc, calibration: cal, measurement, engine } = result;
   const label = (name: string) => {
     const p = plan?.positions.find((q) => q.position === name);
     return p ? positionLabel(p) : name;
   };
   const h = cal.hirschberg;
+  const referral = engine.referral;
+  const cells = measurement.measurements.grid.cells;
+  const tiltM = measurement.measurements.tilt;
+  const findings = findingsToShow(engine);
   return (
     <div className="surface-raised p-5 space-y-5">
+      <div className={`rounded-md border px-4 py-3 ${DECISION_STYLE[referral.decision]}`}>
+        <p className="eyebrow">{referral.urgent ? "URGENT" : "Result"}</p>
+        <h3 className="display-md text-[20px] mt-1">{REFERRAL_TITLE[referral.decision]}</h3>
+        <p className="text-[13px] mt-1">{referral.advice}</p>
+        {referral.urgent_unconfirmed && (
+          <p className="text-[13px] mt-1 font-semibold">A possible URGENT red flag was seen at low confidence.</p>
+        )}
+      </div>
+
+      <div>
+        <p className="eyebrow">Deviation by gaze, PD · as you face the patient</p>
+        <div className="mt-2 grid grid-cols-3 gap-1.5">
+          {gridLayout(measurement.protocol).flat().map((gaze, i) => {
+            if (!gaze) return <div key={i} />;
+            const c = cells[gaze];
+            const ok = c?.status === "OK" && c.horizontal_pd && c.vertical_pd;
+            return (
+              <div key={gaze} className={`rounded-md border p-2 text-[11.5px] leading-snug ${ok ? "border-ink-100" : "border-dashed border-ink-200 bg-ink-50"}`}>
+                <div className="flex justify-between text-ink-400">
+                  <span>{gazeName(gaze)}</span>
+                  {ok && c.horizontal_pd && c.horizontal_pd.confidence !== "HIGH" && <span>{c.horizontal_pd.confidence}</span>}
+                </div>
+                {ok && c.horizontal_pd && c.vertical_pd ? (
+                  <div className="mt-0.5 space-y-1">
+                    <CellValue m={c.horizontal_pd} kind={horizontalKind(c.horizontal_pd)} />
+                    <CellValue m={c.vertical_pd} kind={verticalKind(c.vertical_pd)} />
+                  </div>
+                ) : (
+                  <button className="text-blue-600 hover:underline" onClick={() => onRetake(gaze)}>Not measured · retake</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {tiltM && (
+          <p className="mt-2 text-[12.5px] text-ink-600">
+            Head tilt right: {tiltM.right ? verticalLabel(tiltM.right) : "not measured"} · left:{" "}
+            {tiltM.left ? verticalLabel(tiltM.left) : "not measured"}
+          </p>
+        )}
+        {measurement.flags.length > 0 && (
+          <ul className="mt-2 text-[12.5px] text-amber-800 space-y-0.5">
+            {measurement.flags.filter((f) => f.code !== "duction_not_measured").map((f, i) => <li key={i}>⚠ {f.detail}</li>)}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <p className="eyebrow">Findings</p>
+        {findings.length === 0 ? (
+          <p className="mt-1 text-[13px] text-ink-600">No deviation or pattern beyond measurement error.</p>
+        ) : (
+          <ul className="mt-2 space-y-2">
+            {findings.map((f) => (
+              <li key={`${f.rule_id}${f.affected_eye ?? ""}`} className="text-[13px]">
+                <div className="flex gap-2 items-baseline">
+                  <span className={`font-semibold ${f.urgency ? "text-red-700" : f.status === "INCONCLUSIVE" ? "text-ink-500" : "text-ink-900"}`}>
+                    {f.label}{f.affected_eye ? ` (${EYE_NAME[f.affected_eye].toLowerCase()})` : ""}
+                  </span>
+                  <span className="text-[11px] text-ink-400">{f.status === "INCONCLUSIVE" ? "inconclusive" : f.confidence.toLowerCase()}</span>
+                </div>
+                <p className="text-ink-600">{f.wording}</p>
+                {f.status === "INCONCLUSIVE" && f.reasons[0] && <p className="text-[12px] text-ink-400">{f.reasons[0].detail}</p>}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       <div>
         <p className="eyebrow">Capture quality</p>
-        <h3 className="display-md text-[20px] mt-1">
+        <h3 className="text-[15px] font-semibold text-ink-900 mt-1">
           {qc.insufficient_positions.length === 0
             ? "Every position has enough valid frames"
-            : `${qc.insufficient_positions.length} position${qc.insufficient_positions.length > 1 ? "s" : ""} need a retake`}
+            : `${qc.insufficient_positions.length} position${qc.insufficient_positions.length > 1 ? "s need" : " needs"} a retake`}
         </h3>
         {qc.session_flags.length > 0 && (
           <ul className="mt-2 text-[12.5px] text-amber-800 space-y-0.5">
@@ -601,8 +695,8 @@ function Results({ qc, cal, plan, onRetake }: {
       </div>
 
       <p className="text-[11.5px] text-ink-400">
-        KB {qc.kb_version} · QC {qc.qc_version} · calibration {cal.calibration_version}. Measures and characterizes
-        ocular deviation; suggests likely patterns. Decision support — not a diagnosis.
+        KB {result.versions.kb} · QC {result.versions.qc} · calibration {result.versions.calibration} · measurement{" "}
+        {result.versions.measurement} · engine {result.versions.engine}. {result.positioning}
       </p>
     </div>
   );

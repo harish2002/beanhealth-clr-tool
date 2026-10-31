@@ -18,6 +18,7 @@ import type {
   ExamCaptureSession,
   ExamProtocol,
   ExamProtocolPlan,
+  ExamResult,
   ExamSessionQC,
   StreamAnalyseResponse,
 } from "./types";
@@ -253,7 +254,8 @@ export async function analyseBatch(
 // ─── Phase 3 gaze examination ──────────────────────────────────────────────
 //
 // The phone fetches the capture plan, records landmark tracks (never images)
-// and uploads the session for frame QC and calibration.
+// and uploads the session for frame QC, calibration, the measurement grid
+// and the rules engine (/exam/evaluate).
 
 function examError(err: unknown): Error {
   const axiosErr = err as AxiosError<{ detail?: unknown }>;
@@ -284,6 +286,15 @@ export async function postExamQC(session: ExamCaptureSession, tilt = true): Prom
 export async function postExamCalibrate(session: ExamCaptureSession): Promise<ExamCalibration> {
   try {
     const r = await axios.post<ExamCalibration>(`${API_URL}/exam/calibrate`, session, { timeout: 30_000 });
+    return r.data;
+  } catch (err) {
+    throw examError(err);
+  }
+}
+
+export async function postExamEvaluate(session: ExamCaptureSession, tilt = true): Promise<ExamResult> {
+  try {
+    const r = await axios.post<ExamResult>(`${API_URL}/exam/evaluate`, session, { params: { tilt }, timeout: 30_000 });
     return r.data;
   } catch (err) {
     throw examError(err);
