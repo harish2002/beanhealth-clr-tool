@@ -27,6 +27,12 @@
  * a position whose frames it cannot use (lib/examVoice, spokenInstruction).
  * Uploading still waits for a button press.
  *
+ * Orientation: portrait or landscape both work, but calibration ties the
+ * session to one — turning the phone moves the torch around the lens. Once
+ * the first position is recorded the orientation is locked; frames in the
+ * other one stop recording until the phone is turned back (or the session
+ * starts again in the new orientation).
+ *
  * Decision support — not a diagnosis. This screen shows the grid and findings
  * to the operator and opens the clinician report (/exam/report/pdf|html).
  */
@@ -39,8 +45,10 @@ import { useAppStore } from "@/store/useAppStore";
 import { eyeObservation, eyeRegionHalf, headPose, irisGuess } from "@/lib/examLandmarks";
 import type { GrayRegion } from "@/lib/examLandmarks";
 import {
-  buildSession, deviceModel, effectiveFps, observedEyes, poseError, poseGuidance, spokenHint, spokenInstruction, usableFrames,
+  buildSession, deviceModel, effectiveFps, frameOrientation, observedEyes, poseError, poseGuidance, rotateBackMessage,
+  spokenHint, spokenInstruction, usableFrames,
 } from "@/lib/examGuidance";
+import type { FrameOrientation } from "@/lib/examGuidance";
 import { ExamVoice } from "@/lib/examVoice";
 import {
   findingsToShow, gazeName, gridLayout, horizontalKind, REFERRAL_TITLE, sizeParts, verticalKind, verticalLabel,
@@ -89,6 +97,7 @@ function recordingDone(p: ExamPositionPlan, elapsedMs: number, frames: number): 
 const SELF_DWELL_MS = 600;             // pose held this long on target before recording starts
 const SELF_HINT_MS = 4000;             // spoken correction at most this often
 const SELF_MAX_RETRIES = 2;            // then keep the frames anyway; the server's QC decides
+const ROTATE_BACK_EVERY_MS = 5000;     // how often the voice repeats "turn the phone back"
 const SELF_INTRO =
   "Self exam. Put the phone at eye level, about 35 centimetres away, with the light facing you. " +
   "Keep your eyes on the light the whole time. The beeps get faster as you get closer to each position. " +
@@ -114,6 +123,12 @@ const newGuide = (phase: Guide["phase"]): Guide => ({
   phase, position: null, prev: null, prefix: null, token: 0, onSince: null, lastBeep: 0, lastHint: 0, retries: {},
 });
 
+/** The size of the recorded frames: the phone may have been turned since (the guard kept those frames out). */
+function recordedFrameSize(s: { width: number; height: number; orientation: FrameOrientation | null }) {
+  const turned = s.orientation !== null && frameOrientation(s.width, s.height) !== s.orientation;
+  return turned ? { width: s.height, height: s.width } : { width: s.width, height: s.height };
+}
+
 function positionLabel(p: ExamPositionPlan): string {
   if (p.kind === "calibration") {
     const eye = p.fixing_eye === "R" ? "right" : "left";
@@ -136,6 +151,8 @@ export default function GuidedExam() {
   const [recProgress, setRecProgress] = useState<number | null>(null);
   const [torch, setTorch] = useState<boolean | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // The session's locked orientation while the phone is turned away from it.
+  const [rotated, setRotated] = useState<FrameOrientation | null>(null);
   const [result, setResult] = useState<ExamResult | null>(null);
   const uploadedRef = useRef<ExamCaptureSession | null>(null);
   const qc = result?.qc ?? null;
@@ -149,7 +166,8 @@ export default function GuidedExam() {
   const recRef = useRef<Recording | null>(null);
   const capturesRef = useRef<Record<string, ExamFrameObservation[]>>({});
   const tickRef = useRef({ n: 0, lastUi: 0, times: [] as number[] });
-  const sessionRef = useRef({ id: "", startedAt: "", width: 0, height: 0 });
+  const sessionRef = useRef({ id: "", startedAt: "", width: 0, height: 0, orientation: null as FrameOrientation | null });
+  const rotatedRef = useRef<FrameOrientation | null>(null);
   const planRef = useRef<ExamProtocolPlan | null>(null);
   const idxRef = useRef(0);
   const voiceRef = useRef<ExamVoice | null>(null);
@@ -195,6 +213,26 @@ export default function GuidedExam() {
 
   // ── Self exam: voice and tones ──────────────────────────────────────────
 
+  /** The first recording fixes the session's orientation. */
+  const lockOrientation = useCallback(() => {
+    const f = frameRef.current;
+    if (f && f.width && !sessionRef.current.orientation) sessionRef.current.orientation = frameOrientation(f.width, f.height);
+  }, []);
+
+  /** The voice guide while the phone is turned away from the session's orientation. */
+  const guideRotated = useCallback((now: number, locked: FrameOrientation) => {
+    const g = guideRef.current;
+    const voice = voiceRef.current;
+    if (!voice || g.phase === "off" || g.phase === "intro") return;
+    g.position = null;                    // instruct the position again once turned back
+    g.onSince = null;
+    if (g.phase === "instructing") { g.token++; g.phase = "ready"; voice.silence(); }
+    if (!voice.speaking && now - g.lastHint > ROTATE_BACK_EVERY_MS) {
+      g.lastHint = now;
+      void voice.say(rotateBackMessage(locked));
+    }
+  }, []);
+
   /** One step of the voice guide, run on every processed frame. */
   const guideTick = useCallback((now: number, pose: ExamHeadPose | null, p: ExamPositionPlan) => {
     const g = guideRef.current;
@@ -222,6 +260,7 @@ export default function GuidedExam() {
       g.onSince ??= now;
       if (now - g.onSince >= SELF_DWELL_MS) {
         g.onSince = null;
+        lockOrientation();
         recRef.current = { position: p.position, start: now, frames: [] };
         setRecProgress(0);
         void voice.say("Hold still.");
@@ -241,7 +280,7 @@ export default function GuidedExam() {
       const hint = spokenHint(pose, p);
       if (hint) void voice.say(hint, false);
     }
-  }, []);
+  }, [lockOrientation]);
 
   /** Whether the self exam keeps a finished recording, or repeats the position. */
   const selfAccepts = useCallback((p: ExamPositionPlan, frames: ExamFrameObservation[]): boolean => {
@@ -289,11 +328,20 @@ export default function GuidedExam() {
     t.times.push(now);
     while (t.times.length > 30) t.times.shift();
 
+    // Rotation guard: frames in the other orientation are never recorded.
+    const locked = sessionRef.current.orientation;
+    const turned = locked !== null && frameOrientation(W, H) !== locked;
+    if (turned !== (rotatedRef.current !== null)) {
+      rotatedRef.current = turned ? locked : null;
+      setRotated(rotatedRef.current);
+      if (turned && recRef.current) { recRef.current = null; setRecProgress(null); }
+    }
+
     const lms = r.multiFaceLandmarks?.[0];
     const points: V3[] | null = lms && lms.length >= 478 ? lms.map((q) => [q.x * W, q.y * H, q.z * W]) : null;
     const pose = points ? headPose(points) : null;
     const rec = recRef.current;
-    const recording = rec !== null && rec.position === p.position;
+    const recording = !turned && rec !== null && rec.position === p.position;
 
     let eyes: Partial<Record<ExamEye, ExamEyeObservation>> | null = null;
     let sharp: number | null = null;
@@ -343,14 +391,15 @@ export default function GuidedExam() {
       }
     }
 
-    if (!recording || recRef.current) guideTick(now, pose, p);
+    if (turned && locked) guideRotated(now, locked);
+    else if (!recording || recRef.current) guideTick(now, pose, p);
     if (eyes) drawOverlay(eyes, W, H);
     if (now - t.lastUi > UI_EVERY_MS) {
       t.lastUi = now;
       const span = t.times.length > 1 ? t.times[t.times.length - 1] - t.times[0] : 0;
       setLive((prev) => ({ pose, eyes: eyes ?? prev.eyes, fps: span > 0 ? ((t.times.length - 1) * 1000) / span : null }));
     }
-  }, [drawOverlay, guideTick, selfAccepts]);
+  }, [drawOverlay, guideRotated, guideTick, selfAccepts]);
 
   const processRef = useRef(processResults);
   processRef.current = processResults;
@@ -516,7 +565,9 @@ export default function GuidedExam() {
       capturesRef.current = {};
       setCaptures({});
       setResult(null);
-      sessionRef.current = { ...sessionRef.current, id: crypto.randomUUID(), startedAt: new Date().toISOString() };
+      sessionRef.current = { ...sessionRef.current, id: crypto.randomUUID(), startedAt: new Date().toISOString(), orientation: null };
+      rotatedRef.current = null;
+      setRotated(null);
       setStage("capture");
     } catch (e) {
       setError(e instanceof Error && e.message === "NETWORK_ERROR"
@@ -532,10 +583,26 @@ export default function GuidedExam() {
   }, [startVoice, stopVoice]);
 
   const record = useCallback(() => {
-    if (!current) return;
+    if (!current || rotatedRef.current) return;
+    lockOrientation();
     recRef.current = { position: current.position, start: performance.now(), frames: [] };
     setRecProgress(0);
-  }, [current]);
+  }, [current, lockOrientation]);
+
+  /** Drop every recording and start again in the orientation the phone is in now. */
+  const restartSession = useCallback(() => {
+    recRef.current = null;
+    setRecProgress(null);
+    capturesRef.current = {};
+    setCaptures({});
+    setResult(null);
+    setIdx(0);
+    sessionRef.current = { ...sessionRef.current, id: crypto.randomUUID(), startedAt: new Date().toISOString(), orientation: null };
+    rotatedRef.current = null;
+    setRotated(null);
+    const g = guideRef.current;
+    if (g.phase !== "off") Object.assign(g, { position: null, prev: null, retries: {}, prefix: "Starting again." });
+  }, []);
 
   const retake = useCallback((position: string) => {
     const i = plan?.positions.findIndex((p) => p.position === position) ?? -1;
@@ -549,7 +616,7 @@ export default function GuidedExam() {
     const d = Number(distanceCm);
     const session = buildSession({
       sessionId: sessionRef.current.id, plan, captures: capturesRef.current,
-      frameSize: { width: sessionRef.current.width, height: sessionRef.current.height },
+      frameSize: recordedFrameSize(sessionRef.current),
       distanceCm: Number.isFinite(d) && d > 0 ? d : null, distanceErrorCm: 1,
       deviceModel: deviceModel(navigator.userAgent), startedAt: sessionRef.current.startedAt,
     });
@@ -661,10 +728,10 @@ export default function GuidedExam() {
     // fixed at the top and the panel below scrolls on its own.
     <div className={capturing ? "fixed inset-0 z-50 flex flex-col bg-white lg:static lg:z-auto lg:block" : ""}>
       <div className={capturing
-        ? "flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[1fr_340px] lg:gap-6"
+        ? "flex-1 min-h-0 flex flex-col max-lg:landscape:flex-row lg:grid lg:grid-cols-[1fr_340px] lg:gap-6"
         : "grid gap-6 lg:grid-cols-[1fr_340px]"}>
-        <div className={capturing ? "flex-none" : "hidden"}>
-          <div className={`relative bg-black overflow-hidden h-[55dvh] lg:h-auto lg:aspect-video lg:rounded-card ${cameraOn ? "" : "hidden"}`}>
+        <div className={capturing ? "flex-none max-lg:landscape:w-[58%] max-lg:landscape:h-full" : "hidden"}>
+          <div className={`relative bg-black overflow-hidden h-[55dvh] max-lg:landscape:h-full lg:h-auto lg:aspect-video lg:rounded-card ${cameraOn ? "" : "hidden"}`}>
             <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
             <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
             {current && (
@@ -687,18 +754,34 @@ export default function GuidedExam() {
                 </div>
               </>
             )}
+            {rotated && (
+              <div className="absolute inset-0 grid place-items-center bg-black/60 p-6 text-center text-white text-[15px] font-semibold">
+                Turn the phone back to {rotated}
+              </div>
+            )}
             {recProgress !== null && (
               <div className="absolute bottom-0 left-0 h-1.5 bg-emerald-500" style={{ width: `${Math.min(100, recProgress * 100)}%` }} />
             )}
           </div>
         </div>
 
-        <aside className={capturing ? "flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4 lg:p-0 lg:overflow-visible" : "space-y-4 order-last lg:order-none lg:col-start-2 lg:row-start-1"}>
+        <aside className={capturing ? "flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 space-y-4 lg:p-0 lg:overflow-visible" : "space-y-4 order-last lg:order-none lg:col-start-2 lg:row-start-1"}>
           {capturing && current && (
             <div className="surface-raised p-5 space-y-3">
               <p className="eyebrow">Position {idx + 1} of {total}</p>
               <h3 className="text-[17px] font-semibold text-ink-900">{positionLabel(current)}</h3>
               <p className="text-[13.5px] text-ink-600">{current.instruction}</p>
+              {rotated && (
+                <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800 space-y-2">
+                  <p>
+                    The phone was turned. This session was calibrated in {rotated}, so recording is paused until you
+                    turn it back. To use the phone this way instead, start again; the recordings so far are dropped.
+                  </p>
+                  <button className="btn-secondary btn-sm" onClick={restartSession}>
+                    Start again in {rotated === "portrait" ? "landscape" : "portrait"}
+                  </button>
+                </div>
+              )}
               {selfExam && (
                 <p className="text-[12.5px] text-clinical-700 bg-clinical-50 rounded-md px-3 py-2">
                   Voice guide on: listen and keep your eyes on the light. Recording starts by itself when your head holds the position.
@@ -729,7 +812,7 @@ export default function GuidedExam() {
               <p className="text-[11.5px] text-ink-400">{live.fps ? `${live.fps.toFixed(0)} frames/s processed` : "Starting…"}</p>
               {error && <p className="text-[13px] text-red-600">{error}</p>}
               <div className="flex flex-wrap gap-2">
-                <button className="btn-primary" onClick={record} disabled={recProgress !== null || !live.pose}>
+                <button className="btn-primary" onClick={record} disabled={recProgress !== null || !live.pose || rotated !== null}>
                   {recProgress !== null ? "Recording…" : capturesRef.current[current.position]?.length ? "Record again" : `Record ${current.hold_s} s`}
                 </button>
                 <button className="btn-secondary" disabled={recProgress !== null}

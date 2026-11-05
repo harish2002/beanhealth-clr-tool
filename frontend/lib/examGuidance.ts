@@ -24,9 +24,19 @@ export interface PoseGuidance {
   hints: string[];
 }
 
+/**
+ * Head roll beyond this means the picture itself is turned: the phone is held
+ * sideways while the screen stays locked upright. An interface threshold, well
+ * past the protocol's largest head tilt — not a clinical value.
+ */
+export const SIDEWAYS_ROLL_DEG = 65;
+
+const sideways = (pose: ExamHeadPose) => Math.abs(pose.roll_deg) > SIDEWAYS_ROLL_DEG;
+
 /** Compare a head pose with a position's target (the same test frame QC applies). */
 export function poseGuidance(pose: ExamHeadPose | null, plan: ExamPositionPlan): PoseGuidance {
   if (!pose) return { onTarget: false, hints: ["Bring the patient's face into view"] };
+  if (sideways(pose)) return { onTarget: false, hints: ["The picture is sideways: turn on auto-rotate, or hold the phone the way the screen faces"] };
   const { yaw_deg: yaw, pitch_deg: pitch, tolerance_deg: tol, roll_deg: roll } = plan.head;
   const hints: string[] = [];
   const dy = yaw - pose.yaw_deg;
@@ -91,6 +101,7 @@ export function spokenInstruction(p: ExamPositionPlan, prev: ExamPositionPlan | 
 /** A short spoken correction toward the position's pose; null when on target. */
 export function spokenHint(pose: ExamHeadPose | null, p: ExamPositionPlan): string | null {
   if (!pose) return "I can't see your face. Face the phone.";
+  if (sideways(pose)) return "The picture is sideways. Turn on auto-rotate, or hold the phone upright.";
   const { yaw_deg: yaw, pitch_deg: pitch, tolerance_deg: tol, roll_deg: roll } = p.head;
   const parts: string[] = [];
   const dy = yaw - pose.yaw_deg;
@@ -120,6 +131,17 @@ export function spokenHint(pose: ExamHeadPose | null, p: ExamPositionPlan): stri
 export function usableFrames(frames: ExamFrameObservation[], p: ExamPositionPlan): number {
   return frames.filter((f) => poseError(f.head_pose, p) === 0
     && observedEyes(p).every((e) => f.eyes[e]?.limbus && f.eyes[e]?.reflex_px)).length;
+}
+
+export type FrameOrientation = "portrait" | "landscape";
+
+export function frameOrientation(width: number, height: number): FrameOrientation {
+  return width >= height ? "landscape" : "portrait";
+}
+
+/** What the patient or operator is told when the phone was turned mid-session. */
+export function rotateBackMessage(locked: FrameOrientation): string {
+  return `The phone was turned. Turn it back to ${locked}.`;
 }
 
 /** Frames per second actually recorded (what the session reports; QC flags a low rate). */

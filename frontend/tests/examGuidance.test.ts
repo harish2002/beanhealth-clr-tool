@@ -7,7 +7,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  buildSession, deviceModel, effectiveFps, poseError, poseGuidance, spokenHint, spokenInstruction, usableFrames,
+  buildSession, deviceModel, effectiveFps, frameOrientation, poseError, poseGuidance, spokenHint, spokenInstruction, usableFrames,
 } from "../lib/examGuidance.ts";
 import type { ExamEyeObservation, ExamFrameObservation, ExamPositionPlan, ExamProtocolPlan } from "../lib/types.ts";
 
@@ -42,6 +42,20 @@ test("tilt captures check the roll range", () => {
   assert.deepEqual(poseGuidance(pose(0, 0, 50), right).hints, ["Tilt the head less toward the right shoulder"]);
   const left = plan("tilt_left", 0, 0, [-45, -30]);
   assert.deepEqual(poseGuidance(pose(0, 0, -10), left).hints, ["Tilt the head further toward the left shoulder"]);
+});
+
+test("a sideways picture is named instead of asking for a 90° tilt", () => {
+  const g = poseGuidance(pose(0, 0, 88), plan("primary", 0, 0));
+  assert.equal(g.onTarget, false);
+  assert.match(g.hints[0], /sideways/);
+  assert.match(spokenHint(pose(0, 0, -90), plan("tilt_right", 0, 0, [30, 45])) ?? "", /sideways/);
+  // A real head tilt is still guided normally.
+  assert.equal(poseGuidance(pose(0, 0, 40), plan("tilt_right", 0, 0, [30, 45])).onTarget, true);
+});
+
+test("frame orientation", () => {
+  assert.equal(frameOrientation(3840, 2160), "landscape");
+  assert.equal(frameOrientation(2160, 3840), "portrait");
 });
 
 test("no face, no target", () => {
