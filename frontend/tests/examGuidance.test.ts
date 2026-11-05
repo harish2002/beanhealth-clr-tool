@@ -1,12 +1,15 @@
 /**
- * Unit tests for lib/examGuidance.ts — operator hints and the session upload.
+ * Unit tests for lib/examGuidance.ts — operator hints, the self-exam voice
+ * guide and the session upload.
  *
  *   npm test
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildSession, deviceModel, effectiveFps, poseGuidance } from "../lib/examGuidance.ts";
-import type { ExamFrameObservation, ExamPositionPlan, ExamProtocolPlan } from "../lib/types.ts";
+import {
+  buildSession, deviceModel, effectiveFps, poseError, poseGuidance, spokenHint, spokenInstruction, usableFrames,
+} from "../lib/examGuidance.ts";
+import type { ExamEyeObservation, ExamFrameObservation, ExamPositionPlan, ExamProtocolPlan } from "../lib/types.ts";
 
 function plan(position: string, yaw: number, pitch: number, roll: [number, number] | null = null): ExamPositionPlan {
   return {
@@ -43,6 +46,60 @@ test("tilt captures check the roll range", () => {
 
 test("no face, no target", () => {
   assert.equal(poseGuidance(null, plan("primary", 0, 0)).onTarget, false);
+});
+
+test("pose error: degrees outside the accepted pose", () => {
+  assert.equal(poseError(null, plan("primary", 0, 0)), null);
+  assert.equal(poseError(pose(-22, 3), plan("right", -25, 0)), 0);
+  assert.equal(poseError(pose(-10, 0), plan("right", -25, 0)), 10);
+  assert.equal(poseError(pose(0, 0, 20), plan("tilt_right", 0, 0, [30, 45])), 10);
+  assert.equal(poseError(pose(0, 0, 50), plan("tilt_right", 0, 0, [30, 45])), 5);
+});
+
+const calib = (eye: "R" | "L", offset: number): ExamPositionPlan => ({
+  ...plan(`calib_${eye}`, 0, 0), kind: "calibration", fixing_eye: eye, target_offset_cm: offset,
+});
+
+test("spoken instructions talk to the patient, in their own right and left", () => {
+  assert.equal(spokenInstruction(calib("R", 0), null),
+    "Cover your left eye with your palm. Keep your head straight and look at the light with your right eye.");
+  assert.equal(spokenInstruction(calib("R", 7), calib("R", 0)),
+    "Keep your left eye covered. Without moving your head, look at the dot to the right of the light.");
+  assert.equal(spokenInstruction(calib("L", 0), calib("R", -7)),
+    "Cover your right eye with your palm. Keep your head straight and look at the light with your left eye.");
+  assert.equal(spokenInstruction(plan("primary", 0, 0), calib("L", -7)),
+    "Uncover your eye. Keep your head straight and look at the light.");
+  // Eyes up-right: head turned to the patient's left, chin down.
+  assert.equal(spokenInstruction(plan("up_right", -25, -25), plan("primary", 0, 0)),
+    "Keep looking at the light, and slowly turn your head to your left and lower your chin.");
+  assert.equal(spokenInstruction(plan("tilt_left", 0, 0, [-45, -30]), plan("down_left", 25, 25)),
+    "Keep looking at the light, and tilt your head toward your left shoulder, without turning it.");
+});
+
+test("spoken hints: which way, and how far", () => {
+  assert.equal(spokenHint(null, plan("primary", 0, 0)), "I can't see your face. Face the phone.");
+  assert.equal(spokenHint(pose(-23, 0), plan("right", -25, 0)), null);
+  assert.equal(spokenHint(pose(0, 0), plan("right", -25, 0)), "Turn to your left.");
+  assert.equal(spokenHint(pose(-17, 0), plan("right", -25, 0)), "A little to your left.");
+  assert.equal(spokenHint(pose(0, -15), plan("up", 0, -25)), "Chin down a little.");
+  assert.equal(spokenHint(pose(10, 0), plan("primary", 0, 0)), "A little to your left.");
+  assert.equal(spokenHint(pose(0, 0, 10), plan("tilt_right", 0, 0, [30, 45])), "Tilt more toward your right shoulder.");
+  assert.equal(spokenHint(pose(0, 0, -50), plan("tilt_left", 0, 0, [-45, -30])), "Tilt a little less.");
+});
+
+const eyeObs = (ok: boolean): ExamEyeObservation => ({
+  reflex_px: ok ? [10, 10] : null, limbus: { centre_px: [10, 10], semi_major_px: 20, semi_minor_px: 19, angle_deg: 0 },
+  pupil_px: null, pupil_diameter_px: null, iris_radius_px: null, fissure_height_px: null, scleral_show_px: null,
+  limbus_covered_fraction: null,
+});
+
+test("usable frames need the pose on target and every observed eye's reflex", () => {
+  const p = plan("primary", 0, 0);
+  const f = (yaw: number, rOk: boolean, lOk: boolean): ExamFrameObservation =>
+    ({ index: 0, t_ms: 0, head_pose: pose(yaw, 0), sharpness: 1, eyes: { R: eyeObs(rOk), L: eyeObs(lOk) } });
+  assert.equal(usableFrames([f(0, true, true), f(12, true, true), f(0, true, false)], p), 1);
+  // Calibration watches only the fixing eye.
+  assert.equal(usableFrames([f(0, true, false)], calib("R", 0)), 1);
 });
 
 const frames = (n: number, dtMs: number): ExamFrameObservation[] =>

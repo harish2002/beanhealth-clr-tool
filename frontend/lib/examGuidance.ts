@@ -2,14 +2,16 @@
  * BeanHealth CLR — guided gaze-exam capture: pure helpers
  * =======================================================
  *
- * What the operator is told while holding a position, and how the recorded
- * landmark tracks become the session the server checks (exam.capture.session).
+ * What the operator (or, in the self exam, the patient) is told while holding
+ * a position, and how the recorded landmark tracks become the session the
+ * server checks (exam.capture.session).
  * Head pose follows the capture protocol: yaw + = face turned to the
  * PATIENT's right, pitch + = chin up, roll + = toward the right shoulder.
  */
 
 import type {
   ExamCaptureSession,
+  ExamEye,
   ExamFrameObservation,
   ExamHeadPose,
   ExamPositionPlan,
@@ -39,6 +41,85 @@ export function poseGuidance(pose: ExamHeadPose | null, plan: ExamPositionPlan):
     }
   }
   return { onTarget: hints.length === 0, hints };
+}
+
+/** The eyes a position observes: the fixing eye during calibration, otherwise both. */
+export function observedEyes(p: ExamPositionPlan): ExamEye[] {
+  return p.fixing_eye ? [p.fixing_eye] : ["R", "L"];
+}
+
+/** Degrees the head is outside the position's accepted pose (0 = on target, null = no face). */
+export function poseError(pose: ExamHeadPose | null, plan: ExamPositionPlan): number | null {
+  if (!pose) return null;
+  const { yaw_deg: yaw, pitch_deg: pitch, tolerance_deg: tol, roll_deg: roll } = plan.head;
+  const over = (d: number) => Math.max(0, Math.abs(d) - tol);
+  let err = Math.max(over(yaw - pose.yaw_deg), over(pitch - pose.pitch_deg));
+  if (roll) err = Math.max(err, roll.min - pose.roll_deg, pose.roll_deg - roll.max);
+  return err;
+}
+
+// ── Self exam: what the phone says to the patient ─────────────────────────
+//
+// The patient is the listener, so everything is in the second person; "your
+// right" is the patient's right, the same side the protocol calls right.
+
+const SIDE = (sign: number) => (sign > 0 ? "right" : "left");
+
+/** The spoken instruction for a position, given the one spoken before it (null at the start). */
+export function spokenInstruction(p: ExamPositionPlan, prev: ExamPositionPlan | null): string {
+  if (p.kind === "calibration" && p.fixing_eye) {
+    const eye = p.fixing_eye === "R" ? "right" : "left";
+    const other = p.fixing_eye === "R" ? "left" : "right";
+    const sameEye = prev?.kind === "calibration" && prev.fixing_eye === p.fixing_eye;
+    const cover = sameEye ? `Keep your ${other} eye covered.` : `Cover your ${other} eye with your palm.`;
+    const look = p.target_offset_cm === 0
+      ? `Keep your head straight and look at the light with your ${eye} eye.`
+      : `Without moving your head, look at the dot to the ${SIDE(p.target_offset_cm)} of the light.`;
+    return `${cover} ${look}`;
+  }
+  const uncover = prev?.kind === "calibration" ? "Uncover your eye. " : "";
+  if (p.kind === "tilt" && p.head.roll_deg) {
+    return `${uncover}Keep looking at the light, and tilt your head toward your ${SIDE(p.head.roll_deg.min)} shoulder, without turning it.`;
+  }
+  const moves: string[] = [];
+  if (p.head.yaw_deg !== 0) moves.push(`turn your head to your ${SIDE(p.head.yaw_deg)}`);
+  if (p.head.pitch_deg !== 0) moves.push(p.head.pitch_deg > 0 ? "raise your chin" : "lower your chin");
+  if (!moves.length) return `${uncover}Keep your head straight and look at the light.`;
+  return `${uncover}Keep looking at the light, and slowly ${moves.join(" and ")}.`;
+}
+
+/** A short spoken correction toward the position's pose; null when on target. */
+export function spokenHint(pose: ExamHeadPose | null, p: ExamPositionPlan): string | null {
+  if (!pose) return "I can't see your face. Face the phone.";
+  const { yaw_deg: yaw, pitch_deg: pitch, tolerance_deg: tol, roll_deg: roll } = p.head;
+  const parts: string[] = [];
+  const dy = yaw - pose.yaw_deg;
+  if (Math.abs(dy) > tol) parts.push(Math.abs(dy) <= 2 * tol ? `A little to your ${SIDE(dy)}` : `Turn to your ${SIDE(dy)}`);
+  const dp = pitch - pose.pitch_deg;
+  if (Math.abs(dp) > tol) {
+    const small = Math.abs(dp) <= 2 * tol;
+    parts.push(dp > 0 ? (small ? "chin up a little" : "raise your chin") : (small ? "chin down a little" : "lower your chin"));
+  }
+  if (roll) {
+    const side = SIDE(roll.min);
+    const toward = roll.min > 0 ? pose.roll_deg < roll.min : pose.roll_deg > roll.max;
+    const away = roll.min > 0 ? pose.roll_deg > roll.max : pose.roll_deg < roll.min;
+    if (toward) parts.push(`tilt more toward your ${side} shoulder`);
+    else if (away) parts.push(`tilt a little less`);
+  }
+  if (!parts.length) return null;
+  const s = parts.join(", ");
+  return s[0].toUpperCase() + s.slice(1) + ".";
+}
+
+/**
+ * Frames the phone itself counts as usable: head on target and every observed
+ * eye with a limbus and a reflex. Only decides whether the self exam repeats a
+ * position; the server's frame QC remains the judge.
+ */
+export function usableFrames(frames: ExamFrameObservation[], p: ExamPositionPlan): number {
+  return frames.filter((f) => poseError(f.head_pose, p) === 0
+    && observedEyes(p).every((e) => f.eyes[e]?.limbus && f.eyes[e]?.reflex_px)).length;
 }
 
 /** Frames per second actually recorded (what the session reports; QC flags a low rate). */

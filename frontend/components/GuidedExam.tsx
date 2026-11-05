@@ -20,6 +20,13 @@
  *     engine's findings and referral decision. Positions without enough
  *     valid frames can be retaken.
  *
+ * Self exam (voice guided): with no operator, the patient cannot read the
+ * screen without moving their eyes off the torch. The phone then speaks each
+ * position's instruction, beeps faster and higher as the head nears the
+ * target pose, starts recording by itself once the pose has held, and repeats
+ * a position whose frames it cannot use (lib/examVoice, spokenInstruction).
+ * Uploading still waits for a button press.
+ *
  * Decision support — not a diagnosis. This screen shows the grid and findings
  * to the operator and opens the clinician report (/exam/report/pdf|html).
  */
@@ -31,7 +38,10 @@ import { rgbaToGray } from "@/lib/eyeVision";
 import { useAppStore } from "@/store/useAppStore";
 import { eyeObservation, eyeRegionHalf, headPose, irisGuess } from "@/lib/examLandmarks";
 import type { GrayRegion } from "@/lib/examLandmarks";
-import { buildSession, deviceModel, effectiveFps, poseGuidance } from "@/lib/examGuidance";
+import {
+  buildSession, deviceModel, effectiveFps, observedEyes, poseError, poseGuidance, spokenHint, spokenInstruction, usableFrames,
+} from "@/lib/examGuidance";
+import { ExamVoice } from "@/lib/examVoice";
 import {
   findingsToShow, gazeName, gridLayout, horizontalKind, REFERRAL_TITLE, sizeParts, verticalKind, verticalLabel,
 } from "@/lib/examResults";
@@ -75,9 +85,34 @@ function recordingDone(p: ExamPositionPlan, elapsedMs: number, frames: number): 
     || elapsedMs >= MAX_HOLD_FACTOR * hold;
 }
 
-function observedEyes(p: ExamPositionPlan): ExamEye[] {
-  return p.fixing_eye ? [p.fixing_eye] : ["R", "L"];
+// ── Self exam ──
+const SELF_DWELL_MS = 600;             // pose held this long on target before recording starts
+const SELF_HINT_MS = 4000;             // spoken correction at most this often
+const SELF_MAX_RETRIES = 2;            // then keep the frames anyway; the server's QC decides
+const SELF_INTRO =
+  "Self exam. Put the phone at eye level, about 35 centimetres away, with the light facing you. " +
+  "Keep your eyes on the light the whole time. The beeps get faster as you get closer to each position. " +
+  "Hold still when they speed up; recording starts by itself.";
+const SELF_DONE =
+  "All positions are recorded. Pick up the phone and press Measure and evaluate.";
+
+interface Guide {
+  // off: no voice · intro: speaking the introduction · ready: next instruction due
+  // instructing: speaking a position's instruction · guiding: beeping toward the pose
+  phase: "off" | "intro" | "ready" | "instructing" | "guiding";
+  position: string | null;             // the position last instructed
+  prev: ExamPositionPlan | null;
+  prefix: string | null;               // said before the next instruction
+  token: number;                       // stale speech callbacks compare this
+  onSince: number | null;
+  lastBeep: number;
+  lastHint: number;
+  retries: Record<string, number>;
 }
+
+const newGuide = (phase: Guide["phase"]): Guide => ({
+  phase, position: null, prev: null, prefix: null, token: 0, onSince: null, lastBeep: 0, lastHint: 0, retries: {},
+});
 
 function positionLabel(p: ExamPositionPlan): string {
   if (p.kind === "calibration") {
@@ -92,6 +127,7 @@ export default function GuidedExam() {
   const [stage, setStage] = useState<Stage>("setup");
   const [protocol, setProtocol] = useState<ExamProtocol>("nine_gaze");
   const [tilt, setTilt] = useState(true);
+  const [selfExam, setSelfExam] = useState(false);
   const [distanceCm, setDistanceCm] = useState("36");
   const [plan, setPlan] = useState<ExamProtocolPlan | null>(null);
   const [idx, setIdx] = useState(0);
@@ -116,6 +152,8 @@ export default function GuidedExam() {
   const sessionRef = useRef({ id: "", startedAt: "", width: 0, height: 0 });
   const planRef = useRef<ExamProtocolPlan | null>(null);
   const idxRef = useRef(0);
+  const voiceRef = useRef<ExamVoice | null>(null);
+  const guideRef = useRef<Guide>(newGuide("off"));
   planRef.current = plan;
   idxRef.current = idx;
 
@@ -133,8 +171,8 @@ export default function GuidedExam() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, cw, ch);
-    // object-contain: the frame is letterboxed inside the element.
-    const s = Math.min(cw / W, ch / H), ox = (cw - W * s) / 2, oy = (ch - H * s) / 2;
+    // object-cover: the frame fills the element and is cropped at the edges.
+    const s = Math.max(cw / W, ch / H), ox = (cw - W * s) / 2, oy = (ch - H * s) / 2;
     for (const obs of Object.values(eyes)) {
       if (!obs) continue;
       if (obs.limbus) {
@@ -153,6 +191,91 @@ export default function GuidedExam() {
         ctx.fill();
       }
     }
+  }, []);
+
+  // ── Self exam: voice and tones ──────────────────────────────────────────
+
+  /** One step of the voice guide, run on every processed frame. */
+  const guideTick = useCallback((now: number, pose: ExamHeadPose | null, p: ExamPositionPlan) => {
+    const g = guideRef.current;
+    const voice = voiceRef.current;
+    if (!voice || g.phase === "off" || g.phase === "intro") return;
+
+    if (g.position !== p.position) {
+      const token = ++g.token;
+      const text = [g.prefix, spokenInstruction(p, g.prev)].filter(Boolean).join(" ");
+      Object.assign(g, { phase: "instructing", position: p.position, prev: p, prefix: null, onSince: null });
+      void voice.say(text).then(() => {
+        if (g.token === token) Object.assign(g, { phase: "guiding", lastHint: performance.now() });
+      });
+      return;
+    }
+    if (g.phase !== "guiding") return;
+
+    const err = poseError(pose, p);
+    if (recRef.current) {
+      // Recording: stay quiet unless the head drifts off the pose.
+      if (err !== 0 && now - g.lastBeep > 600) { voice.beep(220, 140); g.lastBeep = now; }
+      return;
+    }
+    if (err === 0) {
+      g.onSince ??= now;
+      if (now - g.onSince >= SELF_DWELL_MS) {
+        g.onSince = null;
+        recRef.current = { position: p.position, start: now, frames: [] };
+        setRecProgress(0);
+        void voice.say("Hold still.");
+      } else if (now - g.lastBeep > 110) {
+        voice.beep(1250, 50);
+        g.lastBeep = now;
+      }
+      return;
+    }
+    g.onSince = null;
+    if (err !== null && !voice.speaking && now - g.lastBeep > Math.min(1100, 180 + err * 35)) {
+      voice.beep(330 + 700 * Math.exp(-err / 12), 70);
+      g.lastBeep = now;
+    }
+    if (!voice.speaking && now - g.lastHint > SELF_HINT_MS) {
+      g.lastHint = now;
+      const hint = spokenHint(pose, p);
+      if (hint) void voice.say(hint, false);
+    }
+  }, []);
+
+  /** Whether the self exam keeps a finished recording, or repeats the position. */
+  const selfAccepts = useCallback((p: ExamPositionPlan, frames: ExamFrameObservation[]): boolean => {
+    const g = guideRef.current;
+    const voice = voiceRef.current;
+    if (!voice || g.phase === "off") return true;
+    const tries = g.retries[p.position] ?? 0;
+    if (usableFrames(frames, p) >= p.min_valid_frames || tries >= SELF_MAX_RETRIES) {
+      voice.chime();
+      g.prefix = "Done.";
+      return true;
+    }
+    g.retries[p.position] = tries + 1;
+    g.prefix = "That one didn't work. Let's try again.";
+    g.position = null;                    // instruct the same position again
+    voice.beep(260, 260);
+    return false;
+  }, []);
+
+  const startVoice = useCallback((intro: string) => {
+    voiceRef.current ??= new ExamVoice();
+    const voice = voiceRef.current;
+    voice.unlock();
+    const g = newGuide("intro");
+    g.token = guideRef.current.token + 1;
+    guideRef.current = g;
+    void voice.say(intro).then(() => {
+      if (guideRef.current === g && g.phase === "intro") g.phase = "ready";
+    });
+  }, []);
+
+  const stopVoice = useCallback(() => {
+    guideRef.current = newGuide("off");
+    voiceRef.current?.silence();
   }, []);
 
   const processResults = useCallback((r: Results) => {
@@ -202,25 +325,32 @@ export default function GuidedExam() {
         : { index: rec.frames.length, t_ms: tMs, head_pose: null, sharpness: null, eyes: {} });
       if (recordingDone(p, tMs, rec.frames.length)) {
         recRef.current = null;
-        capturesRef.current = { ...capturesRef.current, [p.position]: rec.frames };
-        setCaptures(capturesRef.current);
         setRecProgress(null);
-        const n = planRef.current?.positions.length ?? 0;
-        const next = planRef.current?.positions.findIndex((q, i) => i > idxRef.current && !capturesRef.current[q.position]?.length) ?? -1;
-        if (next >= 0) setIdx(next);
-        else { setIdx(Math.min(idxRef.current, n - 1)); setStage("review"); }
+        if (selfAccepts(p, rec.frames)) {
+          capturesRef.current = { ...capturesRef.current, [p.position]: rec.frames };
+          setCaptures(capturesRef.current);
+          const n = planRef.current?.positions.length ?? 0;
+          const next = planRef.current?.positions.findIndex((q, i) => i > idxRef.current && !capturesRef.current[q.position]?.length) ?? -1;
+          if (next >= 0) setIdx(next);
+          else {
+            setIdx(Math.min(idxRef.current, n - 1));
+            setStage("review");
+            if (guideRef.current.phase !== "off") void voiceRef.current?.say(SELF_DONE);
+          }
+        }
       } else if (now - t.lastUi > UI_EVERY_MS) {
         setRecProgress(tMs / (p.hold_s * 1000));
       }
     }
 
+    if (!recording || recRef.current) guideTick(now, pose, p);
     if (eyes) drawOverlay(eyes, W, H);
     if (now - t.lastUi > UI_EVERY_MS) {
       t.lastUi = now;
       const span = t.times.length > 1 ? t.times[t.times.length - 1] - t.times[0] : 0;
       setLive((prev) => ({ pose, eyes: eyes ?? prev.eyes, fps: span > 0 ? ((t.times.length - 1) * 1000) / span : null }));
     }
-  }, [drawOverlay]);
+  }, [drawOverlay, guideTick, selfAccepts]);
 
   const processRef = useRef(processResults);
   processRef.current = processResults;
@@ -254,7 +384,40 @@ export default function GuidedExam() {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     fmRef.current?.close().catch(() => undefined);
     fmRef.current = null;
+    voiceRef.current?.close();
   }, []);
+
+  // Entering capture (again) re-instructs the current position; leaving it stops talking.
+  useEffect(() => {
+    const g = guideRef.current;
+    if (g.phase === "off") return;
+    g.position = null;
+    if (!cameraOn) {
+      voiceRef.current?.silence();
+      if (g.phase !== "intro") g.phase = "ready";
+    }
+  }, [cameraOn, idx]);
+
+  // Nobody touches the phone during a self exam: keep the screen awake while capturing.
+  useEffect(() => {
+    if (!cameraOn || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let alive = true;
+    const acquire = () => {
+      if (document.visibilityState !== "visible") return;
+      navigator.wakeLock.request("screen").then((l) => {
+        if (alive) lock = l;
+        else void l.release();
+      }).catch(() => undefined);
+    };
+    acquire();
+    document.addEventListener("visibilitychange", acquire);
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", acquire);
+      void lock?.release().catch(() => undefined);
+    };
+  }, [cameraOn]);
 
   useEffect(() => {
     if (!cameraOn) return;
@@ -343,6 +506,9 @@ export default function GuidedExam() {
 
   const begin = useCallback(async () => {
     setError(null);
+    // Audio must start inside the tap, before the first await.
+    if (selfExam) startVoice(SELF_INTRO);
+    else stopVoice();
     try {
       const p = await getExamProtocol(protocol, tilt);
       setPlan(p);
@@ -356,8 +522,14 @@ export default function GuidedExam() {
       setError(e instanceof Error && e.message === "NETWORK_ERROR"
         ? "The server could not be reached. Check the connection and try again."
         : "The capture plan could not be loaded.");
+      stopVoice();
     }
-  }, [protocol, tilt]);
+  }, [protocol, tilt, selfExam, startVoice, stopVoice]);
+
+  const toggleVoice = useCallback(() => {
+    if (guideRef.current.phase === "off") { startVoice("Voice guide on."); setSelfExam(true); }
+    else { stopVoice(); setSelfExam(false); }
+  }, [startVoice, stopVoice]);
 
   const record = useCallback(() => {
     if (!current) return;
@@ -426,9 +598,30 @@ export default function GuidedExam() {
           <h2 className="display-md mt-1">Set up the capture</h2>
           <p className="lede text-[14px] mt-2">
             Phone on a stand, rear camera facing the patient at eye level, torch on. The patient keeps
-            looking at the light while you turn their head to each position.
+            looking at the light while the head turns to each position.
           </p>
         </div>
+        <fieldset className="space-y-2">
+          <legend className="text-[13px] text-ink-700 mb-1">Who runs the exam</legend>
+          {([
+            [false, "With an operator", "Someone else watches the screen, turns the patient's head and records each position."],
+            [true, "Self exam · voice guided", "The phone speaks each step and beeps faster as your head reaches the position; recording starts by itself. Turn the volume up."],
+          ] as const).map(([value, title, desc]) => (
+            <label key={title} className={`flex gap-3 rounded-md border px-3 py-2.5 cursor-pointer ${selfExam === value ? "border-clinical-600 bg-clinical-50" : "border-ink-200"}`}>
+              <input type="radio" name="exam-mode" className="mt-1" checked={selfExam === value} onChange={() => setSelfExam(value)} />
+              <span>
+                <span className="block text-[13.5px] font-semibold text-ink-900">{title}</span>
+                <span className="block text-[12.5px] text-ink-500">{desc}</span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+        {selfExam && (
+          <p className="text-[12.5px] text-ink-600 rounded-md bg-ink-50 px-3 py-2">
+            You need a stand at eye level and the calibration card: two dots 7 cm either side of the camera lens.
+            Keep your eyes on the light; never look at the screen while it is recording.
+          </p>
+        )}
         <label className="block text-[13px] text-ink-700">
           Protocol
           <select className="mt-1 block w-full border border-ink-200 rounded-md px-3 py-2 bg-white"
@@ -451,7 +644,7 @@ export default function GuidedExam() {
           </span>
         </label>
         {error && <p className="text-[13px] text-red-600">{error}</p>}
-        <button className="btn-primary" onClick={begin}>Start the camera</button>
+        <button className="btn-primary" onClick={begin}>{selfExam ? "Start the self exam" : "Start the camera"}</button>
         <p className="text-[11.5px] text-ink-400">
           Only measurements leave the phone — never the video. Decision support, not a diagnosis.
         </p>
@@ -460,106 +653,146 @@ export default function GuidedExam() {
   }
 
   const done = plan ? plan.positions.filter((p) => capturesRef.current[p.position]?.length).length : 0;
+  const total = plan?.positions.length ?? 0;
+  const capturing = stage === "capture";
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
-      <div className="space-y-3">
-        <div className={`relative bg-black rounded-card overflow-hidden aspect-video ${cameraOn ? "" : "hidden"}`}>
-          <video ref={videoRef} playsInline muted className="w-full h-full object-contain" />
-          <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
-          {recProgress !== null && (
-            <div className="absolute bottom-0 left-0 h-1.5 bg-emerald-500" style={{ width: `${Math.min(100, recProgress * 100)}%` }} />
-          )}
+    // While capturing on a phone the exam takes the whole screen: the camera stays
+    // fixed at the top and the panel below scrolls on its own.
+    <div className={capturing ? "fixed inset-0 z-50 flex flex-col bg-white lg:static lg:z-auto lg:block" : ""}>
+      <div className={capturing
+        ? "flex-1 min-h-0 flex flex-col lg:grid lg:grid-cols-[1fr_340px] lg:gap-6"
+        : "grid gap-6 lg:grid-cols-[1fr_340px]"}>
+        <div className={capturing ? "flex-none" : "hidden"}>
+          <div className={`relative bg-black overflow-hidden h-[55dvh] lg:h-auto lg:aspect-video lg:rounded-card ${cameraOn ? "" : "hidden"}`}>
+            <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
+            <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
+            {current && (
+              <>
+                <div className="absolute top-0 inset-x-0 flex items-start justify-between gap-2 p-3">
+                  <button className="rounded-full bg-black/55 text-white text-[12.5px] px-3 py-1.5"
+                          onClick={() => setStage(done > 0 ? "review" : "setup")}>
+                    ✕ {done > 0 ? "Finish" : "Exit"}
+                  </button>
+                  <span className="rounded-full bg-black/55 text-white text-[12px] font-mono px-3 py-1.5">
+                    {idx + 1}/{total}{selfExam ? " · voice" : ""}
+                  </span>
+                </div>
+                <div className="absolute bottom-3 inset-x-3 flex justify-center pointer-events-none">
+                  <span className={`rounded-full px-3 py-1.5 text-[12.5px] text-white text-center ${
+                    recProgress !== null ? "bg-emerald-600/90" : guidance?.onTarget ? "bg-emerald-600/80" : "bg-black/60"}`}>
+                    {recProgress !== null ? "Recording — hold still"
+                      : guidance?.onTarget ? "On target — hold still" : guidance?.hints[0] ?? ""}
+                  </span>
+                </div>
+              </>
+            )}
+            {recProgress !== null && (
+              <div className="absolute bottom-0 left-0 h-1.5 bg-emerald-500" style={{ width: `${Math.min(100, recProgress * 100)}%` }} />
+            )}
+          </div>
         </div>
 
-        {stage === "results" && result && <Results result={result} plan={plan} onRetake={retake} onReport={openReport} />}
-
-        {(stage === "review" || stage === "uploading") && (
-          <div className="surface-raised p-5 space-y-3">
-            <h3 className="display-md text-[20px]">{done} of {plan?.positions.length} positions recorded</h3>
-            <p className="lede text-[13.5px]">
-              Upload the measurements to check every frame, fit the calibration and measure each gaze. Only landmark
-              numbers are sent, never images — and nothing until you press the button.
-            </p>
-            {error && <p className="text-[13px] text-red-600">{error}</p>}
-            <div className="flex gap-2">
-              <button className="btn-primary" onClick={upload} disabled={stage === "uploading" || done === 0}>
-                {stage === "uploading" ? "Measuring…" : "Measure and evaluate"}
-              </button>
-              <button className="btn-secondary" onClick={() => setStage("capture")}>Back to capture</button>
+        <aside className={capturing ? "flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 space-y-4 lg:p-0 lg:overflow-visible" : "space-y-4 order-last lg:order-none lg:col-start-2 lg:row-start-1"}>
+          {capturing && current && (
+            <div className="surface-raised p-5 space-y-3">
+              <p className="eyebrow">Position {idx + 1} of {total}</p>
+              <h3 className="text-[17px] font-semibold text-ink-900">{positionLabel(current)}</h3>
+              <p className="text-[13.5px] text-ink-600">{current.instruction}</p>
+              {selfExam && (
+                <p className="text-[12.5px] text-clinical-700 bg-clinical-50 rounded-md px-3 py-2">
+                  Voice guide on: listen and keep your eyes on the light. Recording starts by itself when your head holds the position.
+                </p>
+              )}
+              <div className={`rounded-md px-3 py-2 text-[13px] ${guidance?.onTarget ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
+                {guidance?.onTarget ? "On target — hold still" : guidance?.hints.map((h) => <div key={h}>{h}</div>)}
+              </div>
+              <dl className="grid grid-cols-3 gap-1 text-[12px] text-ink-500 font-mono">
+                <dt>yaw</dt><dt>pitch</dt><dt>roll</dt>
+                <dd className="text-ink-900">{live.pose ? live.pose.yaw_deg.toFixed(0) : "–"}°</dd>
+                <dd className="text-ink-900">{live.pose ? live.pose.pitch_deg.toFixed(0) : "–"}°</dd>
+                <dd className="text-ink-900">{live.pose ? live.pose.roll_deg.toFixed(0) : "–"}°</dd>
+              </dl>
+              <ul className="text-[12.5px] space-y-1">
+                {observedEyes(current).map((eye) => {
+                  const o = live.eyes[eye];
+                  return (
+                    <li key={eye} className="flex justify-between">
+                      <span className="text-ink-600">{EYE_NAME[eye]}</span>
+                      <span className={o?.limbus && o.reflex_px ? "text-emerald-600" : "text-amber-700"}>
+                        {!o ? "–" : !o.limbus ? "limbus not found" : !o.reflex_px ? "no reflex" : "limbus · reflex"}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <p className="text-[11.5px] text-ink-400">{live.fps ? `${live.fps.toFixed(0)} frames/s processed` : "Starting…"}</p>
+              {error && <p className="text-[13px] text-red-600">{error}</p>}
+              <div className="flex flex-wrap gap-2">
+                <button className="btn-primary" onClick={record} disabled={recProgress !== null || !live.pose}>
+                  {recProgress !== null ? "Recording…" : capturesRef.current[current.position]?.length ? "Record again" : `Record ${current.hold_s} s`}
+                </button>
+                <button className="btn-secondary" disabled={recProgress !== null}
+                        onClick={() => (idx + 1 < total ? setIdx(idx + 1) : setStage("review"))}>
+                  Skip
+                </button>
+                <button className="btn-secondary" disabled={recProgress !== null || done === 0} onClick={() => setStage("review")}>
+                  Finish
+                </button>
+                <button className="btn-secondary" disabled={torch === null} onClick={toggleTorch}>
+                  {torch === null ? "Torch unavailable" : torch ? "Torch on" : "Torch off"}
+                </button>
+                <button className="btn-secondary" onClick={toggleVoice}>
+                  {selfExam ? "Voice guide on" : "Voice guide off"}
+                </button>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
 
-      <aside className="space-y-4">
-        {stage === "capture" && current && (
-          <div className="surface-raised p-5 space-y-3">
-            <p className="eyebrow">Position {idx + 1} of {plan?.positions.length}</p>
-            <h3 className="text-[17px] font-semibold text-ink-900">{positionLabel(current)}</h3>
-            <p className="text-[13.5px] text-ink-600">{current.instruction}</p>
-            <div className={`rounded-md px-3 py-2 text-[13px] ${guidance?.onTarget ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
-              {guidance?.onTarget ? "On target — hold still" : guidance?.hints.map((h) => <div key={h}>{h}</div>)}
-            </div>
-            <dl className="grid grid-cols-3 gap-1 text-[12px] text-ink-500 font-mono">
-              <dt>yaw</dt><dt>pitch</dt><dt>roll</dt>
-              <dd className="text-ink-900">{live.pose ? live.pose.yaw_deg.toFixed(0) : "–"}°</dd>
-              <dd className="text-ink-900">{live.pose ? live.pose.pitch_deg.toFixed(0) : "–"}°</dd>
-              <dd className="text-ink-900">{live.pose ? live.pose.roll_deg.toFixed(0) : "–"}°</dd>
-            </dl>
-            <ul className="text-[12.5px] space-y-1">
-              {observedEyes(current).map((eye) => {
-                const o = live.eyes[eye];
+          {plan && (
+            <ol className="surface p-4 text-[12.5px] space-y-1">
+              {plan.positions.map((p, i) => {
+                const frames = captures[p.position];
+                const fps = frames ? effectiveFps(frames) : null;
+                const status = qc?.positions.find((q) => q.position === p.position);
                 return (
-                  <li key={eye} className="flex justify-between">
-                    <span className="text-ink-600">{EYE_NAME[eye]}</span>
-                    <span className={o?.limbus && o.reflex_px ? "text-emerald-600" : "text-amber-700"}>
-                      {!o ? "–" : !o.limbus ? "limbus not found" : !o.reflex_px ? "no reflex" : "limbus · reflex"}
+                  <li key={p.position} className={`flex justify-between gap-2 ${i === idx && capturing ? "font-semibold text-ink-900" : "text-ink-600"}`}>
+                    <button className="text-left truncate hover:underline" onClick={() => { setIdx(i); setStage("capture"); }}>
+                      {positionLabel(p)}
+                    </button>
+                    <span className={status ? (status.status === "OK" ? "text-emerald-600" : "text-red-600") : "text-ink-400"}>
+                      {status ? `${status.frames_valid}/${status.frames_total}` : frames?.length ? `${frames.length} fr${fps ? ` · ${fps.toFixed(0)}/s` : ""}` : "–"}
                     </span>
                   </li>
                 );
               })}
-            </ul>
-            <p className="text-[11.5px] text-ink-400">{live.fps ? `${live.fps.toFixed(0)} frames/s processed` : "Starting…"}</p>
-            {error && <p className="text-[13px] text-red-600">{error}</p>}
-            <div className="flex flex-wrap gap-2">
-              <button className="btn-primary" onClick={record} disabled={recProgress !== null || !live.pose}>
-                {recProgress !== null ? "Recording…" : capturesRef.current[current.position]?.length ? "Record again" : `Record ${current.hold_s} s`}
-              </button>
-              <button className="btn-secondary" disabled={recProgress !== null}
-                      onClick={() => (idx + 1 < (plan?.positions.length ?? 0) ? setIdx(idx + 1) : setStage("review"))}>
-                Skip
-              </button>
-              <button className="btn-secondary" disabled={recProgress !== null || done === 0} onClick={() => setStage("review")}>
-                Finish
-              </button>
-              <button className="btn-secondary" disabled={torch === null} onClick={toggleTorch}>
-                {torch === null ? "Torch unavailable" : torch ? "Torch on" : "Torch off"}
-              </button>
-            </div>
+            </ol>
+          )}
+        </aside>
+
+        {!capturing && (
+          <div className="space-y-3 lg:col-start-1 lg:row-start-1">
+            {stage === "results" && result && <Results result={result} plan={plan} onRetake={retake} onReport={openReport} />}
+
+            {(stage === "review" || stage === "uploading") && (
+              <div className="surface-raised p-5 space-y-3">
+                <h3 className="display-md text-[20px]">{done} of {total} positions recorded</h3>
+                <p className="lede text-[13.5px]">
+                  Upload the measurements to check every frame, fit the calibration and measure each gaze. Only landmark
+                  numbers are sent, never images — and nothing until you press the button.
+                </p>
+                {error && <p className="text-[13px] text-red-600">{error}</p>}
+                <div className="flex gap-2">
+                  <button className="btn-primary" onClick={upload} disabled={stage === "uploading" || done === 0}>
+                    {stage === "uploading" ? "Measuring…" : "Measure and evaluate"}
+                  </button>
+                  <button className="btn-secondary" onClick={() => setStage("capture")}>Back to capture</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
-
-        {plan && (
-          <ol className="surface p-4 text-[12.5px] space-y-1">
-            {plan.positions.map((p, i) => {
-              const frames = captures[p.position];
-              const fps = frames ? effectiveFps(frames) : null;
-              const status = qc?.positions.find((q) => q.position === p.position);
-              return (
-                <li key={p.position} className={`flex justify-between gap-2 ${i === idx && stage === "capture" ? "font-semibold text-ink-900" : "text-ink-600"}`}>
-                  <button className="text-left truncate hover:underline" onClick={() => { setIdx(i); setStage("capture"); }}>
-                    {positionLabel(p)}
-                  </button>
-                  <span className={status ? (status.status === "OK" ? "text-emerald-600" : "text-red-600") : "text-ink-400"}>
-                    {status ? `${status.frames_valid}/${status.frames_total}` : frames?.length ? `${frames.length} fr${fps ? ` · ${fps.toFixed(0)}/s` : ""}` : "–"}
-                  </span>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </aside>
+      </div>
     </div>
   );
 }

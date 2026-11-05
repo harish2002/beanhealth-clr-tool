@@ -95,7 +95,8 @@ beanstrabis/
 │   ├── lib/
 │   │   ├── api.ts                   ← Axios API calls to FastAPI
 │   │   ├── examLandmarks.ts         ← Port of backend/exam/landmarks (parity: tests/examLandmarks.test.ts)
-│   │   ├── examGuidance.ts          ← Operator hints + session assembly
+│   │   ├── examGuidance.ts          ← Operator hints, self-exam spoken guidance, session assembly
+│   │   ├── examVoice.ts             ← Self-exam speech + tones (Web Speech / Web Audio)
 │   │   ├── examResults.ts           ← Grid layout and labels for the exam results
 │   │   └── types.ts                 ← Shared TypeScript types
 │   ├── store/
