@@ -91,12 +91,14 @@ beanstrabis/
 │   │   ├── TriageReport.tsx         ← Result card with urgency
 │   │   ├── AnnotatedEye.tsx         ← Canvas overlay component
 │   │   ├── GuidedExam.tsx           ← Head-pose guidance, on-phone landmarks, /exam/evaluate, grid, report
+│   │   ├── ExamPoseGuide.tsx        ← Per-position figure (head, eyes, covered eye, target) + live pose map
 │   │   └── UrgencyBadge.tsx         ← URGENT / NORMAL badge
 │   ├── lib/
 │   │   ├── api.ts                   ← Axios API calls to FastAPI
 │   │   ├── examLandmarks.ts         ← Port of backend/exam/landmarks (parity: tests/examLandmarks.test.ts)
 │   │   ├── examGuidance.ts          ← Operator hints, self-exam spoken guidance, session assembly
 │   │   ├── examVoice.ts             ← Self-exam speech + tones (Web Speech / Web Audio)
+│   │   ├── examFigure.ts            ← Position target → on-screen figure terms (camera view, unmirrored)
 │   │   ├── examResults.ts           ← Grid layout and labels for the exam results
 │   │   └── types.ts                 ← Shared TypeScript types
 │   ├── store/

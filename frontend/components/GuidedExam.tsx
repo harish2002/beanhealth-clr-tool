@@ -50,6 +50,7 @@ import {
 } from "@/lib/examGuidance";
 import type { FrameOrientation } from "@/lib/examGuidance";
 import { ExamVoice, VOICE_RATES } from "@/lib/examVoice";
+import ExamPoseGuide from "@/components/ExamPoseGuide";
 import type { VoiceSpeed } from "@/lib/examVoice";
 import {
   findingsToShow, gazeName, gridLayout, horizontalKind, REFERRAL_TITLE, sizeParts, verticalKind, verticalLabel,
@@ -758,7 +759,7 @@ export default function GuidedExam() {
       <div className={capturing
         ? "flex-1 min-h-0 flex flex-col max-lg:landscape:flex-row lg:grid lg:grid-cols-[1fr_340px] lg:gap-6"
         : "grid gap-6 lg:grid-cols-[1fr_340px]"}>
-        <div className={capturing ? "flex-none max-lg:landscape:w-[58%] max-lg:landscape:h-full" : "hidden"}>
+        <div className={capturing ? "flex-none max-lg:landscape:w-[58%] max-lg:landscape:h-full lg:space-y-3" : "hidden"}>
           <div className={`relative bg-black overflow-hidden h-[55dvh] max-lg:landscape:h-full lg:h-auto lg:aspect-video lg:rounded-card ${cameraOn ? "" : "hidden"}`}>
             <video ref={videoRef} playsInline muted className="w-full h-full object-cover" />
             <canvas ref={overlayRef} className="absolute inset-0 w-full h-full pointer-events-none" />
@@ -791,6 +792,9 @@ export default function GuidedExam() {
               <div className="absolute bottom-0 left-0 h-1.5 bg-emerald-500" style={{ width: `${Math.min(100, recProgress * 100)}%` }} />
             )}
           </div>
+          {capturing && current && (
+            <ExamPoseGuide className="hidden lg:block" plan={current} pose={live.pose} distanceCm={Number(distanceCm)} />
+          )}
         </div>
 
         <aside className={capturing ? "flex-1 min-h-0 min-w-0 overflow-y-auto overscroll-contain p-4 space-y-4 lg:p-0 lg:overflow-visible" : "space-y-4 order-last lg:order-none lg:col-start-2 lg:row-start-1"}>
@@ -799,6 +803,7 @@ export default function GuidedExam() {
               <p className="eyebrow">Position {idx + 1} of {total}</p>
               <h3 className="text-[17px] font-semibold text-ink-900">{positionLabel(current)}</h3>
               <p className="text-[13.5px] text-ink-600">{current.instruction}</p>
+              <ExamPoseGuide className="lg:hidden" plan={current} pose={live.pose} distanceCm={Number(distanceCm)} />
               {rotated && (
                 <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-800 space-y-2">
                   <p>
