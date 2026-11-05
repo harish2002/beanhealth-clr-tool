@@ -10,10 +10,16 @@
 
 type AudioContextCtor = typeof AudioContext;
 
+/** Speaking rates offered to the patient (1 = the engine's normal speed). */
+export const VOICE_RATES = { slow: 0.7, normal: 0.82, fast: 0.95 } as const;
+export type VoiceSpeed = keyof typeof VOICE_RATES;
+
 export class ExamVoice {
   private ctx: AudioContext | null = null;
   // Chrome can drop an utterance's end event if nothing references it.
   private pending = new Set<SpeechSynthesisUtterance>();
+  /** Speaking rate for the next utterances. */
+  rate: number = VOICE_RATES.normal;
 
   /** True while any utterance this voice queued is still being spoken. */
   get speaking(): boolean {
@@ -40,7 +46,7 @@ export class ExamVoice {
     if (!synth) return Promise.resolve();
     if (interrupt) synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 0.95;
+    u.rate = this.rate;
     return new Promise((resolve) => {
       let done = false;
       const finish = () => {
@@ -51,7 +57,7 @@ export class ExamVoice {
         resolve();
       };
       // Some engines never fire the end event; give up after a generous estimate.
-      const timer = setTimeout(finish, 2000 + text.length * 110);
+      const timer = setTimeout(finish, 2000 + (text.length * 110) / this.rate);
       u.onend = finish;
       u.onerror = finish;
       this.pending.add(u);

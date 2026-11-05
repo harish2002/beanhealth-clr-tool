@@ -49,7 +49,8 @@ import {
   spokenHint, spokenInstruction, usableFrames,
 } from "@/lib/examGuidance";
 import type { FrameOrientation } from "@/lib/examGuidance";
-import { ExamVoice } from "@/lib/examVoice";
+import { ExamVoice, VOICE_RATES } from "@/lib/examVoice";
+import type { VoiceSpeed } from "@/lib/examVoice";
 import {
   findingsToShow, gazeName, gridLayout, horizontalKind, REFERRAL_TITLE, sizeParts, verticalKind, verticalLabel,
 } from "@/lib/examResults";
@@ -95,7 +96,8 @@ function recordingDone(p: ExamPositionPlan, elapsedMs: number, frames: number): 
 
 // ── Self exam ──
 const SELF_DWELL_MS = 600;             // pose held this long on target before recording starts
-const SELF_HINT_MS = 4000;             // spoken correction at most this often
+const SELF_HINT_MS = 5000;             // spoken correction at most this often
+const VOICE_SPEED_KEY = "beanhealth.exam.voiceSpeed";
 const SELF_MAX_RETRIES = 2;            // then keep the frames anyway; the server's QC decides
 const ROTATE_BACK_EVERY_MS = 5000;     // how often the voice repeats "turn the phone back"
 const SELF_INTRO =
@@ -143,6 +145,7 @@ export default function GuidedExam() {
   const [protocol, setProtocol] = useState<ExamProtocol>("nine_gaze");
   const [tilt, setTilt] = useState(true);
   const [selfExam, setSelfExam] = useState(false);
+  const [voiceSpeed, setVoiceSpeed] = useState<VoiceSpeed>("normal");
   const [distanceCm, setDistanceCm] = useState("36");
   const [plan, setPlan] = useState<ExamProtocolPlan | null>(null);
   const [idx, setIdx] = useState(0);
@@ -212,6 +215,19 @@ export default function GuidedExam() {
   }, []);
 
   // ── Self exam: voice and tones ──────────────────────────────────────────
+
+  // The patient's chosen speaking speed, remembered on this phone.
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(VOICE_SPEED_KEY);
+      if (saved && saved in VOICE_RATES) setVoiceSpeed(saved as VoiceSpeed);
+    } catch { /* storage blocked: keep the default */ }
+  }, []);
+
+  useEffect(() => {
+    if (voiceRef.current) voiceRef.current.rate = VOICE_RATES[voiceSpeed];
+    try { localStorage.setItem(VOICE_SPEED_KEY, voiceSpeed); } catch { /* not remembered */ }
+  }, [voiceSpeed]);
 
   /** The first recording fixes the session's orientation. */
   const lockOrientation = useCallback(() => {
@@ -303,6 +319,7 @@ export default function GuidedExam() {
   const startVoice = useCallback((intro: string) => {
     voiceRef.current ??= new ExamVoice();
     const voice = voiceRef.current;
+    voice.rate = VOICE_RATES[voiceSpeed];
     voice.unlock();
     const g = newGuide("intro");
     g.token = guideRef.current.token + 1;
@@ -310,7 +327,7 @@ export default function GuidedExam() {
     void voice.say(intro).then(() => {
       if (guideRef.current === g && g.phase === "intro") g.phase = "ready";
     });
-  }, []);
+  }, [voiceSpeed]);
 
   const stopVoice = useCallback(() => {
     guideRef.current = newGuide("off");
@@ -684,6 +701,17 @@ export default function GuidedExam() {
           ))}
         </fieldset>
         {selfExam && (
+          <label className="block text-[13px] text-ink-700">
+            Voice speed
+            <select className="mt-1 block w-full border border-ink-200 rounded-md px-3 py-2 bg-white"
+                    value={voiceSpeed} onChange={(e) => setVoiceSpeed(e.target.value as VoiceSpeed)}>
+              <option value="slow">Slow</option>
+              <option value="normal">Normal</option>
+              <option value="fast">Fast</option>
+            </select>
+          </label>
+        )}
+        {selfExam && (
           <p className="text-[12.5px] text-ink-600 rounded-md bg-ink-50 px-3 py-2">
             You need a stand at eye level and the calibration card: two dots 7 cm either side of the camera lens.
             Keep your eyes on the light; never look at the screen while it is recording.
@@ -828,6 +856,14 @@ export default function GuidedExam() {
                 <button className="btn-secondary" onClick={toggleVoice}>
                   {selfExam ? "Voice guide on" : "Voice guide off"}
                 </button>
+                {selfExam && (
+                  <select aria-label="Voice speed" className="border border-ink-200 rounded-md px-2 py-1.5 text-[13px] bg-white"
+                          value={voiceSpeed} onChange={(e) => setVoiceSpeed(e.target.value as VoiceSpeed)}>
+                    <option value="slow">Voice: slow</option>
+                    <option value="normal">Voice: normal</option>
+                    <option value="fast">Voice: fast</option>
+                  </select>
+                )}
               </div>
             </div>
           )}
