@@ -19,6 +19,25 @@ import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/ty
  * Results carry a "test_capture" flag — the report shows a banner so this
  * cannot be confused with a real clinical screening.
  */
+
+const REPORT_PHOTO_MAX_PX = 1200;
+
+/**
+ * The photo as printed on the report: redrawn on a canvas, so the camera's
+ * EXIF block (GPS location, device, timestamps) is not carried into a PDF
+ * that leaves the clinic, and scaled down so the PDF stays small.
+ */
+async function reportPhoto(file: File): Promise<string> {
+  const bitmap = await createImageBitmap(file);   // applies EXIF orientation
+  const scale  = Math.min(1, REPORT_PHOTO_MAX_PX / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width  = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")?.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  return canvas.toDataURL("image/jpeg", 0.85);
+}
+
 export default function TestUploadPage() {
   const router            = useRouter();
   const reset             = useAppStore((s) => s.reset);
@@ -71,7 +90,7 @@ export default function TestUploadPage() {
       reset();
       setPatient(name.trim(), parsedAge);
       setPatientMeta("", "Test Mode", "Image upload");
-      if (previewUrl) setCapturedImage(previewUrl, file);   // shown on the printed report
+      setCapturedImage(await reportPhoto(file), file);     // shown on the printed report
 
       const result = await analyseTest(file, name.trim(), parsedAge);
 
