@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAppStore } from "@/store/useAppStore";
 import TriageReport, { AlignmentSection } from "@/components/TriageReport";
+import ImageReport from "@/components/ImageReport";
 import type { PatientMeta } from "@/components/TriageReport";
 import { TopBar, EyeGlyph } from "@/components/ui/Chrome";
 import type { StreamSuccessResponse, StreamInconclusiveResponse } from "@/lib/types";
@@ -243,6 +244,10 @@ export default function ResultPage() {
   const screenerRole      = useAppStore((s) => s.screenerRole);
   const screeningLocation = useAppStore((s) => s.screeningLocation);
   const sessionId         = useAppStore((s) => s.sessionId);
+  const patientName       = useAppStore((s) => s.patientName);
+  const patientAge        = useAppStore((s) => s.patientAge);
+  // Uploaded-photo results open on the one-page printable report.
+  const [fullReport, setFullReport] = useState(false);
 
   // Redirect to intake if nothing in store
   useEffect(() => {
@@ -259,6 +264,23 @@ export default function ResultPage() {
   if (isLoading)       return <LoadingScreen />;
   if (errorMessage)    return <ErrorScreen message={errorMessage} onRetry={handleRetry} />;
   if (!analysisResult) return <LoadingScreen />;
+
+  // Saved photo run through /analyse-test: both methods on one printable page.
+  const isTestCapture =
+    analysisResult.status === "SUCCESS" ? analysisResult.technical.flags.includes("test_capture")
+    : analysisResult.status === "INCONCLUSIVE" ? analysisResult.flags.includes("test_capture")
+    : false;
+  if (isTestCapture && analysisResult.status !== "ERROR" && !(fullReport && analysisResult.status === "SUCCESS")) {
+    return (
+      <ImageReport
+        report={analysisResult}
+        patientName={analysisResult.patient?.name ?? patientName}
+        patientAge={analysisResult.patient?.age ?? patientAge}
+        onNewImage={() => { reset(); router.push("/test"); }}
+        onFullReport={analysisResult.status === "SUCCESS" ? () => setFullReport(true) : undefined}
+      />
+    );
+  }
 
   if (analysisResult.status === "INCONCLUSIVE") {
     return (

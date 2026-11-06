@@ -335,6 +335,43 @@ def _draw_zoomed_annotations(
     return out
 
 
+_REPORT_EYE_SCALE = 4
+_SUBPIXEL_SHIFT   = 4          # cv2 drawing with 1/16-pixel coordinates
+
+
+def _report_eye_view(
+    crop: np.ndarray,
+    pupil: Tuple[float, float],
+    clr: Tuple[float, float],
+    iris_r: float,
+    side_label: str,
+) -> np.ndarray:
+    """
+    Enlarged eye crop for the printed report: iris ring, a pupil crosshair and
+    a reflex ring drawn at sub-pixel positions, so a reader can check by eye
+    that each mark sits on the pupil and on the torch reflex. Crosshair and
+    ring (rather than two dots) keep both visible when they nearly coincide.
+    """
+    s = _REPORT_EYE_SCALE
+    big = cv2.resize(crop, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC)
+    k = 1 << _SUBPIXEL_SHIFT
+
+    def at(pt: Tuple[float, float]) -> Tuple[int, int]:
+        # cv2.resize maps source pixel centre x to (x + 0.5)·s − 0.5.
+        return (int(round(((pt[0] + 0.5) * s - 0.5) * k)), int(round(((pt[1] + 0.5) * s - 0.5) * k)))
+
+    px, py = at(pupil)
+    cv2.circle(big, (px, py), int(round(iris_r * s * k)), _COLOUR_IRIS_RING, 2, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+    cv2.circle(big, at(clr), 7 * k, (255, 255, 255), 4, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+    cv2.circle(big, at(clr), 7 * k, _COLOUR_CLR, 2, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+    arm = 9 * k
+    for colour, width in (((255, 255, 255), 4), (_COLOUR_PUPIL, 2)):
+        cv2.line(big, (px - arm, py), (px + arm, py), colour, width, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+        cv2.line(big, (px, py - arm), (px, py + arm), colour, width, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+    _draw_label(big, side_label, (8, 26), colour=(235, 235, 235), scale=0.8, thickness=2)
+    return big
+
+
 def _eye_pair_b64(left: np.ndarray, right: np.ndarray) -> str:
     """
     Show the patient's two eyes side by side as they appear in the photo:
@@ -707,6 +744,14 @@ def build_success_report(
     )
     m5_b64 = _eye_pair_b64(m5_left, m5_right)
 
+    # Printed report — enlarged eyes with pupil and reflex marks
+    report_eyes_b64 = _eye_pair_b64(
+        _report_eye_view(m1_left,  pupil_result.left_pupil,  clr_result.left_clr,
+                         pupil_result.left_iris_radius,  "L"),
+        _report_eye_view(m1_right, pupil_result.right_pupil, clr_result.right_clr,
+                         pupil_result.right_iris_radius, "R"),
+    )
+
     # Step 6 — final annotated full image with clinical measurements overlay
     m6_b64 = _generate_result_overlay(annotated_img, asymmetry, classification, displacement)
 
@@ -780,6 +825,7 @@ def build_success_report(
             "module4_clr":    m4_b64,
             "module5_vector": m5_b64,
             "module6_result": m6_b64,
+            "report_eyes":    report_eyes_b64,
         },
         "annotated_image_b64": img_b64,
         "timestamp":           _timestamp(),

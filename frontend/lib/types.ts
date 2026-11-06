@@ -86,6 +86,8 @@ export interface IntermediateImages {
   module6_result: string;  // Final annotated image with clinical overlay
   /** Method B — canthus axis + pupil projection. Null when corners unavailable. */
   module8_alignment?: string | null;
+  /** Printed report — both eyes enlarged, pupil cross + reflex ring. */
+  report_eyes?: string;
 }
 
 export interface SuccessResponse {
@@ -109,6 +111,8 @@ export interface InconclusiveResponse {
   // Torch-free corner-alignment net — present when eye detection + pupil
   // localisation succeeded before the halt (e.g. a no-flash CLR failure).
   alignment?:         AlignmentResult;
+  // Carries module8_alignment only, for Method B's geometry.
+  intermediate_images?: Pick<IntermediateImages, "module8_alignment">;
   // Present when reason = "high_variance_asymmetry" or "insufficient_frames"
   frames_total?:      number;
   frames_accepted?:   number;

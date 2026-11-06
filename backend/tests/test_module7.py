@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import cv2
 import numpy as np
 import pytest
 
@@ -246,6 +247,14 @@ class TestBuildSuccessReport:
         b64 = self.report["annotated_image_b64"]
         decoded = base64.b64decode(b64)
         assert decoded[:2] == b"\xff\xd8"
+
+    def test_report_eyes_image_is_enlarged_jpeg(self):
+        """The printed report's eye image: both crops at 4× scale, side by side."""
+        decoded = base64.b64decode(self.report["intermediate_images"]["report_eyes"])
+        assert decoded[:2] == b"\xff\xd8"
+        img = cv2.imdecode(np.frombuffer(decoded, np.uint8), cv2.IMREAD_COLOR)
+        crop_h = self.kwargs["detection"].left_crop.shape[0]
+        assert img.shape[0] == 4 * crop_h
 
     def test_timestamp_present_and_non_empty(self):
         assert "timestamp" in self.report

@@ -89,6 +89,7 @@ beanstrabis/
 │   │   ├── CameraCapture.tsx        ← Camera + torch UI
 │   │   ├── PatientForm.tsx          ← Name, age input
 │   │   ├── TriageReport.tsx         ← Result card with urgency
+│   │   ├── ImageReport.tsx          ← One-page printable report for an uploaded photo (Method A + B)
 │   │   ├── AnnotatedEye.tsx         ← Canvas overlay component
 │   │   ├── GuidedExam.tsx           ← Head-pose guidance, on-phone landmarks, /exam/evaluate, grid, report
 │   │   ├── ExamPoseGuide.tsx        ← Per-position figure (head, eyes, covered eye, target) + live pose map
