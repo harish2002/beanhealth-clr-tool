@@ -494,7 +494,22 @@ class TestDarkPupilSeeding:
         err = float(np.hypot(centre[0] - self.TRUE_PUPIL[0], centre[1] - self.TRUE_PUPIL[1]))
         assert err < 1.5, f"pupil {centre} is {err:.1f}px from the true pupil {self.TRUE_PUPIL}"
         assert "pupil_from_darkblob_left" in flags
-        assert "darkblob_reseeded_left" in flags
+        assert "hough_rejected_left" in flags
+
+    @pytest.mark.unit
+    @pytest.mark.parametrize("max_offset, expect_ok", [(0.5, True), (99.0, False)])
+    def test_offset_hough_circle_does_not_pull_the_pupil(self, monkeypatch, max_offset, expect_ok):
+        """Regression (Dr Agarwal's Pt 1): Hough locked onto the sclera about one
+        iris radius beside the eye. Seeded there, the pupil search only saw part
+        of the pupil and returned a plausible-looking centre 0.45 iris radii off,
+        which read 37 PD of esotropia in straight eyes. The circle is now
+        rejected (max_offset=99 shows the old behaviour)."""
+        import pipeline.module2_pupil as m2
+        monkeypatch.setattr(m2, "HOUGH_MAX_OFFSET_IRIS_RADII", max_offset)
+        centre, flags = self._run(monkeypatch, hough=(92.0, 40.0, 28.0))
+        err = float(np.hypot(centre[0] - self.TRUE_PUPIL[0], centre[1] - self.TRUE_PUPIL[1]))
+        assert (err < 1.5) == expect_ok, f"pupil {centre} is {err:.1f}px from the true pupil"
+        assert ("hough_rejected_left" in flags) == expect_ok
 
     @pytest.mark.unit
     def test_good_hough_circle_is_used_without_reseeding(self, monkeypatch):

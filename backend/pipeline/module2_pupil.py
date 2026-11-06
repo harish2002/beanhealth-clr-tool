@@ -46,6 +46,7 @@ from utils.constants import (
     PUPIL_AGREEMENT_HIGH_PX,
     PUPIL_AGREEMENT_MEDIUM_PX,
     DARK_PUPIL_MAX_IRIS_RADII,
+    HOUGH_MAX_OFFSET_IRIS_RADII,
 )
 from utils.exceptions import PupilError
 
@@ -533,6 +534,17 @@ def _localise_one_eye(
     if hough_result is not None:
         hx, hy, hr = hough_result
         logger.debug(f"Module 2 [{eye_label}]: Hough result = ({hx:.1f},{hy:.1f}) r={hr:.1f}px")
+        # A circle far from the landmark iris is the sclera / eye-corner edge,
+        # not the limbus — seeding the pupil search from it finds the wrong spot.
+        offset = float(np.hypot(hx - lm_centre[0], hy - lm_centre[1]))
+        if iris_radius > 0 and offset > HOUGH_MAX_OFFSET_IRIS_RADII * iris_radius:
+            logger.info(
+                f"Module 2 [{eye_label}]: Hough circle rejected — centre "
+                f"{offset / iris_radius:.2f} iris radii from the iris landmarks "
+                f"(max {HOUGH_MAX_OFFSET_IRIS_RADII})."
+            )
+            flags.append(f"hough_rejected_{eye_label}")
+            hough_result = None
     else:
         logger.debug(f"Module 2 [{eye_label}]: Hough found no circles.")
 

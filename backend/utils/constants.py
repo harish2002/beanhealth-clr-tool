@@ -191,3 +191,12 @@ DIRECTION_INFERIOR = "inferior"
 # one eye and hence a false asymmetry, so the candidate is rejected and the
 # iris-circle estimate is used instead.
 DARK_PUPIL_MAX_IRIS_RADII = 0.6
+
+# Module 2 — Hough circle sanity bound.
+# The Hough circle is only a seed for the dark-pupil search, and on dark irises
+# it can lock onto the sclera / eye-corner edge instead of the limbus.  A circle
+# whose centre sits further than this fraction of the iris radius from the
+# MediaPipe iris centre is not the iris: drop it and seed from the landmarks.
+# (Seeding from such a circle put one real photo's pupil 0.45 iris radii off
+# and read 37 PD of esotropia in straight eyes.)
+HOUGH_MAX_OFFSET_IRIS_RADII = 0.5
