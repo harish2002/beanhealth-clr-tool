@@ -209,6 +209,17 @@ async def test_loaded_image_is_in_module1_frame(size):
 
 
 @pytest.mark.asyncio
+async def test_analyse_test_age_is_optional():
+    """Saved validation photos often come without an age; never invent one."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        r = await client.post("/analyse-test",
+                              files={"image": ("t.jpg", _synthetic_jpeg(), "image/jpeg")},
+                              data={"patient_name": "Test"})
+    assert r.status_code == 200
+    assert r.json()["patient"]["age"] is None
+
+
+@pytest.mark.asyncio
 async def test_analyse_synthetic_no_face_returns_inconclusive():
     """A solid-colour synthetic image has no face → INCONCLUSIVE."""
     img = _synthetic_jpeg()

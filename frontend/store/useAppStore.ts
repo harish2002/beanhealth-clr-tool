@@ -25,7 +25,7 @@ interface AppStore {
   /** Unique per-screening ID generated client-side, e.g. BH-X4F7A2 */
   sessionId:          string;
 
-  setPatient:     (name: string, age: number) => void;
+  setPatient:     (name: string, age: number | null) => void;
   setPatientMeta: (gender: string, role: string, location: string) => void;
 
   // ── Captured image ────────────────────────────────────────────────────────

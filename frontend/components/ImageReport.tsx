@@ -45,16 +45,18 @@ function flagNote(flag: string): { text: string; eye: Eye | null } | null {
   switch (base) {
     case "hough_rejected":
     case "darkblob_reseeded":
-      return note("the iris-circle detector missed the iris (common on dark irises), so the pupil was found from the iris landmarks.");
+      return note("iris circle not found (common on dark irises); the pupil was taken from the iris landmarks.");
     case "ambiguous_reflex":
-      return note("more than one bright spot; the one nearest the pupil was used. Check the amber ring sits on the torch reflex.");
+      return note("several bright spots; the one nearest the pupil was used. Check the amber ring.");
     case "pupil_disagreement":
-      return note("pupil and iris centres disagree. Check the blue cross sits on the pupil.");
+      return note("pupil and iris centres disagree. Check the blue cross.");
     case "darkblob_rejected":
     case "pupil_darkblob_failed":
-      return note("the dark pupil could not be isolated, so the iris-circle centre was used.");
+      return note("dark pupil not isolated; the iris centre was used.");
     case "borderline_asymmetry":
       return note("the reading is close to a decision threshold.");
+    case "direction_unreliable":
+      return note("the direction of the deviation could not be determined, only its size.");
     case "low_snr_noise_dominated":
       return note("measurement noise is comparable to the reading.");
     case "pupil_from_darkblob":
@@ -118,7 +120,7 @@ function Pill({ text, tone }: { text: string; tone: string }) {
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex justify-between gap-4 py-1.5 print:py-0.5 border-b border-ink-100 last:border-0 text-[12.5px]">
+    <div className="flex justify-between gap-4 py-1.5 print:py-0.5 border-b border-ink-100 last:border-0 text-[12.5px] print:text-[11px]">
       <span className="text-ink-500">{k}</span>
       <span className="text-ink-900 font-semibold text-right tabular">{v}</span>
     </div>
@@ -141,9 +143,9 @@ function agreement(a: Finding, b: Finding): { text: string; tone: string } {
       : { text: "Both methods agree: the eyes are not aligned in this photo.", tone: "border-red-200 bg-red-50 text-red-800" };
   }
   if (a === "borderline" || b === "borderline") {
-    return { text: "One method is borderline. Read the eye picture and the numbers together before drawing a conclusion.", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+    return { text: "One method is borderline: read the eye pictures and the numbers together.", tone: "border-amber-200 bg-amber-50 text-amber-800" };
   }
-  return { text: "The methods disagree. Check the marks in the eye picture: a misplaced pupil or reflex mark explains most disagreements.", tone: "border-amber-200 bg-amber-50 text-amber-800" };
+  return { text: "The methods disagree: check the marks in the eye pictures first.", tone: "border-amber-200 bg-amber-50 text-amber-800" };
 }
 
 function methodBFinding(al: AlignmentResult | undefined): Finding {
@@ -235,7 +237,7 @@ export default function ImageReport({ report, patientName, patientAge, originalI
 
         {/* Pictures: the photo as uploaded, then what each method measured on it */}
         {(originalImage || reflexImg || alignImg) && (
-          <section className={`grid gap-3 break-inside-avoid ${originalImage ? "grid-cols-[28%_1fr] print:grid-cols-[33%_1fr]" : "grid-cols-1"}`}>
+          <section className={`grid gap-3 break-inside-avoid ${originalImage ? "grid-cols-[28%_1fr] print:grid-cols-[27%_58%] print:justify-center" : "grid-cols-1"}`}>
             {originalImage && (
               <figure>
                 <figcaption className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1">Original photo</figcaption>
@@ -349,15 +351,15 @@ export default function ImageReport({ report, patientName, patientAge, originalI
         </div>
 
         {/* Agreement */}
-        <p className={`rounded-lg border px-3.5 py-2.5 text-[13px] font-semibold break-inside-avoid ${agree.tone}`}>
+        <p className={`rounded-lg border px-3.5 py-2.5 print:py-1.5 text-[13px] print:text-[11.5px] font-semibold break-inside-avoid ${agree.tone}`}>
           {agree.text}
         </p>
 
         {/* Quality */}
         {notes.length > 0 && (
           <section className="break-inside-avoid">
-            <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1">Quality notes</h2>
-            <ul className="list-disc pl-5 text-[12px] print:text-[10.5px] text-ink-600 space-y-0.5">
+            <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1 print:mb-0.5">Quality notes</h2>
+            <ul className={`list-disc pl-5 text-[12px] print:text-[10px] text-ink-600 space-y-0.5 ${notes.length > 2 ? "print:columns-2 print:gap-6" : ""}`}>
               {notes.map((n) => <li key={n}>{n}</li>)}
             </ul>
           </section>

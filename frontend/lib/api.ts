@@ -184,12 +184,12 @@ export async function analyseStream(
 export async function analyseTest(
   image:       File,
   patientName: string,
-  patientAge:  number,
+  patientAge:  number | null,
 ): Promise<StreamAnalyseResponse> {
   const form = new FormData();
   form.append("image",        image);
   form.append("patient_name", patientName);
-  form.append("patient_age",  String(patientAge));
+  if (patientAge !== null) form.append("patient_age", String(patientAge));
 
   try {
     const response = await axios.post<StreamAnalyseResponse>(

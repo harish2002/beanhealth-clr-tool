@@ -34,7 +34,7 @@ export default function TestUploadPage() {
   const [file,       setFile]       = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [name,       setName]       = useState("Test Patient");
-  const [age,        setAge]        = useState("8");
+  const [age,        setAge]        = useState("");   // optional: never print a placeholder age
   const [dragging,   setDragging]   = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
@@ -60,9 +60,9 @@ export default function TestUploadPage() {
       setLocalError("Please select an image first.");
       return;
     }
-    const parsedAge = parseInt(age, 10);
-    if (!name.trim() || isNaN(parsedAge) || parsedAge < 1 || parsedAge > 120) {
-      setLocalError("Enter a valid name and age (1–120).");
+    const parsedAge = age.trim() === "" ? null : parseInt(age, 10);
+    if (!name.trim() || (parsedAge !== null && (isNaN(parsedAge) || parsedAge < 1 || parsedAge > 120))) {
+      setLocalError("Enter a name, and an age of 1–120 or leave it blank.");
       return;
     }
 
@@ -256,7 +256,7 @@ export default function TestUploadPage() {
             </div>
             <div>
               <label htmlFor="age" className="block text-xs font-semibold text-ink-700 mb-1.5">
-                Age <span className="text-ink-400 font-normal">(demo)</span>
+                Age <span className="text-ink-400 font-normal">(optional)</span>
               </label>
               <input
                 id="age"

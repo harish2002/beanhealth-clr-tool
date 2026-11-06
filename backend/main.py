@@ -676,7 +676,7 @@ async def analyse_stream(
 async def analyse_test(
     image:        UploadFile = File(..., description="JPEG/PNG strabismus image (research dataset, case study, etc.)"),
     patient_name: str        = Form(..., min_length=1, max_length=100),
-    patient_age:  int        = Form(..., ge=1, le=120),
+    patient_age:  Optional[int] = Form(None, ge=1, le=120),   # optional: saved photos often lack it
 ) -> JSONResponse:
     """
     Development/research endpoint for validating the CLR pipeline against

@@ -289,7 +289,7 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
           </span>
           <span>
             <span className="text-ink-400 uppercase tracking-wide text-[7.5pt] mr-1">Age</span>
-            <span className="font-semibold text-ink-800">{patient.age}</span>
+            <span className="font-semibold text-ink-800">{patient.age ?? "–"}</span>
           </span>
           {patientMeta?.gender && (
             <span>
@@ -377,7 +377,7 @@ export default function TriageReport({ result, patientMeta, onRetry }: TriageRep
             <div className="min-w-0">
               <p className="font-display text-[22px] text-ink-900 leading-tight truncate">{patient.name}</p>
               <p className="text-ink-400 text-[12px] mt-1">
-                Age {patient.age}
+                Age {patient.age ?? "–"}
                 {patientMeta?.gender            && ` · ${patientMeta.gender}`}
                 {patientMeta?.screenerRole      && ` · ${patientMeta.screenerRole}`}
                 {patientMeta?.screeningLocation && ` · ${patientMeta.screeningLocation}`}

@@ -17,7 +17,7 @@ export type AnalysisStatus = "SUCCESS" | "INCONCLUSIVE" | "ERROR";
 
 export interface PatientInfo {
   name:               string;
-  age:                number;
+  age:                number | null;   // optional on /analyse-test
   // Optional context captured at intake — not sent to backend, display-only
   gender?:            string;
   screener_role?:     string;
