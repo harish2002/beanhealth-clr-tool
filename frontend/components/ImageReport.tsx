@@ -34,35 +34,54 @@ const VERDICT: Record<AlignmentVerdict, { label: string; tone: string }> = {
   UNAVAILABLE: { label: "Not assessed", tone: "bg-ink-50 text-ink-500 border-ink-100" },
 };
 
-const EYE_NAME = { left: "left", right: "right" } as const;
+type Eye = "left" | "right";
 
-/** Plain-language notes for the flags a reader of the printed report needs. */
-function flagNote(flag: string): string | null {
+/** Plain-language note for a flag a reader of the printed report needs, and the eye it is about. */
+function flagNote(flag: string): { text: string; eye: Eye | null } | null {
   const m = flag.match(/^(.*)_(left|right)$/);
   const base = m ? m[1] : flag;
-  const eye = m ? `${EYE_NAME[m[2] as "left" | "right"]} eye` : "";
+  const eye = m ? (m[2] as Eye) : null;
+  const note = (text: string) => ({ text, eye });
   switch (base) {
     case "hough_rejected":
     case "darkblob_reseeded":
-      return `${eye}: the iris-circle detector locked onto the wrong edge; the pupil was located from the iris landmarks instead.`;
+      return note("the iris-circle detector missed the iris (common on dark irises), so the pupil was found from the iris landmarks.");
     case "ambiguous_reflex":
-      return `${eye}: more than one bright spot; the one nearest the pupil was used. Check the amber ring sits on the torch reflex.`;
+      return note("more than one bright spot; the one nearest the pupil was used. Check the amber ring sits on the torch reflex.");
     case "pupil_disagreement":
-      return `${eye}: pupil and iris centres disagree; check the blue cross sits on the pupil.`;
+      return note("pupil and iris centres disagree. Check the blue cross sits on the pupil.");
     case "darkblob_rejected":
     case "pupil_darkblob_failed":
-      return `${eye}: the dark pupil could not be isolated; the iris-circle centre was used.`;
+      return note("the dark pupil could not be isolated, so the iris-circle centre was used.");
     case "borderline_asymmetry":
-      return "The reading is close to a decision threshold.";
+      return note("the reading is close to a decision threshold.");
     case "low_snr_noise_dominated":
-      return "Measurement noise is comparable to the reading.";
+      return note("measurement noise is comparable to the reading.");
     case "pupil_from_darkblob":
     case "bav_mode":
     case "test_capture":
+    case "no_flash":          // Method A already states why it has no reading
       return null;
     default:
-      return flag.replace(/_/g, " ");
+      return note(flag.replace(/_/g, " "));
   }
+}
+
+/** One line per note, naming the eye(s) it applies to. */
+function qualityNotes(flags: string[]): string[] {
+  const byText = new Map<string, Set<Eye | null>>();
+  for (const f of flags) {
+    const n = flagNote(f);
+    if (!n) continue;
+    const eyes = byText.get(n.text) ?? new Set<Eye | null>();
+    eyes.add(n.eye);
+    byText.set(n.text, eyes);
+  }
+  return Array.from(byText, ([text, eyes]) => {
+    const who = eyes.has("left") && eyes.has("right") ? "Both eyes"
+      : eyes.has("right") ? "Right eye" : eyes.has("left") ? "Left eye" : null;
+    return who ? `${who}: ${text}` : text.charAt(0).toUpperCase() + text.slice(1);
+  });
 }
 
 function Field({ label, value }: { label: string; value: string }) {
@@ -78,7 +97,7 @@ function Panel({ eyebrow, title, badge, children }: {
   eyebrow: string; title: string; badge: React.ReactNode; children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-ink-100 p-4 break-inside-avoid flex flex-col">
+    <section className="rounded-xl border border-ink-100 p-4 print:p-3 break-inside-avoid flex flex-col">
       <div className="flex items-start justify-between gap-3 mb-3">
         <div>
           <p className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold">{eyebrow}</p>
@@ -99,7 +118,7 @@ function Pill({ text, tone }: { text: string; tone: string }) {
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex justify-between gap-4 py-1.5 border-b border-ink-100 last:border-0 text-[12.5px]">
+    <div className="flex justify-between gap-4 py-1.5 print:py-1 border-b border-ink-100 last:border-0 text-[12.5px]">
       <span className="text-ink-500">{k}</span>
       <span className="text-ink-900 font-semibold text-right tabular">{v}</span>
     </div>
@@ -145,7 +164,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
   const images = report.intermediate_images;
   const eyesImg = ok?.intermediate_images?.report_eyes ?? images?.module8_alignment ?? null;
   const flags: string[] = ok ? ok.technical.flags : inc ? inc.flags : [];
-  const notes = Array.from(new Set(flags.map(flagNote).filter((n): n is string => n !== null)));
+  const notes = qualityNotes(flags);
 
   const tier: UrgencyTier | null = ok ? ok.result.urgency_tier : null;
   const confidence = ok?.technical.confidence ?? null;
@@ -169,10 +188,10 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="max-w-[820px] mx-auto px-5 py-6 print:p-0 print:max-w-none space-y-4 text-ink-900">
+      <div className="max-w-[820px] mx-auto px-5 py-6 print:p-0 print:max-w-none space-y-4 print:space-y-3 text-ink-900">
 
         {/* Header */}
-        <header className="flex items-start justify-between gap-4 border-b-2 border-ink-900 pb-3">
+        <header className="flex items-start justify-between gap-4 border-b-2 border-ink-900 pb-3 print:pb-2">
           <div>
             <p className="text-[10px] font-black tracking-[0.25em] text-ink-400 uppercase">BeanHealth</p>
             <h1 className="text-[22px] font-bold leading-tight">Squint photo analysis</h1>
@@ -190,7 +209,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           <Field label="Source" value="Uploaded photo" />
         </div>
 
-        <p className="text-[11.5px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <p className="text-[11.5px] print:text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 print:py-1">
           Research / validation use. Saved photo, flash check relaxed. A screening aid, not a diagnosis.
         </p>
 
@@ -199,7 +218,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           <figure className="break-inside-avoid">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={`data:image/jpeg;base64,${eyesImg}`} alt="Both eyes with the detected pupil and corneal reflex marked"
-                 className="w-full rounded-lg border border-ink-100 block" />
+                 className="w-full print:w-[85%] print:mx-auto rounded-lg border border-ink-100 block" />
             <figcaption className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[11px] text-ink-500">
               {ok ? (
                 <>
@@ -219,7 +238,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           {/* Method A */}
           <Panel
             eyebrow="Method A · torch reflex"
-            title="Corneal light reflex (Hirschberg)"
+            title="Corneal light reflex"
             badge={tier
               ? <Pill text={URGENCY_CONFIG[tier].label} tone={`${URGENCY_CONFIG[tier].bgColour} ${URGENCY_CONFIG[tier].borderColour} ${URGENCY_CONFIG[tier].colour}`} />
               : <Pill text="Not measured" tone={VERDICT.UNAVAILABLE.tone} />}
@@ -230,7 +249,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
                   {asymPD.toFixed(1)} <span className="text-[15px] font-semibold text-ink-500">PD</span>
                 </p>
                 <p className="text-[12px] text-ink-500 mt-1">
-                  {asymDeg.toFixed(1)}° difference between the two eyes&apos; reflex positions
+                  {asymDeg.toFixed(1)}° between the two eyes&apos; reflexes
                 </p>
                 <p className="text-[13.5px] font-semibold mt-2.5">
                   {tier === "NORMAL" ? "No manifest deviation measured" : `${ok.result.condition_name} pattern`}
@@ -258,11 +277,20 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           {/* Method B */}
           <Panel
             eyebrow="Method B · no flash needed"
-            title="Pupil position between the eye corners"
+            title="Pupil between the eye corners"
             badge={<Pill text={VERDICT[al?.verdict ?? "UNAVAILABLE"].label} tone={VERDICT[al?.verdict ?? "UNAVAILABLE"].tone} />}
           >
             {al && al.available ? (
               <>
+                {ok && images?.module8_alignment && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`data:image/jpeg;base64,${images.module8_alignment}`}
+                       alt="Each pupil projected onto its own eye-corner axis"
+                       className="w-full rounded-lg border border-ink-100 block" />
+                )}
+                {ok && images?.module8_alignment && (
+                  <p className="text-[10.5px] text-ink-400 mt-1 mb-2">Pink: eye corners · blue: pupil · amber: its place on the corner axis</p>
+                )}
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   {(["right", "left"] as const).map((eye) => (
                     <div key={eye} className="rounded-lg bg-ink-50 border border-ink-100 px-3 py-2">
@@ -278,7 +306,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
                 </div>
                 <Row k="Horizontal difference" v={pct(al.h_asymmetry)} />
                 <Row k="Vertical difference" v={pct(al.v_asymmetry)} />
-                <p className="text-[11.5px] text-ink-500 leading-relaxed mt-2">{al.interpretation}</p>
+                <p className="text-[11.5px] text-ink-500 leading-relaxed mt-2 print:hidden">{al.interpretation}</p>
               </>
             ) : (
               <p className="text-[12.5px] text-ink-600 leading-relaxed">
@@ -293,34 +321,22 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           {agree.text}
         </p>
 
-        {/* Method B geometry, when the main figure shows Method A */}
-        {ok && images?.module8_alignment && (
-          <figure className="break-inside-avoid">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`data:image/jpeg;base64,${images.module8_alignment}`} alt="Each pupil projected onto its eye-corner axis"
-                 className="w-full max-w-[520px] mx-auto rounded-lg border border-ink-100 block" />
-            <figcaption className="text-[11px] text-ink-500 text-center mt-1">
-              Method B geometry: eye corners (pink), corner-to-corner axis, pupil (blue) and its projection (amber)
-            </figcaption>
-          </figure>
-        )}
-
         {/* Quality */}
         {notes.length > 0 && (
           <section className="break-inside-avoid">
             <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1">Quality notes</h2>
-            <ul className="list-disc pl-5 text-[12px] text-ink-600 space-y-0.5">
+            <ul className="list-disc pl-5 text-[12px] print:text-[10.5px] text-ink-600 space-y-0.5">
               {notes.map((n) => <li key={n}>{n}</li>)}
             </ul>
           </section>
         )}
 
         {/* Clinician comparison — filled in by hand on the printed copy */}
-        <section className="rounded-xl border border-ink-200 p-4 break-inside-avoid">
+        <section className="rounded-xl border border-ink-200 p-4 print:p-3 break-inside-avoid">
           <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-3">
             Clinician reference (prism cover test)
           </h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-[12.5px] text-ink-700">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 print:gap-y-2 text-[12.5px] print:text-[11.5px] text-ink-700">
             <p>Deviation: <span className="inline-block w-24 border-b border-ink-300 align-bottom" /> PD</p>
             <p>☐ Eso&nbsp;&nbsp; ☐ Exo&nbsp;&nbsp; ☐ Hyper / hypo&nbsp;&nbsp; ☐ None</p>
             <p>☐ Near&nbsp;&nbsp; ☐ Distance&nbsp;&nbsp; ☐ Constant&nbsp;&nbsp; ☐ Intermittent</p>
@@ -330,21 +346,16 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
         </section>
 
         {/* Method and limits */}
-        <footer className="text-[10.5px] text-ink-500 leading-relaxed border-t border-ink-200 pt-3 break-inside-avoid">
+        <footer className="text-[10.5px] print:text-[9px] text-ink-500 leading-relaxed border-t border-ink-200 pt-3 print:pt-2 break-inside-avoid">
           <p>
-            <strong className="text-ink-700">Method.</strong> Method A finds the pupil centre and the torch reflex in
-            each eye and compares the two eyes&apos; reflex positions, which cancels the normal (kappa) offset that
-            both eyes share. Reflex shift converts at {DEG_PER_MM}° per mm on an iris radius of {IRIS_RADIUS_MM} mm;
-            prism dioptres = 100·tan θ. Method B measures where each pupil sits between its own eye corners and needs
-            no reflex; it flags misalignment but gives no angle.
+            <strong className="text-ink-700">Method and limits.</strong> Method A compares where the torch reflex sits
+            against the pupil in each eye; comparing the two eyes cancels the normal (kappa) offset they share
+            ({DEG_PER_MM}° per mm of reflex shift, iris radius {IRIS_RADIUS_MM} mm, PD = 100·tan θ). Method B places
+            each pupil between its own eye corners and flags misalignment without an angle. A photo shows only the
+            deviation present at that moment; a prism cover test measures the full deviation and is usually larger,
+            and latent or intermittent squints can read near zero. Not reliable under about 8 PD or above about
+            45 PD. Screening aid, not a diagnosis. <span className="text-ink-400">BeanHealth CLR · test mode · {report.timestamp}</span>
           </p>
-          <p className="mt-1.5">
-            <strong className="text-ink-700">Limits.</strong> A photo shows only the deviation present at that moment.
-            A prism cover test breaks fusion and measures the full deviation, so it is usually larger, and latent or
-            intermittent squints can read near zero here. Deviations under about 8 PD are not reliably detected, and
-            angles above about 45 PD can put the reflex on the iris edge. Screening aid only; not a diagnosis.
-          </p>
-          <p className="mt-1.5 text-ink-400">BeanHealth CLR · single-image test mode · {report.timestamp}</p>
         </footer>
 
         {/* Actions — screen only */}
