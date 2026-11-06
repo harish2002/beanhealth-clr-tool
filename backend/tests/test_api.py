@@ -194,6 +194,21 @@ async def test_analyse_non_image_file_returns_422():
 # ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("size", [(2272, 3028), (3120, 4160)])   # under / over the pixel cap
+async def test_loaded_image_is_in_module1_frame(size):
+    """Module 1 reports landmarks on an image at most MAX_IMAGE_DIMENSION
+    on a side; the image the report draws on must be that same frame."""
+    from io import BytesIO
+    from starlette.datastructures import UploadFile
+    from main import _load_image
+    from utils.image_utils import MAX_IMAGE_DIMENSION, downscale_if_needed
+
+    img = await _load_image(UploadFile(BytesIO(_synthetic_jpeg(*size)), filename="x.jpg"))
+    assert max(img.shape[:2]) <= MAX_IMAGE_DIMENSION
+    assert downscale_if_needed(img).shape == img.shape
+
+
+@pytest.mark.asyncio
 async def test_analyse_synthetic_no_face_returns_inconclusive():
     """A solid-colour synthetic image has no face → INCONCLUSIVE."""
     img = _synthetic_jpeg()

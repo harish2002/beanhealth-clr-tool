@@ -57,6 +57,7 @@ from pipeline.module7_report       import build_inconclusive_report, generate_re
 from pipeline.module8_alignment    import compute_corner_alignment
 from pipeline.module_parity       import compare_with_client, parse_client_measurement
 from utils.device_fingerprint      import parse_device_model
+from utils.image_utils             import downscale_if_needed
 from utils.exceptions              import CLRPipelineError, ConfidenceError, DetectionError, CLRError
 
 # ─────────────────────────────────────────────────────────────
@@ -125,7 +126,11 @@ async def _load_image(upload: UploadFile) -> np.ndarray:
         pil_img.thumbnail((3000, 2000), Image.LANCZOS)
         logger.info(f"[API] Image downscaled to {pil_img.size} (exceeded pixel cap)")
 
-    return np.array(pil_img, dtype=np.uint8)
+    # Module 1 measures on an image no larger than MAX_IMAGE_DIMENSION and
+    # reports landmarks in that frame. Shrink here too, so the image the report
+    # draws on is the same frame: a 6–12 MP photo under the pixel cap otherwise
+    # had its eye-corner snapshot cut from the wrong part of the face.
+    return downscale_if_needed(np.array(pil_img, dtype=np.uint8))
 
 
 # ─────────────────────────────────────────────────────────────
