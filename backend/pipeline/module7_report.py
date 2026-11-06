@@ -242,9 +242,11 @@ def _build_alignment_view(
     detection: EyeDetectionResult,
     pupil_result: PupilResult,
     alignment: AlignmentResult,
+    enlarged: bool = False,
 ) -> Optional[str]:
     """
     Render the Method B (corner-alignment) view for both eyes as one base64 JPEG.
+    `enlarged` draws the printed-report version (see _report_alignment_view).
 
     Cut fresh from the full image rather than reusing Module 1's eye crops: the
     canthi sit roughly 2.5 iris radii from the pupil, which is outside the tight
@@ -280,6 +282,16 @@ def _build_alignment_view(
             return None
 
         sub = original_img[y1:y2, x1:x2]
+        if enlarged:
+            views.append(_report_alignment_view(
+                sub,
+                pupil=(px - x1, py - y1),
+                inner=(corners[0][0] - x1, corners[0][1] - y1),
+                outer=(corners[1][0] - x1, corners[1][1] - y1),
+                h_ratio=h_ratio,
+                side_label="L" if side == "left" else "R",
+            ))
+            continue
         views.append(_draw_alignment_annotations(
             sub,
             pupil=(px - x1, py - y1),
@@ -369,6 +381,61 @@ def _report_eye_view(
         cv2.line(big, (px - arm, py), (px + arm, py), colour, width, cv2.LINE_AA, _SUBPIXEL_SHIFT)
         cv2.line(big, (px, py - arm), (px, py + arm), colour, width, cv2.LINE_AA, _SUBPIXEL_SHIFT)
     _draw_label(big, side_label, (8, 26), colour=(235, 235, 235), scale=0.8, thickness=2)
+    return big
+
+
+_REPORT_ALIGNMENT_WIDTH = 560   # px per eye in the printed Method B snapshot
+
+
+def _report_alignment_view(
+    sub: np.ndarray,
+    pupil: Tuple[float, float],
+    inner: Tuple[float, float],
+    outer: Tuple[float, float],
+    h_ratio: Optional[float],
+    side_label: str,
+) -> np.ndarray:
+    """
+    Enlarged Method B snapshot for the printed report: the eye between its two
+    corners, the corner-to-corner axis, the pupil and its foot on that axis,
+    drawn at sub-pixel positions on an upscaled cut so the geometry behind
+    h_ratio can be checked by eye. All points are in `sub` coordinates.
+    """
+    s = max(1.0, _REPORT_ALIGNMENT_WIDTH / max(sub.shape[1], 1))
+    big = cv2.resize(sub, None, fx=s, fy=s, interpolation=cv2.INTER_CUBIC)
+    k = 1 << _SUBPIXEL_SHIFT
+
+    def at(pt: Tuple[float, float]) -> Tuple[int, int]:
+        return (int(round(((pt[0] + 0.5) * s - 0.5) * k)), int(round(((pt[1] + 0.5) * s - 0.5) * k)))
+
+    def line(a: Tuple[int, int], b: Tuple[int, int], colour: Tuple[int, int, int], width: int) -> None:
+        cv2.line(big, a, b, (255, 255, 255), width + 2, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+        cv2.line(big, a, b, colour, width, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+
+    ip, op, pp = at(inner), at(outer), at(pupil)
+    line(ip, op, (150, 150, 150), 2)
+
+    ax, ay = outer[0] - inner[0], outer[1] - inner[1]
+    denom = ax * ax + ay * ay
+    if denom > 1e-6:
+        t = ((pupil[0] - inner[0]) * ax + (pupil[1] - inner[1]) * ay) / denom
+        pj = at((inner[0] + t * ax, inner[1] + t * ay))
+        line(pp, pj, _COLOUR_PROJ, 2)
+        cv2.circle(big, pj, 6 * k, (255, 255, 255), -1, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+        cv2.circle(big, pj, 4 * k, _COLOUR_PROJ, -1, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+
+    arm = 10 * k
+    for x, y in (ip, op):
+        line((x - arm, y - arm), (x + arm, y + arm), _COLOUR_CANTHUS, 3)
+        line((x - arm, y + arm), (x + arm, y - arm), _COLOUR_CANTHUS, 3)
+
+    cv2.circle(big, pp, 9 * k, (255, 255, 255), -1, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+    cv2.circle(big, pp, 7 * k, _COLOUR_PUPIL, -1, cv2.LINE_AA, _SUBPIXEL_SHIFT)
+
+    _draw_label(big, side_label, (8, 26), colour=(235, 235, 235), scale=0.8, thickness=2)
+    if h_ratio is not None:
+        _draw_label(big, f"{h_ratio * 100:.1f}% inner -> outer", (8, big.shape[0] - 10),
+                    colour=(255, 235, 80), scale=0.7, thickness=2)
     return big
 
 
@@ -777,9 +844,11 @@ def build_success_report(
     # not auditable.  Never allowed to break the report.
     try:
         m8_b64 = _build_alignment_view(original_img, detection, pupil_result, alignment)
+        report_alignment_b64 = _build_alignment_view(
+            original_img, detection, pupil_result, alignment, enlarged=True)
     except Exception as e:
         logger.warning(f"Module 7: alignment view skipped: {e}")
-        m8_b64 = None
+        m8_b64 = report_alignment_b64 = None
 
     report = {
         "status": "SUCCESS",
@@ -826,6 +895,7 @@ def build_success_report(
             "module5_vector": m5_b64,
             "module6_result": m6_b64,
             "report_eyes":    report_eyes_b64,
+            "report_alignment": report_alignment_b64,
         },
         "annotated_image_b64": img_b64,
         "timestamp":           _timestamp(),
@@ -906,7 +976,11 @@ def build_inconclusive_report(
             if original_img is not None:
                 m8 = _build_alignment_view(original_img, detection, pupil_result, alignment)
                 if m8:
-                    report["intermediate_images"] = {"module8_alignment": m8}
+                    report["intermediate_images"] = {
+                        "module8_alignment": m8,
+                        "report_alignment": _build_alignment_view(
+                            original_img, detection, pupil_result, alignment, enlarged=True),
+                    }
             report["alignment"] = _alignment_to_dict(alignment)
         except Exception as exc:                 # noqa: BLE001 — never block report
             logger.warning(f"[M7] alignment skipped on INCONCLUSIVE: {exc}")

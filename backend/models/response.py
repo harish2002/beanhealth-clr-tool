@@ -128,6 +128,14 @@ class IntermediateImages(BaseModel):
         description="Method B: pupil projected onto the inner→outer canthus axis, "
                     "with both eye corners marked. None when corners were unavailable."
     )
+    report_eyes: Optional[str] = Field(
+        default=None,
+        description="Printed report: enlarged eyes with iris ring, pupil cross and reflex ring."
+    )
+    report_alignment: Optional[str] = Field(
+        default=None,
+        description="Printed report: enlarged Method B snapshot (corners, axis, pupil projection)."
+    )
 
 
 # ─────────────────────────────────────────────────────────────

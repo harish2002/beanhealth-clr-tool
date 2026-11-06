@@ -35,6 +35,7 @@ from pipeline.module7_report import (
     generate_report,
     _crop_to_full,
     _image_to_base64_jpeg,
+    _report_alignment_view,
 )
 from utils.constants import (
     URGENCY_URGENT,
@@ -469,6 +470,27 @@ class TestGenerateReport:
 # ─────────────────────────────────────────────────────────────
 # Rendered colours — the palette is RGB and must render as named
 # ─────────────────────────────────────────────────────────────
+
+class TestReportAlignmentView:
+    """The printed report's Method B snapshot."""
+
+    def test_enlarged_to_report_width_with_marks_on_the_points(self):
+        sub = np.full((60, 140, 3), 120, dtype=np.uint8)
+        out = _report_alignment_view(sub, pupil=(70.0, 30.0), inner=(20.0, 32.0),
+                                     outer=(120.0, 32.0), h_ratio=0.5, side_label="R")
+        s = out.shape[1] / sub.shape[1]
+        assert out.shape[1] == 560 and out.shape[0] == round(60 * s)
+        px, py = round(70.5 * s - 0.5), round(30.5 * s - 0.5)
+        assert int(np.argmax(out[py, px])) == 2          # pupil dot: blue
+        ix, iy = round(20.5 * s - 0.5), round(32.5 * s - 0.5)
+        r, g, b = (int(c) for c in out[iy, ix])
+        assert r > g and b > g                           # corner cross: pink
+
+    def test_small_crops_are_never_shrunk(self):
+        sub = np.full((300, 900, 3), 120, dtype=np.uint8)
+        out = _report_alignment_view(sub, (450.0, 150.0), (100.0, 150.0), (800.0, 150.0), None, "L")
+        assert out.shape[:2] == sub.shape[:2]
+
 
 def _decode_rgb(b64: str) -> np.ndarray:
     import io
