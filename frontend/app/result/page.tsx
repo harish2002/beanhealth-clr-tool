@@ -244,6 +244,7 @@ export default function ResultPage() {
   const screenerRole      = useAppStore((s) => s.screenerRole);
   const screeningLocation = useAppStore((s) => s.screeningLocation);
   const sessionId         = useAppStore((s) => s.sessionId);
+  const capturedImage     = useAppStore((s) => s.capturedImageDataUrl);
   const patientName       = useAppStore((s) => s.patientName);
   const patientAge        = useAppStore((s) => s.patientAge);
   // Uploaded-photo results open on the one-page printable report.
@@ -276,6 +277,7 @@ export default function ResultPage() {
         report={analysisResult}
         patientName={analysisResult.patient?.name ?? patientName}
         patientAge={analysisResult.patient?.age ?? patientAge}
+        originalImage={capturedImage}
         onNewImage={() => { reset(); router.push("/test"); }}
         onFullReport={analysisResult.status === "SUCCESS" ? () => setFullReport(true) : undefined}
       />

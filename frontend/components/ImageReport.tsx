@@ -4,8 +4,8 @@
  * BeanHealth CLR — single-image analysis report (printable)
  * =========================================================
  *
- * One page for a saved photo run through /analyse-test: the eyes with the
- * pupil and reflex marks, Method A (Hirschberg corneal light reflex) and
+ * One page for a saved photo run through /analyse-test: the original photo,
+ * the eyes with the pupil and reflex marks, the no-flash alignment snapshot, Method A (Hirschberg corneal light reflex) and
  * Method B (pupil-versus-eye-corner alignment, no flash needed) side by side,
  * whether the two agree, quality notes, and blank fields for the clinician's
  * prism cover test so a printed copy doubles as a validation record.
@@ -98,7 +98,7 @@ function Panel({ eyebrow, title, badge, children }: {
 }) {
   return (
     <section className="rounded-xl border border-ink-100 p-4 print:p-3 break-inside-avoid flex flex-col">
-      <div className="flex items-start justify-between gap-3 mb-3">
+      <div className="flex items-start justify-between gap-3 mb-3 print:mb-2">
         <div>
           <p className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold">{eyebrow}</p>
           <h2 className="text-[15px] font-semibold text-ink-900 leading-snug mt-0.5">{title}</h2>
@@ -118,7 +118,7 @@ function Pill({ text, tone }: { text: string; tone: string }) {
 
 function Row({ k, v }: { k: string; v: string }) {
   return (
-    <div className="flex justify-between gap-4 py-1.5 print:py-1 border-b border-ink-100 last:border-0 text-[12.5px]">
+    <div className="flex justify-between gap-4 py-1.5 print:py-0.5 border-b border-ink-100 last:border-0 text-[12.5px]">
       <span className="text-ink-500">{k}</span>
       <span className="text-ink-900 font-semibold text-right tabular">{v}</span>
     </div>
@@ -151,10 +151,29 @@ function methodBFinding(al: AlignmentResult | undefined): Finding {
   return al.verdict === "ALIGNED" ? "normal" : al.verdict === "BORDERLINE" ? "borderline" : "abnormal";
 }
 
-export default function ImageReport({ report, patientName, patientAge, onNewImage, onFullReport }: {
+function Figure({ title, legend, src, alt }: {
+  title: string; legend: React.ReactNode; src: string; alt: string;
+}) {
+  return (
+    <figure className="break-inside-avoid">
+      <figcaption className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1">{title}</figcaption>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src={src} alt={alt} className="w-full rounded-lg border border-ink-100 block" />
+      <p className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1 text-[11px] print:text-[9.5px] text-ink-500">{legend}</p>
+    </figure>
+  );
+}
+
+const Key = ({ mark, colour, text }: { mark: string; colour: string; text: string }) => (
+  <span><span className="font-semibold" style={{ color: colour }}>{mark}</span> {text}</span>
+);
+
+export default function ImageReport({ report, patientName, patientAge, originalImage, onNewImage, onFullReport }: {
   report: SuccessResponse | InconclusiveResponse;
   patientName: string;
   patientAge: number | null;
+  /** The uploaded photo as a data URL; held in the browser only, never sent back. */
+  originalImage?: string | null;
   onNewImage: () => void;
   onFullReport?: () => void;
 }) {
@@ -162,7 +181,8 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
   const inc = report.status === "INCONCLUSIVE" ? report : null;
   const al = report.alignment;
   const images = report.intermediate_images;
-  const eyesImg = ok?.intermediate_images?.report_eyes ?? images?.module8_alignment ?? null;
+  const reflexImg = ok?.intermediate_images?.report_eyes ?? null;
+  const alignImg = images?.report_alignment ?? images?.module8_alignment ?? null;
   const flags: string[] = ok ? ok.technical.flags : inc ? inc.flags : [];
   const notes = qualityNotes(flags);
 
@@ -188,7 +208,7 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
 
   return (
     <div className="min-h-screen bg-white">
-      <div className="max-w-[820px] mx-auto px-5 py-6 print:p-0 print:max-w-none space-y-4 print:space-y-3 text-ink-900">
+      <div className="max-w-[820px] mx-auto px-5 py-6 print:p-0 print:max-w-none space-y-4 print:space-y-2 text-ink-900">
 
         {/* Header */}
         <header className="flex items-start justify-between gap-4 border-b-2 border-ink-900 pb-3 print:pb-2">
@@ -213,25 +233,46 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           Research / validation use. Saved photo, flash check relaxed. A screening aid, not a diagnosis.
         </p>
 
-        {/* Eyes */}
-        {eyesImg && (
-          <figure className="break-inside-avoid">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={`data:image/jpeg;base64,${eyesImg}`} alt="Both eyes with the detected pupil and corneal reflex marked"
-                 className="w-full print:w-[85%] print:mx-auto rounded-lg border border-ink-100 block" />
-            <figcaption className="flex flex-wrap gap-x-4 gap-y-1 mt-1.5 text-[11px] text-ink-500">
-              {ok ? (
-                <>
-                  <span><span className="font-semibold" style={{ color: "#64dc64" }}>◯</span> Iris edge</span>
-                  <span><span className="font-semibold" style={{ color: "#1464eb" }}>+</span> Pupil centre</span>
-                  <span><span className="font-semibold" style={{ color: "#ffb414" }}>◯</span> Corneal light reflex</span>
-                </>
-              ) : (
-                <span>Eye corners (pink), corner-to-corner axis, pupil (blue)</span>
+        {/* Pictures: the photo as uploaded, then what each method measured on it */}
+        {(originalImage || reflexImg || alignImg) && (
+          <section className={`grid gap-3 break-inside-avoid ${originalImage ? "grid-cols-[28%_1fr] print:grid-cols-[33%_1fr]" : "grid-cols-1"}`}>
+            {originalImage && (
+              <figure>
+                <figcaption className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-1">Original photo</figcaption>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={originalImage} alt="The photo as uploaded"
+                     className="w-full max-h-[340px] print:max-h-[70mm] object-contain object-top rounded-lg border border-ink-100 bg-ink-50 block" />
+              </figure>
+            )}
+            <div className="flex flex-col gap-2.5 min-w-0">
+              {reflexImg && (
+                <Figure
+                  title="Method A · torch reflex marks"
+                  src={`data:image/jpeg;base64,${reflexImg}`}
+                  alt="Both eyes with the detected pupil and corneal reflex marked"
+                  legend={<>
+                    <Key mark="◯" colour="#64dc64" text="Iris edge" />
+                    <Key mark="+" colour="#1464eb" text="Pupil centre" />
+                    <Key mark="◯" colour="#ffb414" text="Corneal light reflex" />
+                    <span className="ml-auto">Patient&apos;s right eye on the left</span>
+                  </>}
+                />
               )}
-              <span className="ml-auto">Patient&apos;s right eye on the left of the picture</span>
-            </figcaption>
-          </figure>
+              {alignImg && (
+                <Figure
+                  title="Method B · no-flash alignment"
+                  src={`data:image/jpeg;base64,${alignImg}`}
+                  alt="Each pupil projected onto its own eye-corner axis"
+                  legend={<>
+                    <Key mark="×" colour="#ff78c8" text="Eye corners" />
+                    <Key mark="●" colour="#1464eb" text="Pupil" />
+                    <Key mark="●" colour="#ffc878" text="Its place on the corner axis" />
+                    {!reflexImg && <span className="ml-auto">Patient&apos;s right eye on the left</span>}
+                  </>}
+                />
+              )}
+            </div>
+          </section>
         )}
 
         <div className="grid sm:grid-cols-2 print:grid-cols-2 gap-3">
@@ -245,13 +286,13 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           >
             {ok && asymDeg !== null && asymPD !== null ? (
               <>
-                <p className="text-[30px] font-bold leading-none tabular">
+                <p className="text-[30px] print:text-[24px] font-bold leading-none tabular">
                   {asymPD.toFixed(1)} <span className="text-[15px] font-semibold text-ink-500">PD</span>
                 </p>
                 <p className="text-[12px] text-ink-500 mt-1">
                   {asymDeg.toFixed(1)}° between the two eyes&apos; reflexes
                 </p>
-                <p className="text-[13.5px] font-semibold mt-2.5">
+                <p className="text-[13.5px] font-semibold mt-2.5 print:mt-1.5">
                   {tier === "NORMAL" ? "No manifest deviation measured" : `${ok.result.condition_name} pattern`}
                   <span className="font-mono text-[11px] text-ink-400 font-normal ml-2">{ok.result.icd10_code}</span>
                 </p>
@@ -282,15 +323,6 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
           >
             {al && al.available ? (
               <>
-                {ok && images?.module8_alignment && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={`data:image/jpeg;base64,${images.module8_alignment}`}
-                       alt="Each pupil projected onto its own eye-corner axis"
-                       className="w-full rounded-lg border border-ink-100 block" />
-                )}
-                {ok && images?.module8_alignment && (
-                  <p className="text-[10.5px] text-ink-400 mt-1 mb-2">Pink: eye corners · blue: pupil · amber: its place on the corner axis</p>
-                )}
                 <div className="grid grid-cols-2 gap-2 mb-2">
                   {(["right", "left"] as const).map((eye) => (
                     <div key={eye} className="rounded-lg bg-ink-50 border border-ink-100 px-3 py-2">
@@ -333,10 +365,10 @@ export default function ImageReport({ report, patientName, patientAge, onNewImag
 
         {/* Clinician comparison — filled in by hand on the printed copy */}
         <section className="rounded-xl border border-ink-200 p-4 print:p-3 break-inside-avoid">
-          <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-3">
+          <h2 className="text-[10px] uppercase tracking-[0.14em] text-ink-400 font-semibold mb-3 print:mb-2">
             Clinician reference (prism cover test)
           </h2>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-4 print:gap-y-2 text-[12.5px] print:text-[11.5px] text-ink-700">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-4 print:gap-y-1.5 text-[12.5px] print:text-[11.5px] text-ink-700">
             <p>Deviation: <span className="inline-block w-24 border-b border-ink-300 align-bottom" /> PD</p>
             <p>☐ Eso&nbsp;&nbsp; ☐ Exo&nbsp;&nbsp; ☐ Hyper / hypo&nbsp;&nbsp; ☐ None</p>
             <p>☐ Near&nbsp;&nbsp; ☐ Distance&nbsp;&nbsp; ☐ Constant&nbsp;&nbsp; ☐ Intermittent</p>

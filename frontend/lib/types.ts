@@ -88,6 +88,8 @@ export interface IntermediateImages {
   module8_alignment?: string | null;
   /** Printed report — both eyes enlarged, pupil cross + reflex ring. */
   report_eyes?: string;
+  /** Printed report — enlarged Method B snapshot (corners, axis, pupil projection). */
+  report_alignment?: string | null;
 }
 
 export interface SuccessResponse {
@@ -111,8 +113,8 @@ export interface InconclusiveResponse {
   // Torch-free corner-alignment net — present when eye detection + pupil
   // localisation succeeded before the halt (e.g. a no-flash CLR failure).
   alignment?:         AlignmentResult;
-  // Carries module8_alignment only, for Method B's geometry.
-  intermediate_images?: Pick<IntermediateImages, "module8_alignment">;
+  // Carries Method B's geometry only (module8_alignment, report_alignment).
+  intermediate_images?: Pick<IntermediateImages, "module8_alignment" | "report_alignment">;
   // Present when reason = "high_variance_asymmetry" or "insufficient_frames"
   frames_total?:      number;
   frames_accepted?:   number;

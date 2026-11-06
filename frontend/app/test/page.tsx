@@ -23,6 +23,7 @@ export default function TestUploadPage() {
   const router            = useRouter();
   const reset             = useAppStore((s) => s.reset);
   const setPatient        = useAppStore((s) => s.setPatient);
+  const setCapturedImage  = useAppStore((s) => s.setCapturedImage);
   const setPatientMeta    = useAppStore((s) => s.setPatientMeta);
   const setAnalysisResult = useAppStore((s) => s.setAnalysisResult);
   const setLoading        = useAppStore((s) => s.setLoading);
@@ -70,6 +71,7 @@ export default function TestUploadPage() {
       reset();
       setPatient(name.trim(), parsedAge);
       setPatientMeta("", "Test Mode", "Image upload");
+      if (previewUrl) setCapturedImage(previewUrl, file);   // shown on the printed report
 
       const result = await analyseTest(file, name.trim(), parsedAge);
 
