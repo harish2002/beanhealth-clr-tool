@@ -51,17 +51,20 @@ function flagNote(flag: string): { text: string; eye: Eye | null } | null {
       return note("the two irises measure 8–15% apart in size (a turned or partly covered eye), so the reading is less certain.");
     case "horizontal_only":
       return note("horizontal deviation only: the lids cover the top and bottom of the iris, so a vertical deviation is not measured.");
-    case "hough_rejected":           // the iris-edge trace replaces these pupil estimates
-    case "darkblob_reseeded":
-    case "darkblob_rejected":
-    case "pupil_darkblob_failed":
-    case "centre_from_iris_edge":
     case "borderline_asymmetry":
       return note("the reading is close to a decision threshold.");
     case "direction_unreliable":
       return note("the direction of the deviation could not be determined, only its size.");
     case "low_snr_noise_dominated":
       return note("measurement noise is comparable to the reading.");
+    case "hough_rejected":           // the iris-edge trace replaces these pupil estimates
+    case "darkblob_reseeded":
+    case "darkblob_rejected":
+    case "pupil_darkblob_failed":
+    case "centre_from_iris_edge":
+    case "iris_size_mismatch":       // Method A already states these refusals
+    case "iris_edge_not_found":
+    case "no_reflex":
     case "pupil_from_darkblob":
     case "bav_mode":
     case "test_capture":
@@ -280,7 +283,7 @@ export default function ImageReport({ report, patientName, patientAge, originalI
                   alt="Each pupil projected onto its own eye-corner axis"
                   legend={<>
                     <Key mark="×" colour="#ff78c8" text="Eye corners" />
-                    <Key mark="●" colour="#1464eb" text="Pupil" />
+                    <Key mark="●" colour="#1464eb" text={edgeCentre ? "Iris centre" : "Pupil"} />
                     <Key mark="●" colour="#ffc878" text="Its place on the corner axis" />
                     {!reflexImg && <span className="ml-auto">Patient&apos;s right eye on the left</span>}
                   </>}
