@@ -43,16 +43,19 @@ function flagNote(flag: string): { text: string; eye: Eye | null } | null {
   const eye = m ? (m[2] as Eye) : null;
   const note = (text: string) => ({ text, eye });
   switch (base) {
-    case "hough_rejected":
-    case "darkblob_reseeded":
-      return note("iris circle not found (common on dark irises); the pupil was taken from the iris landmarks.");
     case "ambiguous_reflex":
-      return note("several bright spots; the one nearest the pupil was used. Check the amber ring.");
+      return note("several bright spots; the one nearest the iris centre was used. Check the amber ring.");
     case "pupil_disagreement":
       return note("pupil and iris centres disagree. Check the blue cross.");
+    case "iris_size_differs":
+      return note("the two irises measure 8–15% apart in size (a turned or partly covered eye), so the reading is less certain.");
+    case "horizontal_only":
+      return note("horizontal deviation only: the lids cover the top and bottom of the iris, so a vertical deviation is not measured.");
+    case "hough_rejected":           // the iris-edge trace replaces these pupil estimates
+    case "darkblob_reseeded":
     case "darkblob_rejected":
     case "pupil_darkblob_failed":
-      return note("dark pupil not isolated; the iris centre was used.");
+    case "centre_from_iris_edge":
     case "borderline_asymmetry":
       return note("the reading is close to a decision threshold.");
     case "direction_unreliable":
@@ -200,12 +203,22 @@ export default function ImageReport({ report, patientName, patientAge, originalI
   const date = when.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   const time = when.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
 
+  const edgeCentre = flags.includes("centre_from_iris_edge");
+  const horizontalOnly = flags.includes("horizontal_only");
+
+  // Reflex position against the iris centre. Horizontal-only reports keep the
+  // nasal/temporal part: the image is unmirrored, so the patient's left eye
+  // has its nose toward image-left.
   const perEye = (eye: "right" | "left") => {
     if (!ok) return null;
     const t = ok.technical;
     const norm = eye === "left" ? t.left_displacement_norm : t.right_displacement_norm;
-    const dir = eye === "left" ? t.left_direction : t.right_direction;
-    return { norm, dir, pd: toPD(norm * IRIS_RADIUS_MM * DEG_PER_MM) };
+    if (!horizontalOnly) return { norm, dir: eye === "left" ? t.left_direction : t.right_direction };
+    const [px, py] = eye === "left" ? t.left_pupil : t.right_pupil;
+    const [cx, cy] = eye === "left" ? t.left_clr : t.right_clr;
+    const mag = Math.hypot(cx - px, cy - py);
+    const nasal = mag > 0 && norm > 0 ? ((eye === "left" ? px - cx : cx - px) / mag) * norm : 0;
+    return { norm: Math.abs(nasal), dir: Math.abs(nasal) < 0.005 ? "centred" : nasal > 0 ? "nasal" : "temporal" };
   };
 
   return (
@@ -254,7 +267,7 @@ export default function ImageReport({ report, patientName, patientAge, originalI
                   alt="Both eyes with the detected pupil and corneal reflex marked"
                   legend={<>
                     <Key mark="◯" colour="#64dc64" text="Iris edge" />
-                    <Key mark="+" colour="#1464eb" text="Pupil centre" />
+                    <Key mark="+" colour="#1464eb" text={edgeCentre ? "Iris centre (from the edge)" : "Pupil centre"} />
                     <Key mark="◯" colour="#ffb414" text="Corneal light reflex" />
                     <span className="ml-auto">Patient&apos;s right eye on the left</span>
                   </>}
@@ -292,7 +305,7 @@ export default function ImageReport({ report, patientName, patientAge, originalI
                   {asymPD.toFixed(1)} <span className="text-[15px] font-semibold text-ink-500">PD</span>
                 </p>
                 <p className="text-[12px] text-ink-500 mt-1">
-                  {asymDeg.toFixed(1)}° between the two eyes&apos; reflexes
+                  {asymDeg.toFixed(1)}° between the two eyes&apos; reflexes{horizontalOnly ? " · horizontal only" : ""}
                 </p>
                 <p className="text-[13.5px] font-semibold mt-2.5 print:mt-1.5">
                   {tier === "NORMAL" ? "No manifest deviation measured" : `${ok.result.condition_name} pattern`}
@@ -303,7 +316,7 @@ export default function ImageReport({ report, patientName, patientAge, originalI
                     const e = perEye(eye);
                     return e && (
                       <Row key={eye} k={`${eye === "right" ? "Right eye (OD)" : "Left eye (OS)"} reflex`}
-                           v={`${(e.norm * 100).toFixed(0)}% iris radius · ${e.dir}`} />
+                           v={e.dir === "centred" ? "centred" : `${(e.norm * 100).toFixed(0)}% iris radius · ${e.dir}`} />
                     );
                   })}
                   <Row k="Confidence" v={confidence ?? "–"} />
@@ -383,9 +396,10 @@ export default function ImageReport({ report, patientName, patientAge, originalI
         <footer className="text-[10.5px] print:text-[9px] text-ink-500 leading-relaxed border-t border-ink-200 pt-3 print:pt-2 break-inside-avoid">
           <p>
             <strong className="text-ink-700">Method and limits.</strong> Method A compares where the torch reflex sits
-            against the pupil in each eye; comparing the two eyes cancels the normal (kappa) offset they share
-            ({DEG_PER_MM}° per mm of reflex shift, iris radius {IRIS_RADIUS_MM} mm, PD = 100·tan θ). Method B places
-            each pupil between its own eye corners and flags misalignment without an angle. A photo shows only the
+            against the centre of the iris edge, traced on the full-resolution photo, in each eye; comparing the two
+            eyes cancels the normal (kappa) offset they share ({DEG_PER_MM}° per mm of reflex shift, iris radius{" "}
+            {IRIS_RADIUS_MM} mm, PD = 100·tan θ). It reports the horizontal deviation only. Method B places each
+            iris centre between its own eye corners and flags misalignment without an angle. A photo shows only the
             deviation present at that moment; a prism cover test measures the full deviation and is usually larger,
             and latent or intermittent squints can read near zero. Not reliable under about 8 PD or above about
             45 PD. Screening aid, not a diagnosis. <span className="text-ink-400">BeanHealth CLR · test mode · {report.timestamp}</span>
