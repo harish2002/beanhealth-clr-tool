@@ -242,15 +242,14 @@ def _interpret(
     # horizontal narrative regardless of which raw asymmetry is larger.
     parts: List[str] = []
     if not vertical_reliable or h_asym >= v_asym:
-        # Horizontal divergence dominates
-        if l_h < r_h:
-            shifted, corner = "left", "nasally (inward)" if l_h < 0.5 else "temporally (outward)"
-        else:
-            shifted, corner = "right", "nasally (inward)" if r_h < 0.5 else "temporally (outward)"
+        # Horizontal divergence dominates. The ratio runs inner (0) → outer (1)
+        # corner, so the eye with the larger ratio sits further outward. A
+        # comparison of two eyes cannot say which one is turned: say both.
+        outer, other = ("left", "right") if l_h > r_h else ("right", "left")
         parts.append(
-            f"The {shifted} pupil is shifted {corner} relative to its eye corners "
-            f"compared with the fellow eye (horizontal asymmetry {h_asym:.0%} of "
-            f"eye width)."
+            f"The {outer} pupil sits further toward its outer eye corner than the "
+            f"{other} pupil (horizontal asymmetry {h_asym:.0%} of eye width): "
+            f"either the {outer} eye is turned out or the {other} eye is turned in."
         )
     else:
         higher = "left" if l_v < r_v else "right"
