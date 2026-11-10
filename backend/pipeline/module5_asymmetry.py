@@ -105,6 +105,9 @@ class AsymmetryResult:
     # Prism dioptres = 100·tan(asymmetry_degrees). Defaulted so existing
     # constructors (tests, fixtures) stay valid; real pipeline always sets it.
     asymmetry_pd:       float = 0.0
+    # Horizontal-only mode: the reflex direction (nasal / temporal) of the
+    # dominant eye, read from the sign of bav_nasal. None in the 2-D mode.
+    horizontal_direction: Optional[str] = None
     flags:              List[str] = field(default_factory=list)
 
 
@@ -329,6 +332,7 @@ def compute_asymmetry_and_angle(
     right_dy: Optional[float] = None,
     left_iris_radius:  Optional[float] = None,
     right_iris_radius: Optional[float] = None,
+    horizontal_only:   bool = False,
 ) -> AsymmetryResult:
     """
     Full Module 5 pipeline: bilateral asymmetry vector + Hirschberg angle + severity.
@@ -349,6 +353,12 @@ def compute_asymmetry_and_angle(
         right_dx, right_dy:      raw pixel CLR displacement vector, right eye
         left_iris_radius:        left iris radius in pixels
         right_iris_radius:       right iris radius in pixels
+        horizontal_only:         Score the horizontal component alone. Used when the
+                                 centre is the traced iris edge (Module 2b): the edge is
+                                 traced on the side arcs only, so the vertical centre is
+                                 not fixed well enough to report a vertical deviation.
+                                 The dominant eye is then the one whose reflex sits
+                                 further from the iris centre horizontally.
 
     Returns:
         AsymmetryResult
@@ -375,6 +385,19 @@ def compute_asymmetry_and_angle(
         dominant_norm    = bav["dominant_norm"]
 
         flags.append("bav_mode")
+        horizontal_direction: Optional[str] = None
+        if horizontal_only:
+            flags.append("horizontal_only")
+            bav_magnitude = abs(bav_nasal)
+            left_nasal, right_nasal = bav["left_norm_vec"][0], bav["right_norm_vec"][0]
+            if abs(left_nasal) >= abs(right_nasal):
+                dominant_eye, dominant_norm = "left", abs(left_nasal)
+                more_nasal = bav_nasal > 0
+            else:
+                dominant_eye, dominant_norm = "right", abs(right_nasal)
+                more_nasal = bav_nasal < 0
+            # The dominant eye's reflex sits nasal of the other eye's → exo signal.
+            horizontal_direction = "nasal" if more_nasal else "temporal"
         logger.info(
             f"[M5] BAV mode: nasal={bav_nasal:.4f}, vertical={bav_vertical:.4f}, "
             f"|BAV|={bav_magnitude:.4f}"
@@ -389,6 +412,7 @@ def compute_asymmetry_and_angle(
         bav_magnitude = asymmetry_score
         dominant_eye  = asym["dominant_eye"]
         dominant_norm = asym["dominant_norm"]
+        horizontal_direction = None
         logger.warning("[M5] Falling back to scalar asymmetry — vector inputs missing")
 
     # Step 1: Severity from BAV magnitude (kappa-cancelled signal)
@@ -425,6 +449,7 @@ def compute_asymmetry_and_angle(
         deviation_degrees=round(angle["deviation_degrees"], 2),
         deviation_mm=round(angle["deviation_mm"], 3),
         severity=sev["severity"],
+        horizontal_direction=horizontal_direction,
         flags=flags,
     )
 

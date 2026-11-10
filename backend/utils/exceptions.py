@@ -63,6 +63,19 @@ class PupilError(CLRPipelineError):
         "pupil_not_found_left":  "Pupil not found in left eye crop.",
         "pupil_not_found_right": "Pupil not found in right eye crop.",
         "pupil_not_found_both":  "Pupil not found in either eye.",
+        "iris_edge_not_found_left": (
+            "The edge of the left iris could not be traced, so its centre is not known. "
+            "Retake with both eyes wide open, the face filling the frame and in focus."
+        ),
+        "iris_edge_not_found_right": (
+            "The edge of the right iris could not be traced, so its centre is not known. "
+            "Retake with both eyes wide open, the face filling the frame and in focus."
+        ),
+        "iris_size_mismatch": (
+            "The two irises measure different sizes in this photo, so part of one iris edge "
+            "is hidden (eyelid, a turned eye, or a hazy cornea) and its centre cannot be "
+            "trusted. Retake with both eyes wide open and looking at the light."
+        ),
     }
 
     def __init__(self, code: str):

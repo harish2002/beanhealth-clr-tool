@@ -200,3 +200,26 @@ DARK_PUPIL_MAX_IRIS_RADII = 0.6
 # (Seeding from such a circle put one real photo's pupil 0.45 iris radii off
 # and read 37 PD of esotropia in straight eyes.)
 HOUGH_MAX_OFFSET_IRIS_RADII = 0.5
+
+# Module 2b — iris-edge (limbus) centre, traced on the full-resolution photo.
+# Measured on the clinic validation set (10 photos, 5 patients): good fits keep
+# 40–64 edge points at a median scatter of 0.01–0.03 iris radii; their radii
+# agree between the two eyes within 12% (a turned eye looks slightly narrower).
+IRIS_EDGE_ARC_DEG             = 50.0         # trace ±50° of horizontal: the lids rarely cover these arcs
+IRIS_EDGE_MIN_POINTS          = 20           # of 82 rays
+IRIS_EDGE_MAX_RESIDUAL        = 0.06         # median edge scatter, fraction of radius
+IRIS_EDGE_HIGH_RESIDUAL       = 0.025        # at or under this, the centre is HIGH confidence
+IRIS_EDGE_RADIUS_RANGE        = (0.7, 1.4)   # fitted radius / landmark radius
+IRIS_EDGE_MAX_CENTRE_SHIFT    = 0.5          # fitted centre to landmark centre, fraction of radius
+IRIS_EDGE_MAX_RADIUS_MISMATCH = 0.15         # |r_left − r_right| / larger: beyond this one edge is hidden
+
+# Module 3 — filter ④ when the centre comes from the iris edge.
+# The corneal reflex lies on the cornea, inside the iris circle. 1.0 radius
+# still admits a deviation of ~40° (5.75 mm × 7°/mm); beyond it the bright
+# spot is on the sclera or the lid.
+CLR_MAX_DIST_IRIS_RADII_EDGE  = 1.0
+
+# Working and measuring resolution. The pipeline detects and marks on an image
+# of at most MAX_IMAGE_DIMENSION (utils/image_utils.py); the iris edge is traced
+# on the upload at up to this size (CLAUDE.md: never above 4000×3000 unscaled).
+FULL_RES_MAX_DIMENSION        = 4000

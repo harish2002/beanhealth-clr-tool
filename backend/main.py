@@ -48,7 +48,8 @@ from pipeline.module_calibrate  import (
     calibrate_from_measurements,
 )
 from pipeline.module1_detection    import detect_and_crop_eyes, detect_eyes_only_fallback
-from pipeline.module2_pupil        import localise_pupils
+from pipeline.module2_pupil        import PupilResult, localise_pupils
+from pipeline.module2_iris_edge    import refine_with_iris_edge
 from pipeline.module3_clr          import CLRResult, detect_clr
 from pipeline.module4_displacement import compute_displacement
 from pipeline.module5_asymmetry    import compute_asymmetry_and_angle
@@ -58,6 +59,7 @@ from pipeline.module8_alignment    import compute_corner_alignment
 from pipeline.module_parity       import compare_with_client, parse_client_measurement
 from utils.device_fingerprint      import parse_device_model
 from utils.image_utils             import downscale_if_needed
+from utils.constants               import CLR_MAX_DIST_IRIS_RADII_EDGE, FULL_RES_MAX_DIMENSION
 from utils.exceptions              import CLRPipelineError, ConfidenceError, DetectionError, CLRError
 
 # ─────────────────────────────────────────────────────────────
@@ -101,12 +103,27 @@ app.include_router(exam_router)
 # Image loading helper
 # ─────────────────────────────────────────────────────────────
 
-_MAX_IMAGE_PIXELS = 4000 * 3000   # ~12 MP cap (performance guard)
-
-
 async def _load_image(upload: UploadFile) -> np.ndarray:
     """
-    Read the uploaded file and return an RGB numpy array.
+    Read the uploaded file and return the working RGB image (Module 1's frame).
+
+    Raises:
+        HTTPException 422 — if the file is not a valid image.
+    """
+    working, _ = await _load_image_full(upload)
+    return working
+
+
+async def _load_image_full(upload: UploadFile) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Read the uploaded file and return (working, full) RGB images.
+
+    working — at most MAX_IMAGE_DIMENSION on its long side: Module 1 detects,
+              and the report draws, in this frame.
+    full    — the upload at up to FULL_RES_MAX_DIMENSION (CLAUDE.md: never
+              above 4000×3000 unscaled). Module 2b traces the iris edge here:
+              at the working size a 1-pixel error on the iris centre is worth
+              2–4 PD on a typical phone photo.
 
     Raises:
         HTTPException 422 — if the file is not a valid image.
@@ -121,16 +138,53 @@ async def _load_image(upload: UploadFile) -> np.ndarray:
             detail="Uploaded file is not a valid image. Please upload a JPEG or PNG.",
         )
 
-    if pil_img.width * pil_img.height > _MAX_IMAGE_PIXELS:
-        # Downscale to fit within cap — preserves aspect ratio
-        pil_img.thumbnail((3000, 2000), Image.LANCZOS)
-        logger.info(f"[API] Image downscaled to {pil_img.size} (exceeded pixel cap)")
+    # The old pixel cap shrank any photo over 12 MP to fit 3000×2000, which
+    # halved a 3072×4096 portrait before Module 1 halved it again.
+    full = downscale_if_needed(np.array(pil_img, dtype=np.uint8), max_dim=FULL_RES_MAX_DIMENSION)
 
     # Module 1 measures on an image no larger than MAX_IMAGE_DIMENSION and
     # reports landmarks in that frame. Shrink here too, so the image the report
     # draws on is the same frame: a 6–12 MP photo under the pixel cap otherwise
     # had its eye-corner snapshot cut from the wrong part of the face.
-    return downscale_if_needed(np.array(pil_img, dtype=np.uint8))
+    return downscale_if_needed(full), full
+
+
+def _centre_on_iris_edge_and_find_reflex(
+    detection,
+    pupil_result: PupilResult,
+    working_img: np.ndarray,
+    full_img: Optional[np.ndarray],
+    clr_overrides: Optional[dict] = None,
+) -> tuple[PupilResult, CLRResult]:
+    """
+    Module 2b then Module 3: re-centre both eyes on the traced iris edge, then
+    find each reflex inside its iris.
+
+    Raises:
+        PupilError when an iris edge cannot be traced or the two irises differ
+        in size (an edge is hidden); CLRError as Module 3 does.
+    """
+    full = full_img if full_img is not None else working_img
+    scale = full.shape[1] / working_img.shape[1]
+    centred = refine_with_iris_edge(full, scale, detection, pupil_result)
+    clr_result = detect_clr(
+        left_crop=detection.left_crop,
+        right_crop=detection.right_crop,
+        left_iris_radius=centred.left_iris_radius,
+        right_iris_radius=centred.right_iris_radius,
+        left_pupil=centred.left_pupil,
+        right_pupil=centred.right_pupil,
+        max_dist_iris_radii=CLR_MAX_DIST_IRIS_RADII_EDGE,
+        **(clr_overrides or {}),
+    )
+    return centred, clr_result
+
+
+def _dominant_direction(asymmetry, displacement) -> str:
+    """Reflex direction of the dominant eye: horizontal-only when Module 5 scored it so."""
+    if asymmetry.horizontal_direction:
+        return asymmetry.horizontal_direction
+    return displacement.left_direction if asymmetry.dominant_eye != "right" else displacement.right_direction
 
 
 # ─────────────────────────────────────────────────────────────
@@ -184,7 +238,7 @@ async def analyse(
     patient_name = patient_name.strip()
 
     # ── Load image ───────────────────────────────────────────
-    img_rgb = await _load_image(image)
+    img_rgb, full_img = await _load_image_full(image)
     logger.info(
         f"[API] /analyse — patient='{patient_name}' age={patient_age} "
         f"image={img_rgb.shape[1]}×{img_rgb.shape[0]}px"
@@ -207,14 +261,9 @@ async def analyse(
             right_crop_box=detection.right_crop_box,
         )
 
-        # Module 3 — CLR bright spot detection
-        clr_result = detect_clr(
-            left_crop=detection.left_crop,
-            right_crop=detection.right_crop,
-            left_iris_radius=pupil_result.left_iris_radius,
-            right_iris_radius=pupil_result.right_iris_radius,
-            left_pupil=pupil_result.left_pupil,
-            right_pupil=pupil_result.right_pupil,
+        # Module 2b (centre on the traced iris edge) + Module 3 (CLR inside the iris)
+        pupil_result, clr_result = _centre_on_iris_edge_and_find_reflex(
+            detection, pupil_result, img_rgb, full_img,
         )
 
         # Module 4 — Displacement measurement
@@ -242,24 +291,11 @@ async def analyse(
             right_dy=displacement.right_dy,
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
+            horizontal_only=True,      # the iris-edge centre fixes the horizontal axis only
         )
 
-        # Module 6 — Clinical classification
-        # BAV direction: if |bav_nasal| > |bav_vertical|, primary axis is nasal/temporal
-        # otherwise it's vertical — use this to pick the condition label
-        dominant_eye = asymmetry.dominant_eye
-        if abs(asymmetry.bav_nasal) >= abs(asymmetry.bav_vertical):
-            # Horizontal strabismus — use dominant eye's nasal/temporal direction
-            dominant_dir = (
-                displacement.left_direction if dominant_eye != "right"
-                else displacement.right_direction
-            )
-        else:
-            # Vertical strabismus — use dominant eye's superior/inferior direction
-            dominant_dir = (
-                displacement.left_direction if dominant_eye != "right"
-                else displacement.right_direction
-            )
+        # Module 6 — Clinical classification (horizontal reflex direction)
+        dominant_dir = _dominant_direction(asymmetry, displacement)
         classification = classify_strabismus(
             dominant_direction=dominant_dir,
             severity=asymmetry.severity,
@@ -359,6 +395,7 @@ async def _run_single_frame_pipeline(
     patient_age:  int,
     calibration:  Optional[SessionCalibration] = None,
     allow_eye_only_fallback: bool = False,
+    full_img:     Optional[np.ndarray] = None,
 ) -> tuple[dict, Optional[CLRResult]]:
     """
     Run the full 7-module pipeline on one frame.
@@ -369,6 +406,8 @@ async def _run_single_frame_pipeline(
         patient_age:  Patient age  (passed to report).
         calibration:  Optional session-level calibration.  When present the
                       Module 3 thresholds are replaced with the calibrated values.
+        full_img:     The same photo at full resolution, for the iris-edge trace.
+                      None traces on img_rgb itself.
 
     Returns:
         (report_dict, clr_result)
@@ -402,21 +441,16 @@ async def _run_single_frame_pipeline(
             right_crop_box=detection.right_crop_box,
         )
 
-        # ── Module 3 — apply session-calibrated thresholds if available ──
-        clr_kwargs: dict = dict(
-            left_crop=detection.left_crop,
-            right_crop=detection.right_crop,
-            left_iris_radius=pupil_result.left_iris_radius,
-            right_iris_radius=pupil_result.right_iris_radius,
-            left_pupil=pupil_result.left_pupil,
-            right_pupil=pupil_result.right_pupil,
-        )
+        # ── Module 2b + Module 3 — session-calibrated thresholds if available ──
+        clr_overrides: dict = {}
         if calibration and calibration.calibrated:
-            clr_kwargs["min_area_ratio"]      = calibration.session_min_area_ratio
-            clr_kwargs["max_area_ratio"]      = calibration.session_max_area_ratio
-            clr_kwargs["min_peak_brightness"] = calibration.session_min_peak_brightness
+            clr_overrides["min_area_ratio"]      = calibration.session_min_area_ratio
+            clr_overrides["max_area_ratio"]      = calibration.session_max_area_ratio
+            clr_overrides["min_peak_brightness"] = calibration.session_min_peak_brightness
 
-        clr_result = detect_clr(**clr_kwargs)
+        pupil_result, clr_result = _centre_on_iris_edge_and_find_reflex(
+            detection, pupil_result, img_rgb, full_img, clr_overrides,
+        )
         clr_result_out = clr_result   # expose for calibration collection
 
         upstream_flags = pupil_result.flags + clr_result.flags
@@ -440,11 +474,9 @@ async def _run_single_frame_pipeline(
             right_dy=displacement.right_dy,
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
+            horizontal_only=True,      # the iris-edge centre fixes the horizontal axis only
         )
-        dominant_dir = (
-            displacement.left_direction if asymmetry.dominant_eye != "right"
-            else displacement.right_direction
-        )
+        dominant_dir = _dominant_direction(asymmetry, displacement)
         classification = classify_strabismus(
             dominant_direction=dominant_dir,
             severity=asymmetry.severity,
@@ -548,7 +580,7 @@ async def analyse_stream(
 
     for i, upload in enumerate(images):
         try:
-            img_rgb = await _load_image(upload)
+            img_rgb, full_img = await _load_image_full(upload)
         except HTTPException:
             frame_reports.append({
                 "status": "INCONCLUSIVE",
@@ -558,7 +590,7 @@ async def analyse_stream(
             continue
 
         report, clr_result = await _run_single_frame_pipeline(
-            img_rgb, patient_name, patient_age, calibration=calibration
+            img_rgb, patient_name, patient_age, calibration=calibration, full_img=full_img,
         )
         frame_reports.append(report)
 
@@ -695,7 +727,7 @@ async def analyse_test(
         production screening.
     """
     patient_name = patient_name.strip()
-    img_rgb      = await _load_image(image)
+    img_rgb, full_img = await _load_image_full(image)
 
     logger.info(
         f"[API] /analyse-test — patient='{patient_name}' age={patient_age} "
@@ -724,7 +756,7 @@ async def analyse_test(
     # for tightly-cropped research photos that have no full face to detect.
     report, _ = await _run_single_frame_pipeline(
         img_rgb, patient_name, patient_age,
-        calibration=test_calibration, allow_eye_only_fallback=True,
+        calibration=test_calibration, allow_eye_only_fallback=True, full_img=full_img,
     )
 
     # Second pass: for near-full-face crops where the face fills the frame,
@@ -897,6 +929,7 @@ def _process_batch_item(
     index:   int,
     label:   str,
     calibration: SessionCalibration,
+    full_img: Optional[np.ndarray] = None,
 ) -> dict:
     """
     Run one batch photo through detection + alignment + (best-effort) Hirschberg.
@@ -961,16 +994,12 @@ def _process_batch_item(
 
     # ── Signal 1: best-effort Hirschberg (only if a CLR is present) ──
     try:
-        clr_result = detect_clr(
-            left_crop=detection.left_crop,
-            right_crop=detection.right_crop,
-            left_iris_radius=pupil_result.left_iris_radius,
-            right_iris_radius=pupil_result.right_iris_radius,
-            left_pupil=pupil_result.left_pupil,
-            right_pupil=pupil_result.right_pupil,
-            min_area_ratio=calibration.session_min_area_ratio,
-            max_area_ratio=calibration.session_max_area_ratio,
-            min_peak_brightness=calibration.session_min_peak_brightness,
+        pupil_result, clr_result = _centre_on_iris_edge_and_find_reflex(
+            detection, pupil_result, img_rgb, full_img, dict(
+                min_area_ratio=calibration.session_min_area_ratio,
+                max_area_ratio=calibration.session_max_area_ratio,
+                min_peak_brightness=calibration.session_min_peak_brightness,
+            ),
         )
         displacement = compute_displacement(
             left_pupil=pupil_result.left_pupil,
@@ -992,11 +1021,9 @@ def _process_batch_item(
             right_dy=displacement.right_dy,
             left_iris_radius=pupil_result.left_iris_radius,
             right_iris_radius=pupil_result.right_iris_radius,
+            horizontal_only=True,      # the iris-edge centre fixes the horizontal axis only
         )
-        dominant_dir = (
-            displacement.left_direction if asymmetry.dominant_eye != "right"
-            else displacement.right_direction
-        )
+        dominant_dir = _dominant_direction(asymmetry, displacement)
         classification = classify_strabismus(
             dominant_direction=dominant_dir,
             severity=asymmetry.severity,
@@ -1088,7 +1115,7 @@ async def analyse_batch(
     for i, upload in enumerate(images):
         label = label_list[i] if i < len(label_list) and label_list[i] else (upload.filename or f"photo_{i + 1}")
         try:
-            img_rgb = await _load_image(upload)
+            img_rgb, full_img = await _load_image_full(upload)
         except HTTPException:
             items.append({
                 "index": i, "label": label, "status": "INCONCLUSIVE",
@@ -1096,7 +1123,7 @@ async def analyse_batch(
                 "alignment": None, "referral_flag": False,
             })
             continue
-        items.append(_process_batch_item(img_rgb, i, label, calibration))
+        items.append(_process_batch_item(img_rgb, i, label, calibration, full_img))
 
     elapsed = (datetime.now(timezone.utc) - started).total_seconds()
     flagged   = sum(1 for it in items if it["referral_flag"])

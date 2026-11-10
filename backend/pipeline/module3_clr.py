@@ -262,6 +262,7 @@ def _apply_four_way_filter(
     min_area_ratio:       float = CLR_MIN_AREA_RATIO,
     max_area_ratio:       float = CLR_MAX_AREA_RATIO,
     min_circularity:      float = CLR_MIN_CIRCULARITY,
+    max_dist_iris_radii:  float = 1.5,
 ) -> List[BlobCandidate]:
     """
     Apply four mandatory filters to the blob list.
@@ -274,6 +275,8 @@ def _apply_four_way_filter(
               error at 640 px resolution while still rejecting far scleral glare.
               (Proximity-based *selection* handles the case where a scleral blob
               and the real CLR both survive — we no longer need this to be tight.)
+              When the centre is the traced iris edge (Module 2b) the caller
+              passes max_dist_iris_radii=1.0: the reflex must be on the cornea.
 
     Args:
         min_area_ratio:  Lower bound for CLR area / iris_area.
@@ -326,7 +329,7 @@ def _apply_four_way_filter(
         # so this filter is a coarse guard only.
         if pupil_centre is not None:
             dist_to_pupil = math.hypot(blob.centroid_x - pupil_centre[0], blob.centroid_y - pupil_centre[1])
-            max_dist = iris_radius * 1.5
+            max_dist = iris_radius * max_dist_iris_radii
             if dist_to_pupil > max_dist:
                 blob.fail_reason = f"distance {dist_to_pupil:.1f}px > max {max_dist:.1f}px from pupil {pupil_centre}"
                 logger.debug(f"Module 3 [{eye_label}]: blob {blob.label} REJECTED — {blob.fail_reason}")
@@ -430,6 +433,7 @@ def _detect_clr_one_eye(
     min_area_ratio:   float = CLR_MIN_AREA_RATIO,
     max_area_ratio:   float = CLR_MAX_AREA_RATIO,
     min_peak_brightness: float = CLR_MIN_PEAK_BRIGHTNESS,
+    max_dist_iris_radii: float = 1.5,
 ) -> Tuple[Tuple[float, float], float, float, float]:
     """
     Run the full CLR detection pipeline for one eye.
@@ -475,6 +479,7 @@ def _detect_clr_one_eye(
         min_area_ratio=min_area_ratio,
         max_area_ratio=max_area_ratio,
         min_circularity=CLR_MIN_CIRCULARITY,
+        max_dist_iris_radii=max_dist_iris_radii,
     )
 
     # ── Step 5b: Rescue pass ──────────────────────────────────────────────
@@ -502,6 +507,7 @@ def _detect_clr_one_eye(
             min_area_ratio=min_area_ratio,
             max_area_ratio=CLR_RESCUE_MAX_AREA_RATIO,
             min_circularity=CLR_RESCUE_MIN_CIRCULARITY,
+            max_dist_iris_radii=max_dist_iris_radii,
         )
         if passing:
             rescue_used = True
@@ -538,6 +544,7 @@ def detect_clr(
     min_area_ratio:       Optional[float] = None,
     max_area_ratio:       Optional[float] = None,
     min_peak_brightness:  Optional[float] = None,
+    max_dist_iris_radii:  float = 1.5,
 ) -> CLRResult:
     """
     Detect the corneal light reflex in both eye crops.
@@ -560,6 +567,8 @@ def detect_clr(
         min_area_ratio:       Session-calibrated min CLR area / iris_area (overrides constant).
         max_area_ratio:       Session-calibrated max CLR area / iris_area (overrides constant).
         min_peak_brightness:  Session-calibrated flash detection threshold (overrides constant).
+        max_dist_iris_radii:  Filter ④ bound, pupil → reflex in iris radii. 1.5 by default;
+                              1.0 when the centre is the traced iris edge (Module 2b).
 
     Returns:
         CLRResult with CLR positions, confidence scores, flags,
@@ -589,6 +598,7 @@ def detect_clr(
                 left_crop, left_iris_radius, left_pupil, "left", flags,
                 min_area_ratio=eff_min_area, max_area_ratio=eff_max_area,
                 min_peak_brightness=eff_min_peak,
+                max_dist_iris_radii=max_dist_iris_radii,
             )
         )
         logger.debug(
@@ -612,6 +622,7 @@ def detect_clr(
                 right_crop, right_iris_radius, right_pupil, "right", flags,
                 min_area_ratio=eff_min_area, max_area_ratio=eff_max_area,
                 min_peak_brightness=eff_min_peak,
+                max_dist_iris_radii=max_dist_iris_radii,
             )
         )
         logger.debug(
